@@ -112,14 +112,14 @@ with st.sidebar:
 # -------------------------------------------------------------------
 tab_comp, tab_jet = st.tabs(["1️⃣ GL vs TB 검증", "2️⃣ 분개 테스트 (Journal Entry Test)"])
 
-# --- Tab 1: GL vs TB Comparison ---
+# --- Tab 1: GL vs TB Comparison (수정) ---
 with tab_comp:
     if not COMP_AVAILABLE:
         st.error("difference.py 파일을 찾을 수 없거나 오류가 있어 GL/TB 비교를 실행할 수 없습니다.")
-        st.info("스크립트가 올바르게 준비되었는지 확인하세요 (특히 difference.py의 load_gl, load_tb 함수).")
+        st.info("스크립트가 올바르게 준비되었는지 확인하세요.")
     else:
         st.header("GL vs TB 합계/잔액 검증")
-        st.markdown("업로드한 **총계정원장(GL)**과 **시산표(TB)**의 주요 합계/잔액을 비교합니다.")
+        st.markdown("업로드한 **총계정원장(GL)**과 **시산표(TB)**의 주요 합계/잔액 및 계정별 상세 차이를 비교합니다.") # 문구 수정
 
         tb_header_row = st.number_input(
             "시산표(TB) 헤더 시작 행 번호 (0-based)",
@@ -132,34 +132,50 @@ with tab_comp:
         if run_comp_btn and gl_file and tb_file:
             with st.spinner("GL/TB 비교 분석 중..."):
                 try:
-                    ok, (gl_d, gl_c, tb_vals, diff, cols) = verify_gl_tb(
+                    # verify_gl_tb 함수 호출 (반환값 구조 변경됨)
+                    ok, (totals, diffs, cols), diff_details_df = verify_gl_tb(
                         gl_file, tb_file, tb_header_row
                     )
-                    st.subheader("📊 비교 결과 요약")
+
+                    # --- 전체 합계 결과 표시 ---
+                    st.subheader("📊 전체 합계 비교 결과 요약")
                     if ok:
                         st.success("✅ 검증 성공: GL 차/대 합계와 TB 차/대 합계가 허용 오차 내에서 모두 일치합니다.")
                     else:
-                        st.error("❌ 검증 실패: GL 또는 TB의 합계가 일치하지 않습니다. 아래 상세 내용을 확인하세요.")
+                        st.error("❌ 검증 실패: 전체 합계가 일치하지 않습니다. 상세 내용을 확인하세요.")
 
                     col_gl, col_tb_tot, col_tb_bal = st.columns(3)
-                    # (결과 표시 로직은 이전과 동일)
                     with col_gl:
-                        st.metric("GL 총차변", f"{gl_d:,.0f}")
-                        st.metric("GL 총대변", f"{gl_c:,.0f}")
-                        st.metric("GL 차액(Δ)", f"{diff['Δ_GL']:,.0f}", delta_color="off")
+                        st.metric("GL 총차변", f"{totals['gl_d']:,.0f}")
+                        st.metric("GL 총대변", f"{totals['gl_c']:,.0f}")
+                        st.metric("GL 차액(Δ)", f"{diffs['Δ_GL']:,.0f}", delta_color="off")
                     with col_tb_tot:
-                        st.metric(f"TB 차변 합계 ({cols['tot_d']})", f"{tb_vals['tot_d']:,.0f}")
-                        st.metric(f"TB 대변 합계 ({cols['tot_c']})", f"{tb_vals['tot_c']:,.0f}")
-                        st.metric("TB 합계 차액(Δ)", f"{diff['Δ_TB_Tot']:,.0f}", delta_color="off")
+                        st.metric(f"TB 차변 합계 ({cols['tot_d']})", f"{totals['tb_tot_d']:,.0f}")
+                        st.metric(f"TB 대변 합계 ({cols['tot_c']})", f"{totals['tb_tot_c']:,.0f}")
+                        st.metric("TB 합계 차액(Δ)", f"{diffs['Δ_TB_Tot']:,.0f}", delta_color="off")
                     with col_tb_bal:
-                        st.metric(f"TB 차변 잔액 합계 ({cols['bal_d']})", f"{tb_vals['bal_d']:,.0f}")
-                        st.metric(f"TB 대변 잔액 합계 ({cols['bal_c']})", f"{tb_vals['bal_c']:,.0f}")
-                        st.metric("TB 잔액 차액(Δ)", f"{diff['Δ_TB_Bal']:,.0f}", delta_color="off")
+                        st.metric(f"TB 차변 잔액 합계 ({cols['bal_d']})", f"{totals['tb_bal_d']:,.0f}")
+                        st.metric(f"TB 대변 잔액 합계 ({cols['bal_c']})", f"{totals['tb_bal_c']:,.0f}")
+                        st.metric("TB 잔액 차액(Δ)", f"{diffs['Δ_TB_Bal']:,.0f}", delta_color="off")
 
                     st.divider()
-                    st.markdown("**참고: 직접 비교 차이**")
-                    st.markdown(f"* GL 차변 vs TB 합계 차변 차이 : {diff['Δ_GLd_TBtotd']:,.0f}")
-                    st.markdown(f"* GL 대변 vs TB 합계 대변 차이 : {diff['Δ_GLc_TBtotc']:,.0f}")
+                    st.markdown("**참고: 전체 합계 직접 비교 차이**")
+                    st.markdown(f"* GL 차변 vs TB 합계 차변 차이 : {diffs['Δ_GLd_TBtotd']:,.0f}")
+                    st.markdown(f"* GL 대변 vs TB 합계 대변 차이 : {diffs['Δ_GLc_TBtotc']:,.0f}")
+
+                    st.divider() # 구분선 추가
+
+                    # --- 계정별 상세 차이 내역 표시 ---
+                    st.subheader("📝 계정별 상세 차이 내역")
+                    if diff_details_df is not None and not diff_details_df.empty:
+                        st.warning(f"{len(diff_details_df)}개 계정에서 GL과 TB 간 금액 차이가 발견되었습니다.")
+                        # DataFrame 스타일링 (선택 사항) - 숫자에 쉼표 표시
+                        st.dataframe(diff_details_df.style.format({
+                             col: '{:,.0f}' for col in diff_details_df.select_dtypes(include='number').columns
+                         }), use_container_width=True)
+                    else:
+                        st.success("✅ 모든 계정에서 GL과 TB 간 금액이 일치합니다 (허용 오차 내).")
+
 
                 except FileNotFoundError as e:
                     st.error(f"파일 처리 중 오류 발생: 파일을 찾을 수 없습니다. {e}")
@@ -168,8 +184,7 @@ with tab_comp:
                     st.info("시산표 헤더 행 번호나 파일 내용을 확인하거나, difference.py 코드의 'total_label' 또는 'account_col_name' 변수를 수정해야 할 수 있습니다.")
                 except Exception as e:
                     st.error(f"예상치 못한 오류 발생: {e}")
-                    st.exception(e)
-
+                    st.exception(e) # Streamlit에서 에러 스택 보여주기
 
 # --- Tab 2: Journal Entry Test ---
 with tab_jet:
