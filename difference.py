@@ -178,13 +178,67 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
     print(f"[INFO] 4-Way (GL합계=TB합계) 일치 여부: {is_overall_ok}")
 
     print("[INFO] 계정별 상세 비교 시작...")
-    grouping_key = '계정코드' if '계정코드' in gl.columns else '계정과목'
-    gl_summary = gl.groupby(grouping_key).agg(GL_차변합계=('차변금액', 'sum'), GL_대변합계=('대변금액', 'sum')).reset_index()
-    gl_summary['GL_잔액'] = gl_summary['GL_차변합계'] - gl_summary['GL_대변합계']
-    if grouping_key == '계정코드' and '계정과목' in gl.columns:
-        account_map = gl.drop_duplicates(subset=['계정코드'])[['계정코드', '계정과목']]
-        gl_summary = pd.merge(gl_summary, account_map, on='계정코드', how='left')
 
+    # GL에서 사용할 계정 식별자 열 이름 찾기
+    gl_account_code_col = None
+    possible_code_names = ['계정코드', '계정과목코드', 'ACCT_CODE'] # 일반적인 계정코드 열 이름 후보
+    for name in possible_code_names:
+        if name in gl.columns:
+            gl_account_code_col = name
+            break
+
+    gl_account_name_col = None
+    possible_name_names = ['계정과목', '계정과목명', '계정명', 'ACCT_NAME'] # 일반적인 계정과목명 열 이름 후보
+    for name in possible_name_names:
+        if name in gl.columns:
+            gl_account_name_col = name
+            break
+
+    # 그룹화 키 설정 (계정코드가 있으면 우선 사용, 없으면 계정과목명 사용)
+    if gl_account_code_col:
+        grouping_key = gl_account_code_col
+        print(f"[INFO] GL 그룹화 기준으로 '{grouping_key}' 열을 사용합니다.")
+    elif gl_account_name_col:
+        grouping_key = gl_account_name_col
+        print(f"[INFO] GL 그룹화 기준으로 '{grouping_key}' 열을 사용합니다. (계정코드 열 없음)")
+    else:
+        # 두 가지 주요 식별자 열이 모두 없는 경우 오류 발생
+        raise ValueError("총계정원장(GL) 파일에서 계정 식별을 위한 '계정코드' 또는 '계정과목' 관련 열을 찾을 수 없습니다. "
+                         "GL 파일의 열 이름을 확인하거나, 프로그램 코드(difference.py)의 열 이름 후보 리스트를 확인해주세요.")
+
+    # GL 데이터 집계
+    gl_summary = gl.groupby(grouping_key).agg(
+        GL_차변합계=('차변금액', 'sum'),
+        GL_대변합계=('대변금액', 'sum')
+    ).reset_index()
+    gl_summary['GL_잔액'] = gl_summary['GL_차변합계'] - gl_summary['GL_대변합계']
+
+    # 만약 계정코드로 그룹화했고, 계정과목명 열도 있다면, 계정과목명을 gl_summary에 추가
+    if grouping_key == gl_account_code_col and gl_account_name_col and gl_account_name_col in gl.columns:
+        # 계정코드에 해당하는 계정과목명을 매핑하기 위해 중복 제거된 맵 생성
+        account_name_map_df = gl[[gl_account_code_col, gl_account_name_col]].drop_duplicates(subset=[gl_account_code_col])
+        gl_summary = pd.merge(gl_summary, account_name_map_df, on=gl_account_code_col, how='left')
+        # 만약 계정과목명 열 이름이 '계정과목'이 아니라면, '계정과목'으로 통일 (TB와 병합 위해)
+        if gl_account_name_col != '계정과목' and '계정과목' not in gl_summary.columns: # 이미 '계정과목'이 없을 때만 이름 변경
+             gl_summary.rename(columns={gl_account_name_col: '계정과목'}, inplace=True)
+    elif grouping_key == gl_account_name_col and gl_account_name_col != '계정과목' and '계정과목' not in gl_summary.columns:
+        # 계정과목명으로 그룹화했는데, 그 이름이 '계정과목'이 아닐 경우 통일
+        gl_summary.rename(columns={gl_account_name_col: '계정과목'}, inplace=True)
+
+
+    # TB와 병합(merge) 시 사용할 GL의 키 결정
+    # (TB는 보통 '계정과목' 또는 '계정코드'로 병합 시도. '계정과목'을 우선시하도록 수정)
+    if '계정과목' in gl_summary.columns:
+        merge_key_gl = '계정과목'
+    elif grouping_key in gl_summary.columns: # 계정과목 열이 생성 안됐으면 grouping_key 사용
+        merge_key_gl = grouping_key
+    else: # 비상 상황 (거의 발생 안 함)
+        raise ValueError("GL 요약 데이터에서 TB와 병합할 기준열을 결정할 수 없습니다.")
+
+    # ... (이후 코드에서 tb_comparison_data와 병합 시 merge_key_gl 사용) ...
+    # 예: merged_df = pd.merge(gl_summary, tb_comparison_data, left_on=merge_key_gl, ...)
+    # 이 부분과 최종 출력 컬럼명 지정 시 '계정과목' 또는 '계정코드'가 일관되게 사용되도록 확인 필요.
+    # final_account_col_name 설정 부분도 이 변경사항을 고려해야 합니다.
     tb_data = tb[tb[account_col_name].astype(str).str.strip() != total_label].copy()
     tb_data['TB_차변잔액'] = tb_data[d_bal_col].apply(to_numeric_safe).fillna(0)
     tb_data['TB_대변잔액'] = tb_data[c_bal_col].apply(to_numeric_safe).fillna(0)
