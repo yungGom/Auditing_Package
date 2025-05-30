@@ -287,6 +287,60 @@ with tab_comp:
                                 tb_account_col=tb_account_col_selected,
                                 tb_total_label=tb_total_label_input
                             )
+
+                            # --- 디버깅을 위한 정보 출력 (임시) ---
+                            st.divider()
+                            st.subheader("🕵️ 디버깅 정보")
+                            st.write(f"함수 반환 'ok': {ok}")
+                            st.write(f"함수 반환 'totals':")
+                            st.json(totals if totals is not None else "None") # totals가 None일 경우를 대비
+                            st.write(f"함수 반환 'diffs':")
+                            st.json(diffs if diffs is not None else "None") # diffs가 None일 경우를 대비
+                            st.write(f"함수 반환 'cols_from_verify': {cols_from_verify}")
+                            st.write(f"함수 반환 'diff_details_df' is None: {diff_details_df is None}")
+                            if diff_details_df is not None:
+                                st.write(f"함수 반환 'diff_details_df' is empty: {diff_details_df.empty}")
+                                st.write("diff_details_df 내용 (상위 5개):")
+                                st.dataframe(diff_details_df.head())
+                            st.divider()
+                            # --- 디버깅 정보 출력 끝 ---
+
+                            st.subheader("📊 비교 결과 요약") # 이 부분은 이미지에서 보입니다.
+                            if ok: # ok가 True 또는 False 여야 합니다.
+                                st.success("✅ 검증 성공: 전체 합계 일치")
+                            else: # ok가 False 이거나 bool이 아닌 다른 값(예: None)일 경우
+                                st.error("❌ 검증 실패: 전체 합계 불일치 (또는 'ok' 상태값 문제)")
+                                if ok is None: # 만약 ok가 None이라면 추가 정보 제공
+                                     st.warning("'ok' 변수가 None입니다. verify_gl_tb 함수 반환값을 확인해주세요.")
+
+
+                            # totals와 diffs가 실제 내용이 있는지 확인하고 출력
+                            if totals and isinstance(totals, dict):
+                                st.write("#### 총계정원장 (GL) 합계")
+                                st.json(totals.get('gl', {})) # totals['gl']이 없을 경우 대비
+                                st.write("#### 시산표 (TB) 합계 (사용자 지정 열 기준)")
+                                st.json(totals.get('tb', {})) # totals['tb']가 없을 경우 대비
+                            else:
+                                st.warning("요약 합계(totals) 정보가 없거나 잘못된 형식입니다.")
+
+                            if diffs and isinstance(diffs, dict):
+                                st.write("#### 차이 (GL - TB)")
+                                st.json(diffs)
+                            else:
+                                st.warning("차이(diffs) 정보가 없거나 잘못된 형식입니다.")
+
+                            st.divider()
+                            st.subheader("📝 계정별 상세 차이 내역")
+                            if diff_details_df is not None and not diff_details_df.empty:
+                                st.warning(f"{len(diff_details_df)}개 계정에서 GL과 TB 간 금액 차이가 발견되었습니다.")
+                                st.dataframe(diff_details_df.style.format({
+                                    col: '{:,.0f}' for col in diff_details_df.select_dtypes(include='number').columns
+                                }), use_container_width=True)
+                            elif ok and (diff_details_df is None or diff_details_df.empty): # ok는 True인데 차이가 없는 경우
+                                st.success("✅ 모든 계정에서 GL과 TB 간 금액이 일치합니다 (허용 오차 내).")
+                            elif not ok and (diff_details_df is None or diff_details_df.empty): # ok는 False인데 차이 내역이 없는 경우
+                                 st.info("전체 합계는 불일치하지만, 상세 차이 내역은 없습니다. (예: 시산표 합계 행 자체의 문제일 수 있음)")
+
                             # ... (이하 결과 표시 로직은 이전과 유사하게 구성) ...
                             st.subheader("📈 비교 결과 요약")
                             if ok: st.success("✅ 검증 성공: GL과 TB의 전체 합계가 일치합니다.")
