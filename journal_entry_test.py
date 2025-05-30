@@ -40,61 +40,111 @@ def _parse_args() -> argparse.Namespace:
 ######################################################################
 # 2. 데이터 적재 및 공통 전처리 (Streamlit 앱에서 호출될 함수)
 ######################################################################
-def load_gl(path_or_buffer: str | Path | io.BytesIO | io.StringIO) -> pd.DataFrame: # 함수 이름 변경 및 타입 힌트 수정
-    """총계정원장 파일을 DataFrame으로 읽고, 기본 전처리를 수행한다 (Excel 및 CSV 지원)."""
+def load_gl(path_or_buffer: str | Path | io.BytesIO | io.StringIO) -> pd.DataFrame:
+    """총계정원장 파일을 DataFrame으로 읽고, 열 이름을 표준화하며 기본 전처리를 수행한다."""
     is_path = isinstance(path_or_buffer, (str, Path))
-    filename = Path(path_or_buffer).name if is_path else getattr(path_or_buffer, 'name', 'GL_JET_file.xlsx') # 기본 이름 지정
+    filename = Path(path_or_buffer).name if is_path else getattr(path_or_buffer, 'name', 'GL_JET_file.xlsx')
     suffix = Path(filename).suffix.lower()
 
-    dtype_spec = {
+    dtype_spec_general = { # 일반적인 열들에 대한 dtype 추정 (필요시 추가/수정)
         "전표번호": str, "계정코드": str, "계정과목": str,
-        "거래처코드": str, "입력사원": str
+        "거래처코드": str, "입력사원": str,
+        # GL 파일 이미지에서 보였던 열 이름들을 기반으로 추가 가능
+        "계정과목코드": str, "ACCT_CD": str, "ACCT_NM": str, "INSERT_ID": str, "생성자ID": str,
     }
+    # 금액 열은 아래에서 별도 처리하므로 여기서는 제외 가능
 
     print(f"[INFO] JET용 총계정원장 로딩 시도: {filename} (형식: {suffix})")
 
     try:
         if suffix == ".xlsx":
-            df = pd.read_excel(path_or_buffer, dtype=dtype_spec)
+            df = pd.read_excel(path_or_buffer, dtype=dtype_spec_general)
         elif suffix == ".csv":
             if hasattr(path_or_buffer, 'seek'): path_or_buffer.seek(0)
             try:
-                df = pd.read_csv(path_or_buffer, dtype=dtype_spec, encoding='utf-8')
+                df = pd.read_csv(path_or_buffer, dtype=dtype_spec_general, encoding='utf-8')
             except UnicodeDecodeError:
                 if hasattr(path_or_buffer, 'seek'): path_or_buffer.seek(0)
                 print(f"[경고] JET GL CSV UTF-8 인코딩 실패 ({filename}). 'cp949'로 재시도합니다.")
-                df = pd.read_csv(path_or_buffer, dtype=dtype_spec, encoding='cp949')
+                df = pd.read_csv(path_or_buffer, dtype=dtype_spec_general, encoding='cp949')
         else:
             raise ValueError(f"지원하지 않는 총계정원장 파일 형식 (JET용): {suffix}. Excel 또는 CSV 파일을 사용해주세요.")
 
-        # 필수 열 확인
+        print(f"[DEBUG] JET GL 초기 로드된 컬럼: {df.columns.tolist()}")
+
+        # --- 열 이름 표준화 로직 시작 ---
+        standard_to_possible_names = {
+            "전표일자": ['전표일자', '회계처리일자', 'SLIP_DT', 'POST_DT', '구 분[기표][년/월/일]'], # '구 분[기표][년/월/일]' 추가
+            "계정과목": ['계정과목', '계정과목명', '계정명', 'ACCT_NAME', 'ACCT_NM'],
+            "차변금액": ['차변금액', '차변', '차 변[금액]', 'DR_AMT'], # '차 변[금액]' 추가
+            "대변금액": ['대변금액', '대변', '대 변[금액]', 'CR_AMT'], # '대 변[금액]' 추가
+            "전표번호": ['전표번호', 'VCHR_NO', 'SLIP_NO', '구 분[기표][번호]'], # '구 분[기표][번호]' 추가
+            "계정코드": ['계정코드', '계정과목코드', 'ACCT_CODE', 'ACCT_CD'],
+            "입력사원": ['입력사원', '입력자', 'USER_ID', 'INSERT_ID', '생성자ID'] # '생성자ID' 추가
+        }
+
+        # 원본 컬럼 이름을 공백 제거 및 대문자화하여 비교하기 위한 맵 생성
+        # { "공백제거_대문자화된_이름": "원본_이름" }
+        df_cols_stripped_upper_map = {col.strip().upper(): col for col in df.columns}
+        
+        renamed_cols_map = {} # 실제 rename할 대상 { "원본이름": "표준이름" }
+
+        for std_name, possible_names in standard_to_possible_names.items():
+            found_original_name = None
+            for poss_name in possible_names:
+                # 후보 이름을 공백 제거 및 대문자화하여 비교
+                if poss_name.strip().upper() in df_cols_stripped_upper_map:
+                    found_original_name = df_cols_stripped_upper_map[poss_name.strip().upper()]
+                    if found_original_name != std_name: # 원본 이름과 표준 이름이 다를 경우에만 rename 대상
+                         renamed_cols_map[found_original_name] = std_name
+                    elif found_original_name == std_name and std_name not in df.columns:
+                        # 이 경우는 거의 없지만, df_cols_stripped_upper_map 키와 std_name이 같지만
+                        # 원본 df.columns에는 std_name이 없는 경우 (예: 대소문자만 다른 경우)
+                        # 이럴 때는 found_original_name을 사용해야 함.
+                        # 하지만 위 로직은 found_original_name을 찾으므로, df.rename 시 사용됨
+                        pass
+                    print(f"[DEBUG] 표준 열 '{std_name}'에 대해 파일의 열 '{found_original_name}'을(를) 찾았습니다.")
+                    break # 해당 표준 열에 대한 후보 탐색 중단
+            if found_original_name is None:
+                print(f"[WARNING] 표준 열 '{std_name}'에 해당하는 열을 GL 파일에서 찾지 못했습니다. 후보: {possible_names}")
+        
+        if renamed_cols_map:
+            df.rename(columns=renamed_cols_map, inplace=True)
+            print(f"[INFO] 다음 열 이름들이 표준 이름으로 변경되었습니다: {renamed_cols_map}")
+        
+        print(f"[DEBUG] JET GL 표준화 후 컬럼: {df.columns.tolist()}")
+        # --- 열 이름 표준화 로직 끝 ---
+
+        # 필수 열 존재 여부 최종 확인 (표준화된 이름 기준)
         essential_cols = ["전표일자", "계정과목", "차변금액", "대변금액", "전표번호", "계정코드", "입력사원"]
         missing_cols = [col for col in essential_cols if col not in df.columns]
         if missing_cols:
-            raise ValueError(f"총계정원장 파일에 다음 필수 열이 없습니다: {', '.join(missing_cols)}")
+            # 이전에 st.error로 올렸던 메시지와 동일한 형식으로 오류 발생
+            raise ValueError(f"총계정원장 파일에 다음 필수 열이 없습니다: {', '.join(missing_cols)}. 표준화 후에도 찾을 수 없습니다. GL 파일 내용을 확인하거나 journal_entry_test.py의 열 이름 후보를 점검하세요.")
 
-        # 날짜 열 파싱
+        # 날짜 열 파싱 (표준화된 '전표일자' 열 사용)
         df["전표일자"] = pd.to_datetime(df["전표일자"], errors="coerce")
-        if df["전표일자"].isnull().all(): # 모든 날짜가 파싱 실패한 경우
+        if df["전표일자"].isnull().all():
              raise ValueError("'전표일자' 열의 모든 값을 날짜 형식으로 변환할 수 없습니다. 데이터 형식을 확인해주세요.")
         elif df["전표일자"].isnull().any():
              print(f"[경고] '전표일자' 열에 일부 유효하지 않은 날짜 형식이 포함되어 NaT로 처리되었습니다 ({df['전표일자'].isnull().sum()} 건).")
 
-
-        # 금액 열을 숫자(float/int)로 변환 (천단위 구분 쉼표 제거)
+        # 금액 열을 숫자(float/int)로 변환 (표준화된 '차변금액', '대변금액' 열 사용)
         for col in ("차변금액", "대변금액"):
             df[col] = (
                 df[col]
-                .astype(str)
+                .astype(str) # 먼저 문자열로 변환하여 .str 접근자 사용 가능하게
                 .str.replace(",", "", regex=False)
             )
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
         
-        print(f"[INFO] JET용 총계정원장 로딩 완료: {len(df)} 행")
+        print(f"[INFO] JET용 총계정원장 로딩 및 표준화 완료: {len(df)} 행")
         return df
+        
     except Exception as e:
-        print(f"[오류] JET 총계정원장 파일 로드 중 에러 발생 ({filename}): {e}")
-        raise
+        print(f"[오류] JET 총계정원장 파일 로드 또는 전처리 중 에러 발생 ({filename}): {e}")
+        raise # Streamlit 앱에서 이 오류를 잡아서 사용자에게 표시하도록 함
+
 
 ######################################################################
 # 3. 시나리오별 필터 함수들
