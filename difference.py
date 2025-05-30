@@ -187,7 +187,7 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
 
     # GL에서 사용할 계정 식별자 열 이름 찾기
     gl_account_code_col = None
-    possible_code_names = ['계정코드', '계정과목코드', 'ACCT_CODE']
+    possible_code_names = ['계정코드', '계정과목코드', 'ACCT_CODE', 'ACCT_CD']
     for name in possible_code_names:
         if name in gl.columns:
             gl_account_code_col = name
@@ -195,7 +195,7 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
             break
 
     gl_account_name_col = None
-    possible_name_names = ['계정과목', '계정과목명', '계정명', 'ACCT_NAME']
+    possible_name_names = ['계정과목', '계정과목명', '계정명', 'ACCT_NAME', 'ACCT_NM']
     for name in possible_name_names:
         if name in gl.columns:
             gl_account_name_col = name
