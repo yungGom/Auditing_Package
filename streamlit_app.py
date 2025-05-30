@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import traceback # 에러 상세 출력을 위해 추가
+from difference import load_gl as difference_load_gl # difference.py의 load_gl 함수를 가져옴
 
 # --- Streamlit 앱 기본 설정 ---
 st.set_page_config(layout="wide", page_title="JOURNAL ENTRY TEST")
