@@ -21,8 +21,8 @@ import streamlit as st
 import traceback # 에러 상세 출력을 위해 추가
 
 # --- Streamlit 앱 기본 설정 ---
-st.set_page_config(layout="wide", page_title="회계 감사 분석 도구")
-st.title("📊 회계 감사 분석 도구")
+st.set_page_config(layout="wide", page_title="JOURNAL ENTRY TEST")
+st.title("📊 JOURNAL ENTRY TEST")
 st.markdown("총계정원장(GL) 및 시산표(TB)를 활용한 자동화된 분석 기능을 제공합니다.")
 
 # --- 사이드바: 파일 업로드 및 설정 ---
