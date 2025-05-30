@@ -314,20 +314,21 @@ with tab_comp:
                                      st.warning("'ok' 변수가 None입니다. verify_gl_tb 함수 반환값을 확인해주세요.")
 
 
-                            # totals와 diffs가 실제 내용이 있는지 확인하고 출력
-                            if totals and isinstance(totals, dict):
-                                st.write("#### 총계정원장 (GL) 합계")
-                                st.json(totals.get('gl', {})) # totals['gl']이 없을 경우 대비
-                                st.write("#### 시산표 (TB) 합계 (사용자 지정 열 기준)")
-                                st.json(totals.get('tb', {})) # totals['tb']가 없을 경우 대비
-                            else:
-                                st.warning("요약 합계(totals) 정보가 없거나 잘못된 형식입니다.")
-
-                            if diffs and isinstance(diffs, dict):
-                                st.write("#### 차이 (GL - TB)")
-                                st.json(diffs)
-                            else:
-                                st.warning("차이(diffs) 정보가 없거나 잘못된 형식입니다.")
+                                # streamlit_app.py의 결과 표시 부분 수정 예시
+                                if totals and isinstance(totals, dict):
+                                    st.write("#### 📊 전체 합계 요약")
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.metric("GL 차변", f"{totals.get('gl_d', 0):,.0f}")
+                                        st.metric("GL 대변", f"{totals.get('gl_c', 0):,.0f}")
+                                    with col2:
+                                        st.metric("TB 차변 합계", f"{totals.get('tb_tot_d', 0):,.0f}")
+                                        st.metric("TB 대변 합계", f"{totals.get('tb_tot_c', 0):,.0f}")
+                                    with col3:
+                                        st.metric("TB 차변 잔액", f"{totals.get('tb_bal_d', 0):,.0f}")
+                                        st.metric("TB 대변 잔액", f"{totals.get('tb_bal_c', 0):,.0f}")
+                                else:
+                                    st.warning("요약 합계(totals) 정보가 없거나 잘못된 형식입니다.")
 
                             st.divider()
                             st.subheader("📝 계정별 상세 차이 내역")
