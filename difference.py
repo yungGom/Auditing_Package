@@ -247,21 +247,21 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
         print("[INFO] 모든 계정에서 GL과 TB 간 금액이 일치합니다.")
         discrepancy_df = pd.DataFrame() # None 대신 빈 DataFrame 반환
 
-    # --- 7. 최종 반환값 구성 --- (수정됨)
+    # --- 7. 최종 반환값 구성 --- 
     grand_totals = {
-        'gl_d': gl_d_total,
-        'gl_c': gl_c_total,
-        'tb_bal_d': tb_d_bal_total,
-        'tb_bal_c': tb_c_bal_total,
-        'tb_tot_d': tb_d_tot_total,
-        'tb_tot_c': tb_c_tot_total,
+        'gl_d': float(gl_d_total),
+        'gl_c': float(gl_c_total),
+        'tb_bal_d': float(tb_d_bal_total),
+        'tb_bal_c': float(tb_c_bal_total),
+        'tb_tot_d': float(tb_d_tot_total),
+        'tb_tot_c': float(tb_c_tot_total),
     }
     grand_diffs = {
-        'Δ_GL': gl_d_total - gl_c_total,
-        'Δ_TB_Bal': tb_d_bal_total - tb_c_bal_total,
-        'Δ_TB_Tot': tb_d_tot_total - tb_c_tot_total,
-        'Δ_GLd_TBtotd': gl_d_total - tb_d_tot_total,
-        'Δ_GLc_TBtotc': gl_c_total - tb_c_tot_total,
+        'Δ_GL': float(gl_d_total - gl_c_total),
+        'Δ_TB_Bal': float(tb_d_bal_total - tb_c_bal_total),
+        'Δ_TB_Tot': float(tb_d_tot_total - tb_c_tot_total),
+        'Δ_GLd_TBtotd': float(gl_d_total - tb_d_tot_total),
+        'Δ_GLc_TBtotc': float(gl_c_total - tb_c_tot_total),
     }
     # detected_cols_info는 사용자 지정 컬럼맵(tb_col_map)을 그대로 사용
     return is_overall_ok, (grand_totals, grand_diffs, tb_col_map), discrepancy_df
