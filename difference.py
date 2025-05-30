@@ -179,6 +179,51 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
 
     print("[INFO] 계정별 상세 비교 시작...")
 
+    # difference.py의 verify 함수 내, 기존 print("[INFO] 계정별 상세 비교 시작...") 다음 줄부터 수정 또는 추가
+
+    print("-" * 50) # 눈에 잘 띄도록 구분선 추가
+    print("DEBUG difference.py: verify 함수 진입 - grouping_key 결정 로직 시작 (버전 20250530_A)") # 고유한 버전/날짜 태그 추가
+    print(f"DEBUG: 현재 gl.columns: {gl.columns.tolist()}") # 실제 로드된 GL의 열 이름들 확인
+
+    # GL에서 사용할 계정 식별자 열 이름 찾기
+    gl_account_code_col = None
+    possible_code_names = ['계정코드', '계정과목코드', 'ACCT_CODE']
+    for name in possible_code_names:
+        if name in gl.columns:
+            gl_account_code_col = name
+            print(f"DEBUG: gl_account_code_col 후보 '{name}' 발견됨.")
+            break
+
+    gl_account_name_col = None
+    possible_name_names = ['계정과목', '계정과목명', '계정명', 'ACCT_NAME']
+    for name in possible_name_names:
+        if name in gl.columns:
+            gl_account_name_col = name
+            print(f"DEBUG: gl_account_name_col 후보 '{name}' 발견됨.")
+            break
+
+    grouping_key = None # 초기화
+    if gl_account_code_col:
+        grouping_key = gl_account_code_col
+        print(f"DEBUG: 최종 grouping_key로 '{grouping_key}' (계정코드 우선) 선택됨.")
+    elif gl_account_name_col:
+        grouping_key = gl_account_name_col
+        print(f"DEBUG: 최종 grouping_key로 '{grouping_key}' (계정과목명 사용) 선택됨.")
+    else:
+        print("DEBUG: GL에서 적합한 계정코드 또는 계정과목 열을 찾지 못함! ValueError 발생 전.")
+        raise ValueError("총계정원장(GL) 파일에서 계정 식별을 위한 '계정코드' 또는 '계정과목' 관련 열을 찾을 수 없습니다. "
+                         "GL 파일의 열 이름을 확인하거나, 프로그램 코드(difference.py)의 열 이름 후보 리스트를 확인해주세요.")
+
+    print(f"DEBUG: gl.groupby에 사용될 최종 grouping_key: '{grouping_key}'")
+    print("-" * 50)
+
+    # GL 데이터 집계 (이 부분에서 오류 발생)
+    gl_summary = gl.groupby(grouping_key).agg(
+        GL_차변합계=('차변금액', 'sum'),
+        GL_대변합계=('대변금액', 'sum')
+    ).reset_index()
+    # ... 이하 기존 코드 ...
+
     # GL에서 사용할 계정 식별자 열 이름 찾기
     gl_account_code_col = None
     possible_code_names = ['계정코드', '계정과목코드', 'ACCT_CODE'] # 일반적인 계정코드 열 이름 후보
