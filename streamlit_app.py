@@ -115,10 +115,10 @@ tab_comp, tab_jet = st.tabs([tab_comp_title, tab_jet_title])
 
 # --- Tab 1: GL vs TB Comparison ---
 with tab_comp:
-    if not COMP_AVAILABLE:
+    if not COMP_AVAILABLE: # difference.py 로드 실패 시
         st.error("`difference.py` 파일을 찾을 수 없거나, 파일 내에 필요한 함수(verify, detect_cols, load_tb)가 없어 GL/TB 비교를 실행할 수 없습니다.")
         st.info("스크립트가 올바르게 준비되었는지 확인하세요.")
-    elif gl_file is None or tb_file is None:
+    elif gl_file is None or tb_file is None: # 파일 업로드가 안된 경우 (사이드바에서 업로드)
         st.info("👈 사이드바에서 총계정원장(GL)과 시산표(TB) 파일을 모두 업로드해주세요.")
     else:
         st.header("GL vs TB 합계/잔액 검증")
@@ -126,35 +126,80 @@ with tab_comp:
 
         st.subheader("⚙️ 시산표(TB) 설정 및 컬럼 매핑")
 
-        # 세션 상태 초기화 (파일이 변경되면 매핑 초기화)
-        if 'tb_cols' not in st.session_state: st.session_state.tb_cols = []
-        if 'tb_last_file_id' not in st.session_state: st.session_state.tb_last_file_id = None
-
-        # tb_file 객체가 실제로 UploadedFile 객체인지 확인 후 file_id 접근
-        current_tb_file_id = getattr(tb_file, 'file_id', id(tb_file))
-        if current_tb_file_id != st.session_state.tb_last_file_id:
-            st.session_state.tb_last_file_id = current_tb_file_id
-            try:
-                # 임시 로딩 시 헤더는 0으로 가정
-                temp_tb_df_for_cols = pd.read_excel(tb_file, header=0)
-                st.session_state.tb_cols = temp_tb_df_for_cols.columns.astype(str).tolist()
-                st.info(f"시산표 파일 '{tb_file.name}' 컬럼 로드 완료. 아래에서 헤더 행 번호와 컬럼 매핑을 확인/수정하세요.")
-                # 파일 포인터를 다시 처음으로 이동 (중요)
-                tb_file.seek(0)
-            except Exception as e:
-                st.error(f"시산표 파일 컬럼 미리보기 실패: {e}. 파일 형식이나 내용을 확인하세요.")
-                st.session_state.tb_cols = []
+        # --- 세션 상태 초기화 ---
+        if 'tb_cols' not in st.session_state:
+            st.session_state.tb_cols = []
+        if 'tb_header_input_val' not in st.session_state: # 헤더 행 번호 저장용
+            st.session_state.tb_header_input_val = 0
+        if 'tb_cols_load_success' not in st.session_state:
+            st.session_state.tb_cols_load_success = False
+        if 'tb_last_file_id' not in st.session_state:
+             st.session_state.tb_last_file_id = None
 
 
-        tb_header_row = st.number_input(
+        # 1. 헤더 행 번호 입력
+        # 이전에 입력된 값을 유지하도록 value 설정
+        current_header_val = st.session_state.get('tb_header_input_val', 0)
+        tb_header_row_input = st.number_input(
             "시산표(TB) 실제 헤더 행 번호 (0-based)",
-            min_value=0, value=0, step=1, key="tb_header_input_map",
+            min_value=0,
+            value=current_header_val, # 세션 상태 값 사용
+            step=1,
+            key="tb_header_num_input", # 고유 키 부여
             help="시산표 파일에서 실제 열 이름이 있는 행의 번호 (0부터 시작)."
         )
+        # 입력 값 변경 시 세션 상태에도 저장
+        if tb_header_row_input != current_header_val:
+            st.session_state.tb_header_input_val = tb_header_row_input
+            st.session_state.tb_cols_load_success = False # 헤더 변경 시 컬럼 다시 로드 필요
+            st.session_state.tb_cols = [] # 이전 컬럼 목록 초기화
 
+
+        # 컬럼 목록을 업데이트하는 함수
+        def refresh_tb_columns_from_file(uploaded_file, header_row_to_use):
+            try:
+                uploaded_file.seek(0) # 파일 포인터 초기화
+                # difference.py의 load_tb 함수를 사용하여 실제 헤더 기준으로 컬럼 로드
+                df_for_cols = load_tb(uploaded_file, header_row_to_use, filename=uploaded_file.name)
+                st.session_state.tb_cols = df_for_cols.columns.astype(str).tolist()
+                st.session_state.tb_cols_load_success = True
+                st.success(f"'{uploaded_file.name}' 파일의 컬럼 목록을 헤더 행 {header_row_to_use}(으)로 성공적으로 읽어왔습니다.")
+                uploaded_file.seek(0) # 다음 사용을 위해 파일 포인터 다시 초기화
+            except Exception as e:
+                st.session_state.tb_cols = []
+                st.session_state.tb_cols_load_success = False
+                st.error(f"선택한 헤더 행({header_row_to_use})(으)로 컬럼을 읽는 중 오류가 발생했습니다: {e}. 헤더 행 번호나 파일 형식을 확인해주세요.")
+                if hasattr(uploaded_file, 'seek'): uploaded_file.seek(0)
+
+
+        # 2. "선택한 헤더로 컬럼 목록 업데이트" 버튼
+        if st.button("🔄 선택한 헤더로 컬럼 목록 업데이트", key="refresh_columns_button"):
+            if tb_file:
+                refresh_tb_columns_from_file(tb_file, st.session_state.tb_header_input_val)
+            else:
+                st.warning("먼저 시산표(TB) 파일을 업로드해주세요.")
+
+        # 파일이 변경되었는지 확인하고, 변경되었다면 안내 메시지 표시
+        if tb_file:
+            current_file_id = getattr(tb_file, 'file_id', id(tb_file))
+            if st.session_state.tb_last_file_id != current_file_id:
+                st.session_state.tb_last_file_id = current_file_id
+                st.session_state.tb_cols_load_success = False # 새 파일이므로 컬럼 다시 로드 필요
+                st.session_state.tb_cols = [] # 이전 컬럼 목록 초기화
+                st.info(f"새로운 시산표 파일 '{tb_file.name}'이(가) 선택되었습니다. 헤더 행 번호를 확인하고 '컬럼 목록 업데이트' 버튼을 눌러주세요.")
+
+        # 컬럼 로드 상태에 따른 메시지
+        if not st.session_state.tb_cols and tb_file and not st.session_state.tb_cols_load_success:
+             st.warning("정확한 컬럼 선택을 위해, 위에서 '실제 헤더 행 번호'를 설정한 후 '컬럼 목록 업데이트' 버튼을 꼭 눌러주세요.")
+
+
+        # --- 이제 st.session_state.tb_cols에는 올바른 컬럼 이름이 들어있다고 가정 ---
+
+        # 3. 합계 행 정보 입력
         col_label1, col_label2 = st.columns(2)
         with col_label1:
-            tb_account_col_options = st.session_state.get('tb_cols', [])
+            tb_account_col_options = st.session_state.get('tb_cols', []) # 여기서 올바른 목록 사용
+            # 기본 선택 로직 (이전과 유사하게, 혹은 첫 번째 옵션으로)
             default_acct_col_val = '계정과목' if '계정과목' in tb_account_col_options else \
                                   ('계정 과목' if '계정 과목' in tb_account_col_options else \
                                   (tb_account_col_options[0] if tb_account_col_options else None))
@@ -163,7 +208,7 @@ with tab_comp:
                 options=tb_account_col_options,
                 index=tb_account_col_options.index(default_acct_col_val) if default_acct_col_val and default_acct_col_val in tb_account_col_options else 0,
                 key="tb_account_col_select",
-                help="시산표에서 '합계' 또는 '총계' 텍스트가 있는 열을 선택하세요."
+                help="시산표에서 '합계' 또는 '총계' 텍스트가 있는 열을 선택하세요. (컬럼 목록 업데이트 후 선택)"
             )
         with col_label2:
             tb_total_label_input = st.text_input(
@@ -171,98 +216,88 @@ with tab_comp:
                 help="시산표 맨 아래 합계 행을 나타내는 정확한 텍스트 (예: 합계, 총계)"
             )
 
-        st.markdown("**주요 금액 컬럼 매핑:** (자동 감지 결과를 확인하고 필요시 수정)")
+        # 4. 주요 금액 컬럼 매핑
+        st.markdown("**주요 금액 컬럼 매핑:** (컬럼 목록 업데이트 후, 자동 감지 결과를 확인하고 필요시 수정)")
+
         detected_map = {}
-        if tb_file and st.session_state.tb_cols:
+        # 자동 감지는 컬럼이 성공적으로 로드된 후에만 시도
+        if tb_file and st.session_state.get('tb_cols_load_success', False) and st.session_state.get('tb_cols'):
             try:
-                tb_file.seek(0) # detect_cols를 위해 파일 포인터 초기화
-                temp_tb_df_detect = load_tb(tb_file, tb_header_row, filename=tb_file.name) # load_tb는 difference.py에 있어야 함
-                tb_file.seek(0) # 다른 용도로 사용될 수 있으므로 다시 초기화
-                d_bal, c_bal, d_tot, c_tot = detect_cols(temp_tb_df_detect) # detect_cols는 difference.py에 있어야 함
+                tb_file.seek(0)
+                # 자동 감지 시에도 현재 설정된 헤더 행 번호 사용
+                current_header_for_detect = st.session_state.get("tb_header_input_val", 0)
+                temp_tb_df_detect = load_tb(tb_file, current_header_for_detect, filename=tb_file.name)
+                tb_file.seek(0) # 다음 사용을 위해 포인터 초기화
+
+                d_bal, c_bal, d_tot, c_tot = detect_cols(temp_tb_df_detect) # difference.py의 함수
                 detected_map = {'bal_d': d_bal, 'bal_c': c_bal, 'tot_d': d_tot, 'tot_c': c_tot}
-                st.caption(f"자동 감지 결과: 차변잔액({d_bal}), 대변잔액({c_bal}), 차변합계({d_tot}), 대변합계({c_tot})")
+                st.caption(f"자동 감지 결과 (헤더 {current_header_for_detect} 기준): 차변잔액({d_bal}), 대변잔액({c_bal}), 차변합계({d_tot}), 대변합계({c_tot})")
             except Exception as e_detect:
-                st.warning(f"컬럼 자동 감지 중 오류: {e_detect}. 수동으로 지정해주세요.")
-                if st.checkbox("자동 감지 오류 상세 보기", key="show_detect_error"):
+                st.warning(f"컬럼 자동 감지 중 오류 (헤더 {st.session_state.get('tb_header_input_val', 0)} 기준): {e_detect}. 수동으로 지정해주세요.")
+                if st.checkbox("자동 감지 오류 상세 보기", key="show_detect_error_checkbox"):
                     st.exception(e_detect)
+        elif tb_file: # 파일은 있지만 컬럼 로드가 안된 경우
+            st.caption("컬럼 목록을 먼저 업데이트해야 자동 감지가 실행됩니다.")
 
 
         col_map1, col_map2 = st.columns(2)
-        tb_col_options = st.session_state.get('tb_cols', []) + [None]
+        tb_col_options_for_mapping = st.session_state.get('tb_cols', []) + [None] # None 옵션 추가
 
-        def get_col_index(col_name_to_find):
+        def get_col_index_for_mapping(col_name_to_find):
             try:
-                return tb_col_options.index(col_name_to_find) if col_name_to_find and col_name_to_find in tb_col_options else len(tb_col_options) -1
+                return tb_col_options_for_mapping.index(col_name_to_find) if col_name_to_find and col_name_to_find in tb_col_options_for_mapping else len(tb_col_options_for_mapping) -1 # 못찾으면 None
             except ValueError:
-                return len(tb_col_options) - 1 # 못 찾으면 None (마지막 옵션) 선택
+                return len(tb_col_options_for_mapping) - 1
 
         with col_map1:
-            d_bal_selected = st.selectbox("차변 잔액 열", options=tb_col_options, index=get_col_index(detected_map.get('bal_d')), key="d_bal_select")
-            d_tot_selected = st.selectbox("차변 합계 열", options=tb_col_options, index=get_col_index(detected_map.get('tot_d')), key="d_tot_select")
+            d_bal_selected = st.selectbox("차변 잔액 열", options=tb_col_options_for_mapping, index=get_col_index_for_mapping(detected_map.get('bal_d')), key="d_bal_select_map")
+            d_tot_selected = st.selectbox("차변 합계 열", options=tb_col_options_for_mapping, index=get_col_index_for_mapping(detected_map.get('tot_d')), key="d_tot_select_map")
         with col_map2:
-            c_bal_selected = st.selectbox("대변 잔액 열", options=tb_col_options, index=get_col_index(detected_map.get('bal_c')), key="c_bal_select")
-            c_tot_selected = st.selectbox("대변 합계 열", options=tb_col_options, index=get_col_index(detected_map.get('tot_c')), key="c_tot_select")
+            c_bal_selected = st.selectbox("대변 잔액 열", options=tb_col_options_for_mapping, index=get_col_index_for_mapping(detected_map.get('bal_c')), key="c_bal_select_map")
+            c_tot_selected = st.selectbox("대변 합계 열", options=tb_col_options_for_mapping, index=get_col_index_for_mapping(detected_map.get('tot_c')), key="c_tot_select_map")
 
+        # --- Comparison Execution Button and Logic ---
         st.divider()
-        run_comp_btn = st.button("📊 GL/TB 합계 비교 실행", key="run_comp_map")
+        # 실행 버튼은 모든 필수 파일이 있고, 컬럼 로드가 성공했을 때 활성화되도록 고려 가능
+        is_ready_for_comparison = gl_file and tb_file and st.session_state.get('tb_cols_load_success', False)
+        run_comp_btn = st.button("📊 GL/TB 합계 비교 실행", key="run_comparison_button", disabled=(not is_ready_for_comparison))
 
-        if run_comp_btn:
-            user_tb_col_map = {
-                'bal_d': d_bal_selected, 'bal_c': c_bal_selected,
-                'tot_d': d_tot_selected, 'tot_c': c_tot_selected
-            }
-            if not all(user_tb_col_map.values()) or not tb_account_col_selected or not tb_total_label_input: # 모든 필수값이 선택되었는지 확인
-                st.error("시산표(TB) 설정 및 모든 주요 금액 컬럼(차/대변 잔액, 차/대변 합계)을 올바르게 매핑해주세요.")
+        if run_comp_btn: # 버튼 클릭 시
+            if not is_ready_for_comparison:
+                st.error("GL 파일, TB 파일이 모두 업로드되고, TB 컬럼 목록이 성공적으로 업데이트되어야 비교를 실행할 수 있습니다.")
             else:
-                with st.spinner("GL/TB 비교 분석 중... 잠시만 기다려주세요."):
-                    try:
-                        gl_file.seek(0) # 파일 포인터 초기화
-                        tb_file.seek(0) # 파일 포인터 초기화
-                        ok, (totals, diffs, cols), diff_details_df = verify_gl_tb(
-                            gl_file, tb_file,
-                            header_row=tb_header_row,
-                            tb_col_map=user_tb_col_map,
-                            tb_account_col=tb_account_col_selected,
-                            tb_total_label=tb_total_label_input
-                        )
-                        st.subheader("📈 비교 결과 요약")
-                        if ok: st.success("✅ 검증 성공: GL과 TB의 전체 합계가 일치합니다.")
-                        else: st.error("❌ 검증 실패: GL과 TB의 전체 합계가 불일치합니다.")
+                user_tb_col_map = {
+                    'bal_d': d_bal_selected, 'bal_c': c_bal_selected,
+                    'tot_d': d_tot_selected, 'tot_c': c_tot_selected
+                }
+                # header_row는 위에서 입력받은 tb_header_row_input 또는 세션 상태의 st.session_state.tb_header_input_val 사용
+                actual_header_row_for_verify = st.session_state.get("tb_header_input_val", 0)
 
-                        # 결과 표시 (이 부분은 사용자의 기존 로직을 따르거나 상세 구현 필요)
-                        st.write("#### 총계정원장 (GL) 합계")
-                        st.json(totals['gl']) # 예시: JSON으로 표시
+                if not all(user_tb_col_map.values()) or not tb_account_col_selected or not tb_total_label_input:
+                    st.error("시산표(TB) 설정 및 모든 주요 금액 컬럼(차/대변 잔액, 차/대변 합계), 계정과목 열, 합계 행 식별 텍스트를 올바르게 설정 및 선택해주세요.")
+                else:
+                    with st.spinner("GL/TB 비교 분석 중... 잠시만 기다려주세요."):
+                        try:
+                            gl_file.seek(0)
+                            tb_file.seek(0)
+                            ok, (totals, diffs, cols_from_verify), diff_details_df = verify_gl_tb(
+                                gl_file, tb_file,
+                                header_row=actual_header_row_for_verify, # 수정된 파라미터 이름 사용
+                                tb_col_map=user_tb_col_map,
+                                tb_account_col=tb_account_col_selected,
+                                tb_total_label=tb_total_label_input
+                            )
+                            # ... (이하 결과 표시 로직은 이전과 유사하게 구성) ...
+                            st.subheader("📈 비교 결과 요약")
+                            if ok: st.success("✅ 검증 성공: GL과 TB의 전체 합계가 일치합니다.")
+                            # ... (이하 생략) ...
 
-                        st.write("#### 시산표 (TB) 합계 (사용자 지정 열 기준)")
-                        st.json(totals['tb']) # 예시
-
-                        st.write("#### 차이 (GL - TB)")
-                        st.json(diffs) # 예시
-
-                        # 컬럼 정보 (참고용)
-                        # st.write("#### 사용된 컬럼 정보 (TB)")
-                        # st.json(cols)
-
-                        st.divider()
-                        st.subheader("📝 계정별 상세 차이 내역")
-                        if diff_details_df is not None and not diff_details_df.empty:
-                            st.warning(f"{len(diff_details_df)}개 계정에서 GL과 TB 간 금액 차이가 발견되었습니다.")
-                            st.dataframe(diff_details_df.style.format({
-                                col: '{:,.0f}' for col in diff_details_df.select_dtypes(include='number').columns
-                            }), use_container_width=True)
-                        elif ok: # 전체 합계는 맞았지만, 상세 내역이 비어있는 경우 (모든 계정 일치)
-                            st.success("✅ 모든 계정에서 GL과 TB 간 금액이 일치합니다 (또는 허용 오차 내).")
-                        else: # 전체 합계가 틀렸고, 상세 내역도 없는 경우 (분석 로직 확인 필요)
-                             st.info("상세 차이 내역이 없습니다. verify_gl_tb 함수의 반환값을 확인해주세요.")
-
-
-                    except FileNotFoundError as e: st.error(f"파일 처리 오류: {e}")
-                    except ValueError as e: st.error(f"데이터 처리 오류: {e}")
-                    except Exception as e:
-                        st.error(f"GL/TB 비교 중 예상치 못한 오류 발생: {e}")
-                        st.exception(e)
-
-
+                        except FileNotFoundError as e_fnf: st.error(f"파일 처리 오류: {e_fnf}")
+                        except ValueError as e_val: st.error(f"데이터 처리 오류: {e_val}")
+                        except Exception as e_generic:
+                            st.error(f"GL/TB 비교 중 예상치 못한 오류 발생: {e_generic}")
+                            st.exception(e_generic)
+                            
 # --- Tab 2: Journal Entry Test ---
 with tab_jet:
     if not JET_AVAILABLE:
