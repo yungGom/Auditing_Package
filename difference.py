@@ -123,7 +123,7 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
            tb_path: str | Path | io.BytesIO | io.StringIO,
            header_row: int,
            tb_col_map: dict[str, str],
-           tb_account_col: str,
+           tb_account_col: str,    # TB에서 계정 식별자로 사용자가 선택한 열 이름
            tb_total_label: str
            ) -> tuple[bool, tuple, pd.DataFrame | None]:
     gl = load_gl(gl_path)
@@ -133,33 +133,37 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
     c_bal_col = tb_col_map.get('bal_c')
     d_tot_col = tb_col_map.get('tot_d')
     c_tot_col = tb_col_map.get('tot_c')
-    account_col_name = tb_account_col
-    total_label = tb_total_label
+    # tb_account_col 은 사용자가 TB에서 계정을 식별하기 위해 선택한 열 (예: TB의 '계정과목' 열)
+    # total_label 은 TB의 합계 행을 식별하는 텍스트
 
     print(f"[INFO] 사용자가 지정한 시산표 열: 차_잔액='{d_bal_col}', 대_잔액='{c_bal_col}', 차_합계='{d_tot_col}', 대_합계='{c_tot_col}'")
-    print(f"[INFO] 사용할 계정과목 열: '{account_col_name}', 합계 행 레이블: '{total_label}'")
+    print(f"[INFO] 사용할 TB 계정과목 열: '{tb_account_col}', 합계 행 레이블: '{tb_total_label}'")
 
     required_cols_map_keys = {'bal_d': d_bal_col, 'bal_c': c_bal_col, 'tot_d': d_tot_col, 'tot_c': c_tot_col}
-    if None in required_cols_map_keys.values() or account_col_name is None or total_label is None:
+    if None in required_cols_map_keys.values() or tb_account_col is None or tb_total_label is None:
         missing = [k for k, v in required_cols_map_keys.items() if v is None]
-        if account_col_name is None: missing.append('계정과목 열')
-        if total_label is None: missing.append('합계 행 레이블')
+        if tb_account_col is None: missing.append('TB 계정과목 열')
+        if tb_total_label is None: missing.append('TB 합계 행 레이블')
         raise ValueError(f"다음 필수 정보가 누락되었습니다: {', '.join(missing)}. Streamlit 앱에서 해당 설정을 확인하세요.")
 
-    check_cols_exist = [d_bal_col, c_bal_col, d_tot_col, c_tot_col, account_col_name]
-    for col in check_cols_exist:
+    check_cols_exist_in_tb = [d_bal_col, c_bal_col, d_tot_col, c_tot_col, tb_account_col]
+    for col in check_cols_exist_in_tb:
         if col not in tb.columns:
             print(f"[DEBUG] 사용 가능한 시산표 컬럼: {tb.columns.tolist()}")
-            raise ValueError(f"지정된 열 '{col}'이(가) 로드된 시산표 DataFrame에 없습니다. 헤더 행 번호나 열 매핑을 확인하세요.")
+            raise ValueError(f"지정된 시산표 열 '{col}'이(가) 로드된 시산표 DataFrame에 없습니다. 헤더 행 번호나 열 매핑을 확인하세요.")
+
+    # GL의 '차변금액', '대변금액' 열 존재 확인 (sum_col 함수 내부에서도 확인하지만, 미리 명시적 확인 가능)
+    if '차변금액' not in gl.columns or '대변금액' not in gl.columns:
+        raise ValueError(f"총계정원장(GL) 파일에 '차변금액' 또는 '대변금액' 열이 없습니다. GL 파일 형식을 확인해주세요. 현재 GL 컬럼: {gl.columns.tolist()}")
 
     gl_d_total = sum_col(gl, "차변금액")
     gl_c_total = sum_col(gl, "대변금액")
 
-    total_rows = tb[tb[account_col_name].astype(str).str.strip() == total_label]
+    total_rows = tb[tb[tb_account_col].astype(str).str.strip() == tb_total_label.strip()]
     if total_rows.empty:
-        raise ValueError(f"시산표 '{account_col_name}' 열에서 '{total_label}' 텍스트를 가진 합계 행을 찾지 못했습니다.")
+        raise ValueError(f"시산표의 '{tb_account_col}' 열에서 '{tb_total_label}' 텍스트를 가진 합계 행을 찾지 못했습니다.")
     total_row_index = total_rows.index[0]
-    print(f"[INFO] 시산표에서 '{total_label}' 행 (인덱스 {total_row_index})을 찾았습니다.")
+    print(f"[INFO] 시산표에서 '{tb_total_label}' 행 (인덱스 {total_row_index})을 찾았습니다.")
 
     def to_numeric_safe(val): return pd.to_numeric(str(val).replace(",", ""), errors='coerce')
     tb_d_bal_total = to_numeric_safe(tb.loc[total_row_index, d_bal_col])
@@ -168,192 +172,210 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
     tb_c_tot_total = to_numeric_safe(tb.loc[total_row_index, c_tot_col])
 
     if pd.isna(tb_d_bal_total) or pd.isna(tb_c_bal_total) or pd.isna(tb_d_tot_total) or pd.isna(tb_c_tot_total):
-           raise ValueError(f"시산표 합계 행(인덱스:{total_row_index})의 값을 숫자로 변환할 수 없습니다.")
+           raise ValueError(f"시산표 합계 행(인덱스:{total_row_index})의 값을 숫자로 변환할 수 없습니다. 해당 행의 금액 열 값을 확인해주세요.")
 
     is_ok_gl_diff = abs(gl_d_total - gl_c_total) <= TOL
     is_ok_tb_tot_diff = abs(tb_d_tot_total - tb_c_tot_total) <= TOL
     is_ok_d_match = abs(gl_d_total - tb_d_tot_total) <= TOL
     is_ok_c_match = abs(gl_c_total - tb_c_tot_total) <= TOL
     is_overall_ok = is_ok_gl_diff and is_ok_tb_tot_diff and is_ok_d_match and is_ok_c_match
-    print(f"[INFO] 4-Way (GL합계=TB합계) 일치 여부: {is_overall_ok}")
+    print(f"[INFO] 전체 합계 검증 (GL 차대일치, TB 차대일치, GL-TB 차변일치, GL-TB 대변일치) 결과: {is_overall_ok}")
 
-    print("[INFO] 계정별 상세 비교 시작...")
+    # --- 계정별 상세 비교 로직 시작 ---
+    print("-" * 50)
+    print("DEBUG difference.py: 계정별 상세 비교 시작 - grouping_key 결정 로직 (버전 20250530_Final)")
+    
+    if not hasattr(gl, 'columns'): # GL이 DataFrame이 아니거나 columns 속성이 없는 경우
+        raise ValueError("GL 데이터가 올바르게 DataFrame으로 로드되지 않았습니다 (컬럼 정보 없음). load_gl 함수를 확인하세요.")
+    if not gl.columns.tolist(): # 컬럼 리스트가 비어있는 경우
+        raise ValueError(f"GL 파일에서 열 이름을 읽어오지 못했습니다. GL 파일의 헤더 행을 확인하거나 load_gl 함수를 점검하세요. (현재 인식된 컬럼: {gl.columns.tolist()})")
 
-    # difference.py의 verify 함수 내, 기존 print("[INFO] 계정별 상세 비교 시작...") 다음 줄부터 수정 또는 추가
+    print(f"DEBUG: GL 원본 컬럼명: {gl.columns.tolist()}")
+    gl_columns_stripped_map = {col.strip().upper() : col for col in gl.columns} # 대소문자 구분 없이, 공백 제거된 이름과 원본 이름 매핑
+    print(f"DEBUG: GL 컬럼명 (공백제거, 대문자화된 키): {list(gl_columns_stripped_map.keys())}")
 
-    print("-" * 50) # 눈에 잘 띄도록 구분선 추가
-    print("DEBUG difference.py: verify 함수 진입 - grouping_key 결정 로직 시작 (버전 20250530_A)") # 고유한 버전/날짜 태그 추가
-    print(f"DEBUG: 현재 gl.columns: {gl.columns.tolist()}") # 실제 로드된 GL의 열 이름들 확인
-
-    # GL에서 사용할 계정 식별자 열 이름 찾기
-    gl_account_code_col = None
+    gl_actual_code_col_name = None # GL에 실제 존재하는 계정코드 열 이름 (공백 등 포함 가능)
     possible_code_names = ['계정코드', '계정과목코드', 'ACCT_CODE', 'ACCT_CD']
-    for name in possible_code_names:
-        if name in gl.columns:
-            gl_account_code_col = name
-            print(f"DEBUG: gl_account_code_col 후보 '{name}' 발견됨.")
+    for name_candidate in possible_code_names:
+        if name_candidate.upper() in gl_columns_stripped_map: # 대소문자 구분 없이, 공백 제거된 이름으로 비교
+            gl_actual_code_col_name = gl_columns_stripped_map[name_candidate.upper()] # 매핑된 원본 이름 사용
+            print(f"DEBUG: GL 계정코드 열로 '{gl_actual_code_col_name}' (원본이름) 찾음 (후보: '{name_candidate}')")
             break
 
-    gl_account_name_col = None
+    gl_actual_name_col_name = None # GL에 실제 존재하는 계정과목명 열 이름
     possible_name_names = ['계정과목', '계정과목명', '계정명', 'ACCT_NAME', 'ACCT_NM']
-    for name in possible_name_names:
-        if name in gl.columns:
-            gl_account_name_col = name
-            print(f"DEBUG: gl_account_name_col 후보 '{name}' 발견됨.")
+    for name_candidate in possible_name_names:
+        if name_candidate.upper() in gl_columns_stripped_map:
+            gl_actual_name_col_name = gl_columns_stripped_map[name_candidate.upper()]
+            print(f"DEBUG: GL 계정과목명 열로 '{gl_actual_name_col_name}' (원본이름) 찾음 (후보: '{name_candidate}')")
             break
 
-    grouping_key = None # 초기화
-    if gl_account_code_col:
-        grouping_key = gl_account_code_col
-        print(f"DEBUG: 최종 grouping_key로 '{grouping_key}' (계정코드 우선) 선택됨.")
-    elif gl_account_name_col:
-        grouping_key = gl_account_name_col
-        print(f"DEBUG: 최종 grouping_key로 '{grouping_key}' (계정과목명 사용) 선택됨.")
+    grouping_key_for_gl = None # GL 그룹화에 사용할 실제 열 이름
+    standard_key_type_for_gl = None # 'code' 또는 'name' (논리적 타입)
+
+    if gl_actual_code_col_name:
+        grouping_key_for_gl = gl_actual_code_col_name
+        standard_key_type_for_gl = 'code'
+    elif gl_actual_name_col_name:
+        grouping_key_for_gl = gl_actual_name_col_name
+        standard_key_type_for_gl = 'name'
     else:
-        print("DEBUG: GL에서 적합한 계정코드 또는 계정과목 열을 찾지 못함! ValueError 발생 전.")
+        print("DEBUG: GL에서 적합한 계정코드 또는 계정과목 열을 찾지 못했습니다! ValueError 발생 직전.")
         raise ValueError("총계정원장(GL) 파일에서 계정 식별을 위한 '계정코드' 또는 '계정과목' 관련 열을 찾을 수 없습니다. "
                          "GL 파일의 열 이름을 확인하거나, 프로그램 코드(difference.py)의 열 이름 후보 리스트를 확인해주세요.")
-
-    print(f"DEBUG: gl.groupby에 사용될 최종 grouping_key: '{grouping_key}'")
+    
+    print(f"DEBUG: GL 그룹화에 사용될 최종 키: '{grouping_key_for_gl}' (타입: {standard_key_type_for_gl})")
     print("-" * 50)
 
-    # GL 데이터 집계 (이 부분에서 오류 발생)
-    gl_summary = gl.groupby(grouping_key).agg(
-        GL_차변합계=('차변금액', 'sum'),
-        GL_대변합계=('대변금액', 'sum')
-    ).reset_index()
-    # ... 이하 기존 코드 ...
-
-    # GL에서 사용할 계정 식별자 열 이름 찾기
-    gl_account_code_col = None
-    possible_code_names = ['계정코드', '계정과목코드', 'ACCT_CODE'] # 일반적인 계정코드 열 이름 후보
-    for name in possible_code_names:
-        if name in gl.columns:
-            gl_account_code_col = name
-            break
-
-    gl_account_name_col = None
-    possible_name_names = ['계정과목', '계정과목명', '계정명', 'ACCT_NAME'] # 일반적인 계정과목명 열 이름 후보
-    for name in possible_name_names:
-        if name in gl.columns:
-            gl_account_name_col = name
-            break
-
-    # 그룹화 키 설정 (계정코드가 있으면 우선 사용, 없으면 계정과목명 사용)
-    if gl_account_code_col:
-        grouping_key = gl_account_code_col
-        print(f"[INFO] GL 그룹화 기준으로 '{grouping_key}' 열을 사용합니다.")
-    elif gl_account_name_col:
-        grouping_key = gl_account_name_col
-        print(f"[INFO] GL 그룹화 기준으로 '{grouping_key}' 열을 사용합니다. (계정코드 열 없음)")
-    else:
-        # 두 가지 주요 식별자 열이 모두 없는 경우 오류 발생
-        raise ValueError("총계정원장(GL) 파일에서 계정 식별을 위한 '계정코드' 또는 '계정과목' 관련 열을 찾을 수 없습니다. "
-                         "GL 파일의 열 이름을 확인하거나, 프로그램 코드(difference.py)의 열 이름 후보 리스트를 확인해주세요.")
-
-    # GL 데이터 집계
-    gl_summary = gl.groupby(grouping_key).agg(
+    # GL 데이터 집계 (실제 존재하는 열 이름으로 그룹화)
+    gl_summary = gl.groupby(grouping_key_for_gl).agg(
         GL_차변합계=('차변금액', 'sum'),
         GL_대변합계=('대변금액', 'sum')
     ).reset_index()
     gl_summary['GL_잔액'] = gl_summary['GL_차변합계'] - gl_summary['GL_대변합계']
 
-    # 만약 계정코드로 그룹화했고, 계정과목명 열도 있다면, 계정과목명을 gl_summary에 추가
-    if grouping_key == gl_account_code_col and gl_account_name_col and gl_account_name_col in gl.columns:
-        # 계정코드에 해당하는 계정과목명을 매핑하기 위해 중복 제거된 맵 생성
-        account_name_map_df = gl[[gl_account_code_col, gl_account_name_col]].drop_duplicates(subset=[gl_account_code_col])
-        gl_summary = pd.merge(gl_summary, account_name_map_df, on=gl_account_code_col, how='left')
-        # 만약 계정과목명 열 이름이 '계정과목'이 아니라면, '계정과목'으로 통일 (TB와 병합 위해)
-        if gl_account_name_col != '계정과목' and '계정과목' not in gl_summary.columns: # 이미 '계정과목'이 없을 때만 이름 변경
-             gl_summary.rename(columns={gl_account_name_col: '계정과목'}, inplace=True)
-    elif grouping_key == gl_account_name_col and gl_account_name_col != '계정과목' and '계정과목' not in gl_summary.columns:
-        # 계정과목명으로 그룹화했는데, 그 이름이 '계정과목'이 아닐 경우 통일
-        gl_summary.rename(columns={gl_account_name_col: '계정과목'}, inplace=True)
+    # gl_summary에 표준 '계정과목' 열 추가 (TB와 병합 용도)
+    # grouping_key_for_gl이 실제 계정코드 열 이름, gl_actual_name_col_name이 실제 계정과목명 열 이름
+    if standard_key_type_for_gl == 'code':
+        if gl_actual_name_col_name and gl_actual_name_col_name in gl.columns: # GL에 계정과목명 열이 실제로 존재하면
+            # 계정코드에 해당하는 계정과목명 매핑 (grouping_key_for_gl은 실제 코드열 이름)
+            account_map_df = gl[[grouping_key_for_gl, gl_actual_name_col_name]].drop_duplicates(subset=[grouping_key_for_gl])
+            gl_summary = pd.merge(gl_summary, account_map_df, on=grouping_key_for_gl, how='left')
+            # 새로 추가된 계정과목명 열의 이름을 '계정과목'으로 표준화 (만약 이미 '계정과목'이 없다면)
+            if gl_actual_name_col_name != '계정과목' and '계정과목' not in gl_summary.columns:
+                gl_summary.rename(columns={gl_actual_name_col_name: '계정과목'}, inplace=True)
+            elif '계정과목' not in gl_summary.columns and gl_actual_name_col_name == '계정과목': # 이미 이름이 '계정과목'인 경우
+                pass # 이미 '계정과목' 열이 존재 (gl_actual_name_col_name 자체가 '계정과목'인 경우)
+        else: # 계정코드만 있고, GL 파일에서 계정과목명 정보를 가져올 수 없을 때
+            print(f"[WARNING] GL 파일에서 계정과목명 정보를 찾을 수 없어, '{grouping_key_for_gl}' (코드) 열을 '계정과목'으로 간주하여 병합을 시도합니다.")
+            if grouping_key_for_gl != '계정과목' and '계정과목' not in gl_summary.columns:
+                 gl_summary.rename(columns={grouping_key_for_gl: '계정과목'}, inplace=True)
 
-
-    # TB와 병합(merge) 시 사용할 GL의 키 결정
-    # (TB는 보통 '계정과목' 또는 '계정코드'로 병합 시도. '계정과목'을 우선시하도록 수정)
+    elif standard_key_type_for_gl == 'name': # 계정과목명으로 그룹화한 경우
+        if grouping_key_for_gl != '계정과목' and '계정과목' not in gl_summary.columns:
+            gl_summary.rename(columns={grouping_key_for_gl: '계정과목'}, inplace=True)
+    
+    # TB와 병합 시 사용할 GL의 키 (우선 '계정과목', 없으면 grouping_key_for_gl 사용)
     if '계정과목' in gl_summary.columns:
-        merge_key_gl = '계정과목'
-    elif grouping_key in gl_summary.columns: # 계정과목 열이 생성 안됐으면 grouping_key 사용
-        merge_key_gl = grouping_key
-    else: # 비상 상황 (거의 발생 안 함)
-        raise ValueError("GL 요약 데이터에서 TB와 병합할 기준열을 결정할 수 없습니다.")
+        merge_key_gl_for_tb = '계정과목'
+    elif grouping_key_for_gl in gl_summary.columns: # '계정과목'으로 rename되지 않은 경우 (예: 코드만 있는 GL)
+        merge_key_gl_for_tb = grouping_key_for_gl
+    else:
+        raise ValueError(f"GL 요약 데이터에서 TB와 병합할 기준열을 결정할 수 없습니다. (gl_summary 컬럼: {gl_summary.columns.tolist()})")
+    
+    print(f"DEBUG: GL 요약본과 TB 비교 데이터 병합 시 사용할 GL 키: '{merge_key_gl_for_tb}'")
 
-    # ... (이후 코드에서 tb_comparison_data와 병합 시 merge_key_gl 사용) ...
-    # 예: merged_df = pd.merge(gl_summary, tb_comparison_data, left_on=merge_key_gl, ...)
-    # 이 부분과 최종 출력 컬럼명 지정 시 '계정과목' 또는 '계정코드'가 일관되게 사용되도록 확인 필요.
-    # final_account_col_name 설정 부분도 이 변경사항을 고려해야 합니다.
-    tb_data = tb[tb[account_col_name].astype(str).str.strip() != total_label].copy()
+
+    # --- TB 데이터 처리 ---
+    tb_data = tb[tb[tb_account_col].astype(str).str.strip() != tb_total_label.strip()].copy()
     tb_data['TB_차변잔액'] = tb_data[d_bal_col].apply(to_numeric_safe).fillna(0)
     tb_data['TB_대변잔액'] = tb_data[c_bal_col].apply(to_numeric_safe).fillna(0)
     tb_data['TB_차변합계'] = tb_data[d_tot_col].apply(to_numeric_safe).fillna(0)
     tb_data['TB_대변합계'] = tb_data[c_tot_col].apply(to_numeric_safe).fillna(0)
-    tb_data['TB_잔액'] = tb_data['TB_차변잔액'] - tb_data['TB_대변잔액'] # 잔액 계산 시 TB의 잔액 열을 사용 또는 합계 열로 계산
+    tb_data['TB_잔액'] = tb_data['TB_차변잔액'] - tb_data['TB_대변잔액']
 
-    tb_comparison_data = tb_data[[account_col_name, 'TB_차변잔액', 'TB_대변잔액', 'TB_차변합계', 'TB_대변합계', 'TB_잔액']].copy()
-    merge_key_tb = account_col_name
+    # TB 비교용 데이터 준비 (사용자가 지정한 tb_account_col을 기준으로 함)
+    tb_comparison_data = tb_data[[tb_account_col, 'TB_차변잔액', 'TB_대변잔액', 'TB_차변합계', 'TB_대변합계', 'TB_잔액']].copy()
+    merge_key_tb = tb_account_col # 사용자가 선택한 TB의 계정과목(또는 코드) 열 이름
 
-    merge_key_gl = '계정과목' if grouping_key == '계정코드' and '계정과목' in gl_summary.columns else grouping_key
-    gl_summary[merge_key_gl] = gl_summary[merge_key_gl].astype(str).str.strip()
-    tb_comparison_data[merge_key_tb] = tb_comparison_data[merge_key_tb].astype(str).str.strip()
+    # 병합 전 키 값들의 타입 통일 및 공백 제거
+    if merge_key_gl_for_tb in gl_summary.columns:
+        gl_summary[merge_key_gl_for_tb] = gl_summary[merge_key_gl_for_tb].astype(str).str.strip()
+    else:
+        raise ValueError(f"병합 키 '{merge_key_gl_for_tb}'가 gl_summary에 없습니다. 컬럼: {gl_summary.columns.tolist()}")
 
-    merged_df = pd.merge(gl_summary, tb_comparison_data, left_on=merge_key_gl, right_on=merge_key_tb, how='outer')
-    numeric_cols_fill = ['GL_차변합계', 'GL_대변합계', 'GL_잔액', 'TB_차변잔액', 'TB_대변잔액', 'TB_차변합계', 'TB_대변합계', 'TB_잔액']
-    for col in numeric_cols_fill:
-        if col in merged_df.columns: merged_df[col] = merged_df[col].fillna(0)
-        else: merged_df[col] = 0
+    if merge_key_tb in tb_comparison_data.columns:
+        tb_comparison_data[merge_key_tb] = tb_comparison_data[merge_key_tb].astype(str).str.strip()
+    else:
+        raise ValueError(f"병합 키 '{merge_key_tb}'가 tb_comparison_data에 없습니다. 컬럼: {tb_comparison_data.columns.tolist()}")
+    
+    print(f"DEBUG: 병합 시도: GL키='{merge_key_gl_for_tb}', TB키='{merge_key_tb}'")
+    merged_df = pd.merge(gl_summary, tb_comparison_data, left_on=merge_key_gl_for_tb, right_on=merge_key_tb, how='outer')
 
-    final_account_col_name = '계정과목명' # 최종 출력에 사용할 계정과목 이름 (혹은 계정코드)
-    # GL에서 가져온 계정과목명을 우선 사용하고, 없으면 TB에서 가져온 것을 사용, 그래도 없으면 키 자체를 사용
-    if '계정과목' in merged_df.columns: # GL에서 온 '계정과목' (grouping_key가 '계정코드'였을 경우 join됨)
-        merged_df[final_account_col_name] = merged_df['계정과목']
-    elif merge_key_gl in merged_df.columns and merge_key_gl != final_account_col_name : # GL의 키가 계정과목이 아니었을 경우
-         merged_df[final_account_col_name] = merged_df[merge_key_gl]
-    elif merge_key_tb in merged_df.columns and merge_key_tb != final_account_col_name: # TB의 키
-         merged_df[final_account_col_name] = merged_df[merge_key_tb]
-    else: # 둘 다 없거나 이미 final_account_col_name인 경우 (예외적)
-        merged_df[final_account_col_name] = merged_df.index.astype(str) # 임시로 인덱스 사용
+    # 숫자 열 NaN 값 0으로 채우기
+    numeric_cols_to_fill = ['GL_차변합계', 'GL_대변합계', 'GL_잔액', 'TB_차변잔액', 'TB_대변잔액', 'TB_차변합계', 'TB_대변합계', 'TB_잔액']
+    for col in numeric_cols_to_fill:
+        if col in merged_df.columns:
+            merged_df[col] = merged_df[col].fillna(0)
+        else: # 병합 과정에서 열이 생성 안된 경우 (이론상 발생 안해야 함)
+            merged_df[col] = 0
+            print(f"[WARNING] 병합 후 '{col}' 열이 없어 0으로 생성합니다.")
 
-    # 사용된 키 컬럼들 정리 (final_account_col_name 제외)
-    cols_to_drop = []
-    if merge_key_gl in merged_df.columns and merge_key_gl != final_account_col_name: cols_to_drop.append(merge_key_gl)
-    if merge_key_tb in merged_df.columns and merge_key_tb != final_account_col_name: cols_to_drop.append(merge_key_tb)
-    if '계정과목' in merged_df.columns and '계정과목' != final_account_col_name: cols_to_drop.append('계정과목') # GL의 계정과목이 최종 이름이 아닐경우
-    merged_df.drop(columns=list(set(cols_to_drop)), inplace=True, errors='ignore')
+    # 최종 출력용 계정과목 열 이름 설정 ('계정명' 또는 '계정과목' 등으로 통일)
+    # 최종적으로 사용할 계정과목 열 이름 (예: '계정과목명_표시용')
+    final_display_account_col = '계정과목_결과'
+
+    # merged_df에 어떤 계정 이름/코드 열이 있는지 확인하고 최종 표시용 열 생성
+    if '계정과목' in merged_df.columns: # 표준 '계정과목' 열이 있다면 그것을 사용
+        merged_df[final_display_account_col] = merged_df['계정과목']
+    elif merge_key_gl_for_tb in merged_df.columns and merge_key_gl_for_tb != merge_key_tb : # GL키가 최종 계정과목으로 사용될 수 있는 경우
+        merged_df[final_display_account_col] = merged_df[merge_key_gl_for_tb]
+    elif merge_key_tb in merged_df.columns: # TB키가 최종 계정과목으로 사용될 수 있는 경우
+        merged_df[final_display_account_col] = merged_df[merge_key_tb]
+    else: # 위 모든 경우가 해당 안되면, 임시로 인덱스 사용 (문제 상황)
+        print(f"[ERROR] 최종 표시용 계정과목 열을 merged_df에서 찾을 수 없습니다. 컬럼: {merged_df.columns.tolist()}")
+        merged_df[final_display_account_col] = "알수없는_계정"
+
+
+    # 중복되거나 불필요한 원본 키 열들 정리 (final_display_account_col과 다른 경우)
+    cols_to_potentially_drop = []
+    if merge_key_gl_for_tb in merged_df.columns and merge_key_gl_for_tb != final_display_account_col:
+        cols_to_potentially_drop.append(merge_key_gl_for_tb)
+    if merge_key_tb in merged_df.columns and merge_key_tb != final_display_account_col:
+        cols_to_potentially_drop.append(merge_key_tb)
+    if '계정과목' in merged_df.columns and '계정과목' != final_display_account_col: # 표준 '계정과목' 열이 최종 표시용이 아닐 경우
+         cols_to_potentially_drop.append('계정과목')
+    if grouping_key_for_gl in merged_df.columns and grouping_key_for_gl != final_display_account_col: # 원본 GL 그룹핑 키
+         cols_to_potentially_drop.append(grouping_key_for_gl)
+
+    merged_df.drop(columns=list(set(cols_to_potentially_drop)), inplace=True, errors='ignore')
 
 
     merged_df['차이_차변합계'] = merged_df['GL_차변합계'] - merged_df['TB_차변합계']
     merged_df['차이_대변합계'] = merged_df['GL_대변합계'] - merged_df['TB_대변합계']
-    merged_df['차이_잔액'] = merged_df['GL_잔액'] - merged_df['TB_잔액'] # GL 잔액과 TB 잔액 비교
+    merged_df['차이_잔액'] = merged_df['GL_잔액'] - merged_df['TB_잔액']
 
     discrepancy_df = merged_df[
         (merged_df['차이_차변합계'].abs() > TOL) |
         (merged_df['차이_대변합계'].abs() > TOL) |
-        (merged_df['차이_잔액'].abs() > TOL) # 잔액 차이도 확인
+        (merged_df['차이_잔액'].abs() > TOL)
     ].copy()
 
     if not discrepancy_df.empty:
         print(f"[INFO] {len(discrepancy_df)}개 계정에서 차이 발견.")
-        output_columns_list = [final_account_col_name]
-        if grouping_key == '계정코드' and '계정코드' in discrepancy_df.columns: output_columns_list.append('계정코드')
-        output_columns_list.extend(['GL_차변합계', 'TB_차변합계', '차이_차변합계',
-                                   'GL_대변합계', 'TB_대변합계', '차이_대변합계',
-                                   'GL_잔액', 'TB_잔액', '차이_잔액'])
-        final_output_columns_ordered = [col for col in output_columns_list if col in discrepancy_df.columns]
-        discrepancy_df = discrepancy_df[final_output_columns_ordered]
-    else:
-        print("[INFO] 모든 계정에서 GL과 TB 간 금액이 일치합니다.")
-        discrepancy_df = pd.DataFrame() # None 대신 빈 DataFrame 반환
+        # 출력 컬럼 순서 및 이름 정리
+        output_columns_order = [final_display_account_col] # 최종 표시용 계정과목 열을 가장 앞에
+        
+        # gl_summary에 원본 계정코드 열(grouping_key_for_gl)이 있고, 그것이 코드 타입이었다면 추가
+        if standard_key_type_for_gl == 'code' and grouping_key_for_gl in discrepancy_df.columns and grouping_key_for_gl != final_display_account_col:
+            output_columns_order.append(grouping_key_for_gl) # 원본 코드 열 추가
+            # 만약 원본 코드 열 이름이 '계정코드'가 아니라면, '계정코드'로 별칭 부여도 고려 가능
+            if grouping_key_for_gl != '계정코드' and '계정코드' not in discrepancy_df.columns:
+                discrepancy_df.rename(columns={grouping_key_for_gl: '계정코드_원본'}, inplace=True) # 임시로 원본 명시
+                if '계정코드_원본' not in output_columns_order: output_columns_order.insert(1, '계정코드_원본')
 
-    # --- 7. 최종 반환값 구성 --- 
+
+        common_cols = ['GL_차변합계', 'TB_차변합계', '차이_차변합계',
+                       'GL_대변합계', 'TB_대변합계', '차이_대변합계',
+                       'GL_잔액', 'TB_잔액', '차이_잔액']
+        output_columns_order.extend(common_cols)
+        
+        # 실제 discrepancy_df에 있는 열들만으로 최종 순서 구성
+        final_ordered_cols = [col for col in output_columns_order if col in discrepancy_df.columns]
+        # 추가로 존재할 수 있는 다른 열들도 포함 (순서상 뒤로)
+        # for col in discrepancy_df.columns:
+        #     if col not in final_ordered_cols:
+        #         final_ordered_cols.append(col)
+        discrepancy_df = discrepancy_df[final_ordered_cols]
+    else:
+        print("[INFO] 모든 계정에서 GL과 TB 간 금액이 일치합니다 (허용 오차 내).")
+        discrepancy_df = pd.DataFrame() # 빈 DataFrame 반환 일관성 유지
+
+    # --- 최종 반환값 구성 ---
     grand_totals = {
-        'gl_d': float(gl_d_total),
-        'gl_c': float(gl_c_total),
-        'tb_bal_d': float(tb_d_bal_total),
-        'tb_bal_c': float(tb_c_bal_total),
-        'tb_tot_d': float(tb_d_tot_total),
-        'tb_tot_c': float(tb_c_tot_total),
+        'gl_d': float(gl_d_total), 'gl_c': float(gl_c_total),
+        'tb_bal_d': float(tb_d_bal_total), 'tb_bal_c': float(tb_c_bal_total),
+        'tb_tot_d': float(tb_d_tot_total), 'tb_tot_c': float(tb_c_tot_total),
     }
     grand_diffs = {
         'Δ_GL': float(gl_d_total - gl_c_total),
@@ -362,9 +384,8 @@ def verify(gl_path: str | Path | io.BytesIO | io.StringIO,
         'Δ_GLd_TBtotd': float(gl_d_total - tb_d_tot_total),
         'Δ_GLc_TBtotc': float(gl_c_total - tb_c_tot_total),
     }
-    # detected_cols_info는 사용자 지정 컬럼맵(tb_col_map)을 그대로 사용
     return is_overall_ok, (grand_totals, grand_diffs, tb_col_map), discrepancy_df
-
+               
 def _parse_args():
     """CLI 인자를 파싱한다 (Streamlit에서는 사용되지 않음)."""
     parser = argparse.ArgumentParser(description="GL-TB 합계 비교 유틸리티")
