@@ -20,97 +20,17 @@ import pandas as pd
 import streamlit as st
 import traceback # 에러 상세 출력을 위해 추가
 
-# -------------------------------------------------------------------
-# Import analysis utilities
-# -------------------------------------------------------------------
-
-# --- 1. Original Journal Entry Test Functions ---
+# difference.py의 detect_cols 함수도 import 필요 (초기 제안용)
 try:
-    from journal_entry_test import (
-        _load_gl as load_gl_jet,
-        scenario1_keyword,
-        scenario2_account_code,
-        scenario3_abnormal_sales,
-        scenario4_rare_accounts,
-        scenario5_rare_users,
-        scenario6_weekend_holiday,
-        scenario7_repeating_digits,
-        scenario8_round_numbers,
-    )
-    JET_AVAILABLE = True
-except ImportError:
-    JET_AVAILABLE = False
-    st.error("journal_entry_test.py 파일을 찾을 수 없습니다. 분개 테스트 기능을 사용할 수 없습니다.")
-
-# --- 2. GL vs TB Comparison Functions ---
-try:
-    from difference import verify as verify_gl_tb
+    from difference import verify as verify_gl_tb, detect_cols
     COMP_AVAILABLE = True
 except ImportError:
     COMP_AVAILABLE = False
+    #에러 메시지는 탭 안에서 표시
 
 # -------------------------------------------------------------------
-# Streamlit App Configuration and Title
+# Import analysis utilities
 # -------------------------------------------------------------------
-st.set_page_config(page_title="Journal Entry Test", layout="wide")
-
-st.title("Journal Entry Test")
-st.caption("총계정원장-시산표 비교 및 분개 테스트 자동화 기능을 제공합니다.")
-
-
-# -------------------------------------------------------------------
-# File Uploaders
-# -------------------------------------------------------------------
-st.divider()
-st.subheader("📂 파일 업로드")
-col1_upload, col2_upload = st.columns(2)
-with col1_upload:
-    gl_file = st.file_uploader("1. 총계정원장 (GL) 파일", type=["xlsx", "xls", "csv"], key="gl_file_uploader")
-with col2_upload:
-    tb_file = st.file_uploader("2. 시산표 (TB) 파일 (GL/TB 비교용)", type=["xlsx", "csv"], key="tb_file_uploader")
-st.divider()
-
-
-# -------------------------------------------------------------------
-# Sidebar Definition (★★★★★ 위치 이동됨 ★★★★★)
-# -------------------------------------------------------------------
-# 사이드바 정의를 탭 로직보다 먼저 실행되도록 이곳으로 이동
-with st.sidebar:
-    st.header("⚙️ 분개 테스트 설정")
-    st.markdown("*(이 설정은 '2️⃣ 분개 테스트' 탭에만 적용됩니다)*")
-    st.markdown("---")
-    # 이제 여기서 정의된 변수들이 탭 안에서 사용될 때 에러가 발생하지 않습니다.
-    keywords = st.text_input("🔍 키워드(쉼표 구분)", key="jet_keywords")
-    account_codes = st.text_input("📁 계정코드(쉼표 구분)", key="jet_accounts")
-
-    st.markdown("---")
-    st.subheader("기간 & 빈도")
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("시작일", value=None, key="jet_start_date")
-    with col2:
-        end_date = st.date_input("종료일", value=None, key="jet_end_date")
-
-    freq_account = st.number_input("희귀 계정 기준(미만)", min_value=1, value=5, step=1, key="jet_freq_acc")
-    freq_user = st.number_input("희귀 입력자 기준(미만)", min_value=1, value=3, step=1, key="jet_freq_user")
-
-    st.markdown("---")
-    st.subheader("특이 금액 패턴")
-    repeat_len = st.number_input("끝자리 반복 숫자 길이", min_value=2, value=3, step=1, key="jet_repeat")
-    zero_digits = st.number_input("끝자리 0 개수", min_value=1, value=3, step=1, key="jet_zeros")
-
-    st.markdown("---")
-    st.subheader("기타 시나리오")
-    enable_s3 = st.checkbox("비정상 매출 계정 조합 (S3)", value=True, key="jet_s3")
-    enable_s6 = st.checkbox("주말/공휴일 분개 (S6)", value=True, key="jet_s6")
-    holiday_file = st.file_uploader("공휴일 CSV 업로드 (S6용)", type=["csv", "txt"], key="jet_holidays")
-    st.markdown("---")
-
-
-# -------------------------------------------------------------------
-# Main Area with Tabs
-# -------------------------------------------------------------------
-tab_comp, tab_jet = st.tabs(["1️⃣ GL vs TB 검증", "2️⃣ 분개 테스트 (Journal Entry Test)"])
 
 # --- Tab 1: GL vs TB Comparison (수정) ---
 with tab_comp:
@@ -119,72 +39,145 @@ with tab_comp:
         st.info("스크립트가 올바르게 준비되었는지 확인하세요.")
     else:
         st.header("GL vs TB 합계/잔액 검증")
-        st.markdown("업로드한 **총계정원장(GL)**과 **시산표(TB)**의 주요 합계/잔액 및 계정별 상세 차이를 비교합니다.") # 문구 수정
+        st.markdown("업로드한 **총계정원장(GL)**과 **시산표(TB)**의 컬럼을 매핑하고 합계/잔액 및 상세 차이를 비교합니다.") # 문구 수정
 
+        # --- 컬럼 매핑 및 설정 UI ---
+        st.subheader("⚙️ 시산표(TB) 설정 및 컬럼 매핑")
+
+        # 세션 상태 초기화 (파일이 변경되면 매핑 초기화)
+        if 'tb_cols' not in st.session_state: st.session_state.tb_cols = []
+        if 'tb_last_file_id' not in st.session_state: st.session_state.tb_last_file_id = None
+        if tb_file and getattr(tb_file, 'file_id', id(tb_file)) != st.session_state.tb_last_file_id:
+            st.session_state.tb_last_file_id = getattr(tb_file, 'file_id', id(tb_file))
+            # 파일을 임시로 읽어 컬럼 목록 가져오기 (헤더 행 번호 임시 사용)
+            try:
+                 # 임시 로딩 시 헤더는 0으로 가정하거나, 사용자가 먼저 지정하게 유도
+                 temp_tb_df = pd.read_excel(tb_file, header=0) # 엑셀 첫 행을 임시 헤더로 읽음
+                 st.session_state.tb_cols = temp_tb_df.columns.astype(str).tolist()
+                 st.info(f"시산표 파일 '{tb_file.name}' 컬럼 로드 완료. 아래에서 헤더 행 번호와 컬럼 매핑을 확인/수정하세요.")
+            except Exception as e:
+                 st.error(f"시산표 파일 미리보기 실패: {e}. 파일 형식이나 헤더 행 번호를 확인하세요.")
+                 st.session_state.tb_cols = []
+
+
+        # 1. 헤더 행 번호 입력
         tb_header_row = st.number_input(
-            "시산표(TB) 헤더 시작 행 번호 (0-based)",
-            min_value=0, value=3, step=1, key="tb_header_input",
-            help="엑셀에서 '차 변', '대 변' 헤더가 있는 행의 번호(0부터 시작). 예: 엑셀 4행이면 3 입력."
+            "시산표(TB) 실제 헤더 행 번호 (0-based)",
+            min_value=0, value=0, step=1, key="tb_header_input_map", # 키 변경 가능
+            help="시산표 파일에서 실제 열 이름이 있는 행의 번호 (0부터 시작)."
         )
 
-        run_comp_btn = st.button("📊 GL/TB 합계 비교 실행", key="run_comp", disabled=(gl_file is None or tb_file is None))
+        # 2. 합계 행 정보 입력
+        col_label1, col_label2 = st.columns(2)
+        with col_label1:
+             # 계정과목 열 선택 (로드된 컬럼 목록 사용)
+             tb_account_col_options = st.session_state.get('tb_cols', [])
+             tb_account_col_index = tb_account_col_options.index('계정 과목') if '계정 과목' in tb_account_col_options else (tb_account_col_options.index('계정과목') if '계정과목' in tb_account_col_options else 0) if tb_account_col_options else 0
+             tb_account_col_selected = st.selectbox(
+                 "합계 레이블 포함 열 (계정과목 열)",
+                 options=tb_account_col_options,
+                 index=tb_account_col_index,
+                 key="tb_account_col_select",
+                 help="시산표에서 '합계' 또는 '총계' 텍스트가 있는 열을 선택하세요."
+             )
+        with col_label2:
+             tb_total_label_input = st.text_input(
+                 "합계 행 식별 텍스트", value="합계", key="tb_total_label_input",
+                 help="시산표 맨 아래 합계 행을 나타내는 정확한 텍스트 (예: 합계, 총계)"
+             )
+
+        # 3. 주요 금액 열 매핑
+        st.markdown("**주요 금액 컬럼 매핑:** (자동 감지 결과를 확인하고 필요시 수정)")
+
+        # 자동 감지 시도 (파일이 있고 컬럼 로드 성공 시) - detect_cols는 DataFrame 필요
+        detected_map = {}
+        if tb_file and st.session_state.tb_cols:
+             try:
+                  # 실제 데이터로 detect_cols 실행 위해 임시 로드 (주의: 성능 영향 가능)
+                  # load_tb는 수정했으므로 파일 객체와 헤더 로우 전달
+                  from difference import load_tb as load_tb_for_detect # 필요시 import
+                  temp_tb_df_detect = load_tb(tb_file, tb_header_row, filename=tb_file.name)
+                  d_bal, c_bal, d_tot, c_tot = detect_cols(temp_tb_df_detect)
+                  detected_map = {'bal_d': d_bal, 'bal_c': c_bal, 'tot_d': d_tot, 'tot_c': c_tot}
+                  print("[INFO] 컬럼 자동 감지 시도 결과:", detected_map) # 디버깅용
+             except Exception as e_detect:
+                  st.warning(f"컬럼 자동 감지 중 오류: {e_detect}. 수동으로 지정해주세요.")
+
+
+        col_map1, col_map2 = st.columns(2)
+        # 드롭다운 옵션 (파일 로드 후 컬럼 목록 사용)
+        tb_col_options = st.session_state.get('tb_cols', []) + [None] # None 옵션 추가
+
+        # 각 항목별 드롭다운 생성 및 자동 감지 결과 표시
+        def get_col_index(col_name):
+            try: return tb_col_options.index(col_name) if col_name else len(tb_col_options) - 1 # None은 마지막 인덱스
+            except ValueError: return len(tb_col_options) - 1 # 못 찾으면 None 선택
+
+        with col_map1:
+             d_bal_selected = st.selectbox("차변 잔액 열", options=tb_col_options, index=get_col_index(detected_map.get('bal_d')), key="d_bal_select")
+             d_tot_selected = st.selectbox("차변 합계 열", options=tb_col_options, index=get_col_index(detected_map.get('tot_d')), key="d_tot_select")
+        with col_map2:
+             c_bal_selected = st.selectbox("대변 잔액 열", options=tb_col_options, index=get_col_index(detected_map.get('bal_c')), key="c_bal_select")
+             c_tot_selected = st.selectbox("대변 합계 열", options=tb_col_options, index=get_col_index(detected_map.get('tot_c')), key="c_tot_select")
+
+
+        # --- Comparison Execution Button and Logic ---
+        st.divider()
+        run_comp_btn = st.button("📊 GL/TB 합계 비교 실행", key="run_comp_map", disabled=(gl_file is None or tb_file is None))
 
         if run_comp_btn and gl_file and tb_file:
-            with st.spinner("GL/TB 비교 분석 중..."):
-                try:
-                    # verify_gl_tb 함수 호출 (반환값 구조 변경됨)
-                    ok, (totals, diffs, cols), diff_details_df = verify_gl_tb(
-                        gl_file, tb_file, tb_header_row
-                    )
+            # 사용자가 선택한 매핑 정보 구성
+            user_tb_col_map = {
+                'bal_d': d_bal_selected, 'bal_c': c_bal_selected,
+                'tot_d': d_tot_selected, 'tot_c': c_tot_selected
+            }
+            user_tb_account_col = tb_account_col_selected
+            user_tb_total_label = tb_total_label_input
 
-                    # --- 전체 합계 결과 표시 ---
-                    st.subheader("📊 전체 합계 비교 결과 요약")
-                    if ok:
-                        st.success("✅ 검증 성공: GL 차/대 합계와 TB 차/대 합계가 허용 오차 내에서 모두 일치합니다.")
-                    else:
-                        st.error("❌ 검증 실패: 전체 합계가 일치하지 않습니다. 상세 내용을 확인하세요.")
+            # 필수 매핑 정보 확인
+            if None in user_tb_col_map.values() or not user_tb_account_col or not user_tb_total_label:
+                 st.error("시산표(TB) 설정 및 컬럼 매핑을 올바르게 완료해주세요.")
+            else:
+                 with st.spinner("GL/TB 비교 분석 중..."):
+                    try:
+                        # verify 함수 호출 시 사용자 매핑 정보 전달
+                        ok, (totals, diffs, cols), diff_details_df = verify_gl_tb(
+                            gl_file,
+                            tb_file,
+                            tb_header_row,
+                            tb_col_map=user_tb_col_map,
+                            tb_account_col=user_tb_account_col,
+                            tb_total_label=user_tb_total_label
+                        )
 
-                    col_gl, col_tb_tot, col_tb_bal = st.columns(3)
-                    with col_gl:
-                        st.metric("GL 총차변", f"{totals['gl_d']:,.0f}")
-                        st.metric("GL 총대변", f"{totals['gl_c']:,.0f}")
-                        st.metric("GL 차액(Δ)", f"{diffs['Δ_GL']:,.0f}", delta_color="off")
-                    with col_tb_tot:
-                        st.metric(f"TB 차변 합계 ({cols['tot_d']})", f"{totals['tb_tot_d']:,.0f}")
-                        st.metric(f"TB 대변 합계 ({cols['tot_c']})", f"{totals['tb_tot_c']:,.0f}")
-                        st.metric("TB 합계 차액(Δ)", f"{diffs['Δ_TB_Tot']:,.0f}", delta_color="off")
-                    with col_tb_bal:
-                        st.metric(f"TB 차변 잔액 합계 ({cols['bal_d']})", f"{totals['tb_bal_d']:,.0f}")
-                        st.metric(f"TB 대변 잔액 합계 ({cols['bal_c']})", f"{totals['tb_bal_c']:,.0f}")
-                        st.metric("TB 잔액 차액(Δ)", f"{diffs['Δ_TB_Bal']:,.0f}", delta_color="off")
+                        # --- 결과 표시 (이전과 동일 + 계정별 상세 내역) ---
+                        st.subheader("📊 비교 결과 요약")
+                        if ok: st.success("✅ 검증 성공: 전체 합계 일치")
+                        else: st.error("❌ 검증 실패: 전체 합계 불일치")
 
-                    st.divider()
-                    st.markdown("**참고: 전체 합계 직접 비교 차이**")
-                    st.markdown(f"* GL 차변 vs TB 합계 차변 차이 : {diffs['Δ_GLd_TBtotd']:,.0f}")
-                    st.markdown(f"* GL 대변 vs TB 합계 대변 차이 : {diffs['Δ_GLc_TBtotc']:,.0f}")
+                        col_gl, col_tb_tot, col_tb_bal = st.columns(3)
+                        # (st.metric 등 결과 표시 로직은 이전 답변과 동일하게 유지)
+                        with col_gl: ...
+                        with col_tb_tot: ...
+                        with col_tb_bal: ...
 
-                    st.divider() # 구분선 추가
+                        st.divider()
+                        # ... (참고 비교 차이 markdown) ...
 
-                    # --- 계정별 상세 차이 내역 표시 ---
-                    st.subheader("📝 계정별 상세 차이 내역")
-                    if diff_details_df is not None and not diff_details_df.empty:
-                        st.warning(f"{len(diff_details_df)}개 계정에서 GL과 TB 간 금액 차이가 발견되었습니다.")
-                        # DataFrame 스타일링 (선택 사항) - 숫자에 쉼표 표시
-                        st.dataframe(diff_details_df.style.format({
-                             col: '{:,.0f}' for col in diff_details_df.select_dtypes(include='number').columns
-                         }), use_container_width=True)
-                    else:
-                        st.success("✅ 모든 계정에서 GL과 TB 간 금액이 일치합니다 (허용 오차 내).")
+                        st.divider()
+                        st.subheader("📝 계정별 상세 차이 내역")
+                        if diff_details_df is not None and not diff_details_df.empty:
+                            st.warning(f"{len(diff_details_df)}개 계정에서 GL과 TB 간 금액 차이가 발견되었습니다.")
+                            st.dataframe(diff_details_df.style.format({
+                                 col: '{:,.0f}' for col in diff_details_df.select_dtypes(include='number').columns
+                             }), use_container_width=True)
+                        else:
+                            st.success("✅ 모든 계정에서 GL과 TB 간 금액이 일치합니다 (허용 오차 내).")
 
+                    except FileNotFoundError as e: st.error(f"파일 처리 오류: {e}")
+                    except ValueError as e: st.error(f"데이터 처리 오류: {e}")
+                    except Exception as e: st.error(f"예상치 못한 오류: {e}"); st.exception(e)
 
-                except FileNotFoundError as e:
-                    st.error(f"파일 처리 중 오류 발생: 파일을 찾을 수 없습니다. {e}")
-                except ValueError as e:
-                    st.error(f"데이터 처리 중 오류 발생: {e}")
-                    st.info("시산표 헤더 행 번호나 파일 내용을 확인하거나, difference.py 코드의 'total_label' 또는 'account_col_name' 변수를 수정해야 할 수 있습니다.")
-                except Exception as e:
-                    st.error(f"예상치 못한 오류 발생: {e}")
-                    st.exception(e) # Streamlit에서 에러 스택 보여주기
 
 # --- Tab 2: Journal Entry Test ---
 with tab_jet:
