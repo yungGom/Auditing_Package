@@ -220,7 +220,7 @@ with tab_comp:
                         tb_file.seek(0) # 파일 포인터 초기화
                         ok, (totals, diffs, cols), diff_details_df = verify_gl_tb(
                             gl_file, tb_file,
-                            tb_header_row=tb_header_row,
+                            header_row=tb_header_row,
                             tb_col_map=user_tb_col_map,
                             tb_account_col=tb_account_col_selected,
                             tb_total_label=tb_total_label_input
