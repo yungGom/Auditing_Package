@@ -288,32 +288,30 @@ with tab_comp:
                                 tb_account_col=tb_account_col_selected,
                                 tb_total_label=tb_total_label_input
                             )
-
-
-                            st.subheader("📊 비교 결과 요약") # 이 부분은 이미지에서 보입니다.
-                            if ok: # ok가 True 또는 False 여야 합니다.
+                            
+                            # 정상적인 경우의 결과 표시 로직
+                            st.subheader("📊 비교 결과 요약")
+                            if ok:
                                 st.success("✅ 검증 성공: 전체 합계 일치")
-                            else: # ok가 False 이거나 bool이 아닌 다른 값(예: None)일 경우
+                            else:
                                 st.error("❌ 검증 실패: 전체 합계 불일치 (또는 'ok' 상태값 문제)")
-                                if ok is None: # 만약 ok가 None이라면 추가 정보 제공
+                                if ok is None: 
                                      st.warning("'ok' 변수가 None입니다. verify_gl_tb 함수 반환값을 확인해주세요.")
 
-
-                                # streamlit_app.py의 결과 표시 부분 수정 예시
-                                if totals and isinstance(totals, dict):
-                                    st.write("#### 📊 전체 합계 요약")
-                                    col1, col2, col3 = st.columns(3)
-                                    with col1:
-                                        st.metric("GL 차변", f"{totals.get('gl_d', 0):,.0f}")
-                                        st.metric("GL 대변", f"{totals.get('gl_c', 0):,.0f}")
-                                    with col2:
-                                        st.metric("TB 차변 합계", f"{totals.get('tb_tot_d', 0):,.0f}")
-                                        st.metric("TB 대변 합계", f"{totals.get('tb_tot_c', 0):,.0f}")
-                                    with col3:
-                                        st.metric("TB 차변 잔액", f"{totals.get('tb_bal_d', 0):,.0f}")
-                                        st.metric("TB 대변 잔액", f"{totals.get('tb_bal_c', 0):,.0f}")
-                                else:
-                                    st.warning("요약 합계(totals) 정보가 없거나 잘못된 형식입니다.")
+                            if totals and isinstance(totals, dict):
+                                st.write("#### 📊 전체 합계 요약") 
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("GL 차변", f"{totals.get('gl_d', 0):,.0f}")
+                                    st.metric("GL 대변", f"{totals.get('gl_c', 0):,.0f}")
+                                with col2:
+                                    st.metric("TB 차변 합계", f"{totals.get('tb_tot_d', 0):,.0f}")
+                                    st.metric("TB 대변 합계", f"{totals.get('tb_tot_c', 0):,.0f}")
+                                with col3:
+                                    st.metric("TB 차변 잔액", f"{totals.get('tb_bal_d', 0):,.0f}")
+                                    st.metric("TB 대변 잔액", f"{totals.get('tb_bal_c', 0):,.0f}")
+                            else:
+                                st.warning("요약 합계(totals) 정보가 없거나 잘못된 형식입니다.")
 
                             st.divider()
                             st.subheader("📝 계정별 상세 차이 내역")
@@ -322,20 +320,41 @@ with tab_comp:
                                 st.dataframe(diff_details_df.style.format({
                                     col: '{:,.0f}' for col in diff_details_df.select_dtypes(include='number').columns
                                 }), use_container_width=True)
-                            elif ok and (diff_details_df is None or diff_details_df.empty): # ok는 True인데 차이가 없는 경우
+                            elif ok and (diff_details_df is None or diff_details_df.empty): 
                                 st.success("✅ 모든 계정에서 GL과 TB 간 금액이 일치합니다 (허용 오차 내).")
-                            elif not ok and (diff_details_df is None or diff_details_df.empty): # ok는 False인데 차이 내역이 없는 경우
+                            elif not ok and (diff_details_df is None or diff_details_df.empty): 
                                  st.info("전체 합계는 불일치하지만, 상세 차이 내역은 없습니다. (예: 시산표 합계 행 자체의 문제일 수 있음)")
+                            
+                            # 이전에 중복으로 있었을 수 있는 st.success 라인 제거됨 (위의 if ok 블록에서 이미 처리)
 
-                            # ... (이하 결과 표시 로직은 이전과 유사하게 구성) ...
-                            if ok: st.success("✅ 검증 성공: GL과 TB의 전체 합계가 일치합니다.")
+                        except ValueError as e_val: 
+                            st.error(f"데이터 처리 오류: {e_val}") 
 
-                        except FileNotFoundError as e_fnf: st.error(f"파일 처리 오류: {e_fnf}")
-                        except ValueError as e_val: st.error(f"데이터 처리 오류: {e_val}")
+                            # ▼▼▼▼▼ 여기에 디버깅 코드를 추가합니다 ▼▼▼▼▼
+                            if "총계정원장(GL) 파일에서 계정 식별을 위한" in str(e_val):
+                                if gl_file: 
+                                    st.warning("--- GL 파일 열 이름 디버깅 정보 ---")
+                                    try:
+                                        gl_file.seek(0)
+                                        temp_gl_df_for_debug = difference_load_gl(gl_file) # 이미 import 되어 있음
+                                        actual_gl_columns = temp_gl_df_for_debug.columns.tolist()
+                                        st.info(f"프로그램이 GL 파일에서 실제로 읽어온 열 이름 목록입니다: \n{actual_gl_columns}")
+                                        possible_code_names_in_diff_py = ['계정코드', '계정과목코드', 'ACCT_CODE', 'ACCT_CD'] 
+                                        possible_name_names_in_diff_py = ['계정과목', '계정과목명', '계정명', 'ACCT_NAME', 'ACCT_NM'] 
+                                        st.info(f"difference.py의 possible_code_names: {possible_code_names_in_diff_py}")
+                                        st.info(f"difference.py의 possible_name_names: {possible_name_names_in_diff_py}")
+                                        st.warning("위 '실제로 읽어온 열 이름 목록'과 'possible_names' 목록을 비교하여 정확히 일치하는 이름이 있는지, "
+                                                   "혹은 대소문자/공백 문제나 헤더 행 읽기 문제가 있는지 확인해주세요.")
+                                    except Exception as e_debug_load:
+                                        st.error(f"디버깅: GL 열 이름 표시 중 추가 오류 발생: {e_debug_load}")
+                            # ▲▲▲▲▲ 여기까지 디버깅 코드 추가 끝 ▲▲▲▲▲
+                            
+                        except FileNotFoundError as e_fnf:
+                            st.error(f"파일 처리 오류: {e_fnf}")
                         except Exception as e_generic:
                             st.error(f"GL/TB 비교 중 예상치 못한 오류 발생: {e_generic}")
                             st.exception(e_generic)
-                            
+                                
 # --- Tab 2: Journal Entry Test ---
 with tab_jet:
     if not JET_AVAILABLE:
