@@ -1,335 +1,174 @@
-#!/usr/bin/env python
-"""
-Journal Entry Test Automation Script
-===================================
-
-본 스크립트는 **총계정원장(General Ledger)** 엑셀 파일을 입력받아 감사인이 자주 수행하는
-8가지 Journal-Entry Test(분개 테스트)를 자동으로 실행하고, 시나리오별 결과를
-**하나의 엑셀 파일**(시트 분리)로 저장한다.
-"""
+# logic_jet.py
 
 from __future__ import annotations
-import argparse
-import datetime as dt
-from pathlib import Path
-import sys
+import io
 import re
-import io # 추가: io.BytesIO, io.StringIO 타입 힌트 사용을 위해
-
-import numpy as np
 import pandas as pd
+from pathlib import Path
 
-######################################################################
-# 1. CLI 파서 (Streamlit에서는 사용되지 않음)
-######################################################################
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="General‑Ledger Journal Entry Test Automation")
-    parser.add_argument("--input_gl", required=True, help="총계정원장 Excel 또는 CSV 파일 경로")
-    parser.add_argument("--output", default="journal_entry_test_results.xlsx", help="분석 결과를 저장할 Excel 파일 경로")
-    parser.add_argument("--keywords", type=str, default="", help="계정과목 키워드(쉼표로 구분) — 시나리오1")
-    parser.add_argument("--account_codes", type=str, default="", help="관심 계정코드(쉼표로 구분) — 시나리오2")
-    parser.add_argument("--freq_account", type=int, default=None, help="희귀 계정 기준 사용 횟수(미만) — 시나리오4")
-    parser.add_argument("--freq_user", type=int, default=None, help="희귀 입력자 기준 전표 수(미만) — 시나리오5")
-    parser.add_argument("--start_date", type=str, default=None, help="시나리오4/5 기간 시작(YYYY-MM-DD)")
-    parser.add_argument("--end_date", type=str, default=None, help="시나리오4/5 기간 종료(YYYY-MM-DD)")
-    parser.add_argument("--zero_digits", type=int, default=None, help="끝자리 0 개수 기준 — 시나리오8")
-    parser.add_argument("--repeat_len", type=int, default=None, help="끝자리 반복 숫자 길이 — 시나리오7")
-    parser.add_argument("--holidays", type=str, default=None, help="공휴일 CSV/TXT/XLSX 파일 경로")
-    return parser.parse_args()
+def _find_column(df_columns: list[str], possible_names: list[str]) -> str | None:
+    """사용 가능한 컬럼 목록에서 후보 이름 중 하나를 찾아 반환 (대소문자/공백 무시)"""
+    df_cols_map = {col.strip().upper(): col for col in df_columns}
+    for name in possible_names:
+        if name.strip().upper() in df_cols_map:
+            return df_cols_map[name.strip().upper()]
+    return None
 
-######################################################################
-# 2. 데이터 적재 및 공통 전처리 (Streamlit 앱에서 호출될 함수)
-######################################################################
-def load_gl(path_or_buffer: str | Path | io.BytesIO | io.StringIO) -> pd.DataFrame:
-    """총계정원장 파일을 DataFrame으로 읽고, 열 이름을 표준화하며 기본 전처리를 수행한다."""
-    is_path = isinstance(path_or_buffer, (str, Path))
-    filename = Path(path_or_buffer).name if is_path else getattr(path_or_buffer, 'name', 'GL_JET_file.xlsx')
+def load_gl_for_jet(path_or_buffer: str | Path | io.BytesIO | io.StringIO) -> pd.DataFrame:
+    """총계정원장 파일을 로드하고 JET 분석을 위해 표준화 및 정제한다."""
+    filename = getattr(path_or_buffer, 'name', 'GL_file.xlsx')
     suffix = Path(filename).suffix.lower()
 
-    dtype_spec_general = { # 일반적인 열들에 대한 dtype 추정 (필요시 추가/수정)
-        "전표번호": str, "계정코드": str, "계정과목": str,
-        "거래처코드": str, "입력사원": str,
-        # GL 파일 이미지에서 보였던 열 이름들을 기반으로 추가 가능
-        "계정과목코드": str, "ACCT_CD": str, "ACCT_NM": str, "INSERT_ID": str, "생성자ID": str,
-    }
-    # 금액 열은 아래에서 별도 처리하므로 여기서는 제외 가능
+    dtype_spec = { "전표번호": str, "계정코드": str, "계정과목코드": str, "입력사원": str, "작성자ID": str}
 
-    print(f"[INFO] JET용 총계정원장 로딩 시도: {filename} (형식: {suffix})")
-
-    try:
-        if suffix == ".xlsx":
-            df = pd.read_excel(path_or_buffer, dtype=dtype_spec_general)
-        elif suffix == ".csv":
+    if suffix == ".xlsx":
+        df = pd.read_excel(path_or_buffer, dtype=dtype_spec)
+    elif suffix == ".csv":
+        if hasattr(path_or_buffer, 'seek'): path_or_buffer.seek(0)
+        try:
+            df = pd.read_csv(path_or_buffer, dtype=dtype_spec, encoding='utf-8')
+        except UnicodeDecodeError:
             if hasattr(path_or_buffer, 'seek'): path_or_buffer.seek(0)
-            try:
-                df = pd.read_csv(path_or_buffer, dtype=dtype_spec_general, encoding='utf-8')
-            except UnicodeDecodeError:
-                if hasattr(path_or_buffer, 'seek'): path_or_buffer.seek(0)
-                print(f"[경고] JET GL CSV UTF-8 인코딩 실패 ({filename}). 'cp949'로 재시도합니다.")
-                df = pd.read_csv(path_or_buffer, dtype=dtype_spec_general, encoding='cp949')
-        else:
-            raise ValueError(f"지원하지 않는 총계정원장 파일 형식 (JET용): {suffix}. Excel 또는 CSV 파일을 사용해주세요.")
+            df = pd.read_csv(path_or_buffer, dtype=dtype_spec, encoding='cp949')
+    else:
+        raise ValueError(f"지원하지 않는 총계정원장 파일 형식: {suffix}")
 
-        print(f"[DEBUG] JET GL 초기 로드된 컬럼: {df.columns.tolist()}")
+    # --- 열 이름 표준화 ---
+    rename_map = {
+        _find_column(df.columns, ['전표일자', '회계일자', 'Posting Date']): "전표일자",
+        _find_column(df.columns, ['입력일자', 'Entry Date', 'Created on']): "입력일자",
+        _find_column(df.columns, ['전표번호', 'Document No.']): "전표번호",
+        _find_column(df.columns, ['계정코드', '계정과목코드', 'G/L Account']): "계정코드",
+        _find_column(df.columns, ['계정과목', '계정과목명', 'G/L Account Name']): "계정과목",
+        _find_column(df.columns, ['차변금액', '차변', 'Amount in local cur.']): "차변금액", # 간소화. 차/대 구분이 별도 컬럼인 경우 수정필요
+        _find_column(df.columns, ['대변금액', '대변']): "대변금액",
+        _find_column(df.columns, ['적요', 'Text', 'Description']): "적요",
+        _find_column(df.columns, ['입력사원', '작성자', 'User Name', 'Created By']): "입력사원"
+    }
+    # None 키 제거 및 실제 rename 수행
+    df.rename(columns={k: v for k, v in rename_map.items() if k is not None and k != v}, inplace=True)
+    
+    # SAP 형식 등 차/대변이 한 컬럼에 있는 경우 처리 (예시)
+    if '대변금액' not in df.columns and '차변금액' in df.columns and df['차변금액'].dtype != 'object':
+         df['대변금액'] = df['차변금액'].apply(lambda x: abs(x) if x < 0 else 0)
+         df['차변금액'] = df['차변금액'].apply(lambda x: x if x > 0 else 0)
 
-        # --- 열 이름 표준화 로직 시작 ---
-        standard_to_possible_names = {
-            "전표일자": ['전표일자', '회계처리일자', 'SLIP_DT', 'POST_DT', '구 분[기표][년/월/일]'], # '구 분[기표][년/월/일]' 추가
-            "계정과목": ['계정과목', '계정과목명', '계정명', 'ACCT_NAME', 'ACCT_NM'],
-            "차변금액": ['차변금액', '차변', '차 변[금액]', 'DR_AMT'], # '차 변[금액]' 추가
-            "대변금액": ['대변금액', '대변', '대 변[금액]', 'CR_AMT'], # '대 변[금액]' 추가
-            "전표번호": ['전표번호', 'VCHR_NO', 'SLIP_NO', '구 분[기표][번호]'], # '구 분[기표][번호]' 추가
-            "계정코드": ['계정코드', '계정과목코드', 'ACCT_CODE', 'ACCT_CD'],
-            "입력사원": ['입력사원', '입력자', 'USER_ID', 'INSERT_ID', '생성자ID'] # '생성자ID' 추가
-        }
+    # --- 데이터 정제 (Cleansing) ---
+    for col in ['계정과목', '계정코드', '입력사원', '적요', '전표번호']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip().replace('nan', '')
+    
+    for col in ['전표일자', '입력일자']:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
 
-        # 원본 컬럼 이름을 공백 제거 및 대문자화하여 비교하기 위한 맵 생성
-        # { "공백제거_대문자화된_이름": "원본_이름" }
-        df_cols_stripped_upper_map = {col.strip().upper(): col for col in df.columns}
-        
-        renamed_cols_map = {} # 실제 rename할 대상 { "원본이름": "표준이름" }
+    for col in ["차변금액", "대변금액"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(",", "", regex=False),
+                errors="coerce"
+            ).fillna(0)
+        else: # 필수 금액 컬럼이 없으면 0으로 채움
+            df[col] = 0
 
-        for std_name, possible_names in standard_to_possible_names.items():
-            found_original_name = None
-            for poss_name in possible_names:
-                # 후보 이름을 공백 제거 및 대문자화하여 비교
-                if poss_name.strip().upper() in df_cols_stripped_upper_map:
-                    found_original_name = df_cols_stripped_upper_map[poss_name.strip().upper()]
-                    if found_original_name != std_name: # 원본 이름과 표준 이름이 다를 경우에만 rename 대상
-                         renamed_cols_map[found_original_name] = std_name
-                    elif found_original_name == std_name and std_name not in df.columns:
-                        # 이 경우는 거의 없지만, df_cols_stripped_upper_map 키와 std_name이 같지만
-                        # 원본 df.columns에는 std_name이 없는 경우 (예: 대소문자만 다른 경우)
-                        # 이럴 때는 found_original_name을 사용해야 함.
-                        # 하지만 위 로직은 found_original_name을 찾으므로, df.rename 시 사용됨
-                        pass
-                    print(f"[DEBUG] 표준 열 '{std_name}'에 대해 파일의 열 '{found_original_name}'을(를) 찾았습니다.")
-                    break # 해당 표준 열에 대한 후보 탐색 중단
-            if found_original_name is None:
-                print(f"[WARNING] 표준 열 '{std_name}'에 해당하는 열을 GL 파일에서 찾지 못했습니다. 후보: {possible_names}")
-        
-        if renamed_cols_map:
-            df.rename(columns=renamed_cols_map, inplace=True)
-            print(f"[INFO] 다음 열 이름들이 표준 이름으로 변경되었습니다: {renamed_cols_map}")
-        
-        print(f"[DEBUG] JET GL 표준화 후 컬럼: {df.columns.tolist()}")
-        # --- 열 이름 표준화 로직 끝 ---
-
-        # 필수 열 존재 여부 최종 확인 (표준화된 이름 기준)
-        essential_cols = ["전표일자", "계정과목", "차변금액", "대변금액", "전표번호", "계정코드", "입력사원"]
-        missing_cols = [col for col in essential_cols if col not in df.columns]
-        if missing_cols:
-            # 이전에 st.error로 올렸던 메시지와 동일한 형식으로 오류 발생
-            raise ValueError(f"총계정원장 파일에 다음 필수 열이 없습니다: {', '.join(missing_cols)}. 표준화 후에도 찾을 수 없습니다. GL 파일 내용을 확인하거나 journal_entry_test.py의 열 이름 후보를 점검하세요.")
-
-        # 날짜 열 파싱 (표준화된 '전표일자' 열 사용)
-        df["전표일자"] = pd.to_datetime(df["전표일자"], errors="coerce")
-        if df["전표일자"].isnull().all():
-             raise ValueError("'전표일자' 열의 모든 값을 날짜 형식으로 변환할 수 없습니다. 데이터 형식을 확인해주세요.")
-        elif df["전표일자"].isnull().any():
-             print(f"[경고] '전표일자' 열에 일부 유효하지 않은 날짜 형식이 포함되어 NaT로 처리되었습니다 ({df['전표일자'].isnull().sum()} 건).")
-
-        # 금액 열을 숫자(float/int)로 변환 (표준화된 '차변금액', '대변금액' 열 사용)
-        for col in ("차변금액", "대변금액"):
-            df[col] = (
-                df[col]
-                .astype(str) # 먼저 문자열로 변환하여 .str 접근자 사용 가능하게
-                .str.replace(",", "", regex=False)
-            )
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-        
-        print(f"[INFO] JET용 총계정원장 로딩 및 표준화 완료: {len(df)} 행")
-        return df
-        
-    except Exception as e:
-        print(f"[오류] JET 총계정원장 파일 로드 또는 전처리 중 에러 발생 ({filename}): {e}")
-        raise # Streamlit 앱에서 이 오류를 잡아서 사용자에게 표시하도록 함
-
-
-######################################################################
-# 3. 시나리오별 필터 함수들
-######################################################################
-def scenario1_keyword(df: pd.DataFrame, keywords: list[str]) -> pd.DataFrame:
-    if not keywords: return pd.DataFrame()
-    pattern = "|".join(map(re.escape, keywords))
-    mask = df["계정과목"].str.contains(pattern, case=False, na=False)
-    return df.loc[mask].copy()
-
-def scenario2_account_code(df: pd.DataFrame, codes: list[str]) -> pd.DataFrame:
-    if not codes: return pd.DataFrame()
-    mask = df["계정코드"].isin(codes)
-    return df.loc[mask].copy()
-
-def scenario3_abnormal_sales(df: pd.DataFrame) -> pd.DataFrame:
-    sales_mask = df["계정과목"].str.contains(r"제품매출|상품매출", na=False)
-    allowed = {"현금", "당좌예금", "보통예금", "외상매출금", "받을어음", "미수금", "선수금"}
-    abnormal_entries = []
-    for _, sub in df.groupby("전표번호"):
-        if not sales_mask.loc[sub.index].any(): continue
-        cond_a = (((sub["계정과목"].str.contains(r"제품매출|상품매출", na=False)) & (sub["차변금액"] > 0)) |
-                  ((sub["계정과목"].str.contains(r"제품매출|상품매출", na=False)) & (sub["대변금액"] < 0)))
-        other_accounts = set(sub.loc[~sub["계정과목"].str.contains(r"제품매출|상품매출", na=False), "계정과목"].tolist())
-        cond_b = not other_accounts.issubset(allowed) if other_accounts else False # 상대계정 없으면 정상으로 간주
-        if cond_a.any() or cond_b:
-            abnormal_entries.append(sub)
-    if abnormal_entries: return pd.concat(abnormal_entries, ignore_index=True)
-    return pd.DataFrame()
-
-def _apply_period(df: pd.DataFrame, start: dt.datetime | None, end: dt.datetime | None) -> pd.DataFrame:
-    """주어진 시작일과 종료일(datetime 객체)로 DataFrame을 필터링한다."""
-    if start: df = df[df["전표일자"] >= start]
-    if end: df = df[df["전표일자"] <= end] # 종료일은 해당 날짜의 마지막 시간까지 포함
     return df
 
-def scenario4_rare_accounts(df: pd.DataFrame, start: dt.datetime | None, end: dt.datetime | None, threshold: int | None) -> pd.DataFrame:
-    if threshold is None: return pd.DataFrame()
-    sub = _apply_period(df.copy(), start, end) # 원본 보존 위해 copy
-    if sub.empty: return pd.DataFrame()
-    counts = sub["계정코드"].value_counts()
-    rare_codes = counts[counts < threshold].index
-    return sub[sub["계정코드"].isin(rare_codes)].copy()
+# --- JET 시나리오 함수들 ---
 
-def scenario5_rare_users(df: pd.DataFrame, start: dt.datetime | None, end: dt.datetime | None, threshold: int | None) -> pd.DataFrame:
-    if threshold is None: return pd.DataFrame()
-    sub = _apply_period(df.copy(), start, end) # 원본 보존 위해 copy
-    if sub.empty: return pd.DataFrame()
-    counts = sub["입력사원"].value_counts()
-    rare_users = counts[counts < threshold].index
-    return sub[sub["입력사원"].isin(rare_users)].copy()
+def s1_keyword_search(df: pd.DataFrame, keywords: list[str]) -> pd.DataFrame:
+    if not keywords or '적요' not in df.columns:
+        return pd.DataFrame()
+    pattern = "|".join(map(re.escape, keywords))
+    mask = df["적요"].str.contains(pattern, case=False, na=False)
+    return df[mask].copy()
 
-def scenario6_weekend_holiday(df: pd.DataFrame, holiday_file_path: str | Path | None) -> pd.DataFrame:
-    # 전표일자 NaT 값 있는 행은 미리 제거 (dt.weekday 등에서 오류 방지)
-    df_filtered = df.dropna(subset=['전표일자']).copy()
-    if df_filtered.empty: return pd.DataFrame()
-
-    weekend_mask = df_filtered["전표일자"].dt.weekday >= 5  # 5=Sat,6=Sun
-    holiday_dates: set[pd.Timestamp] = set()
-
-    if holiday_file_path:
-        path_obj = Path(holiday_file_path)
-        try:
-            h_df = pd.DataFrame()
-            file_suffix = path_obj.suffix.lower()
-            print(f"[INFO] 공휴일 파일 로딩 시도: {holiday_file_path} (형식: {file_suffix})")
-            if file_suffix in ['.csv', '.txt']:
-                h_df = pd.read_csv(path_obj, header=None)
-            elif file_suffix in ['.xlsx', '.xls']:
-                h_df = pd.read_excel(path_obj, header=None)
-            else:
-                print(f"[경고] 지원하지 않는 공휴일 파일 형식: {file_suffix}. 공휴일 처리 없이 주말만 검토합니다.")
-
-            if not h_df.empty:
-                # 첫 번째 열의 날짜들을 파싱
-                parsed_dates = pd.to_datetime(h_df.iloc[:, 0], errors='coerce').dropna().dt.normalize()
-                holiday_dates = set(parsed_dates)
-                print(f"[INFO] 공휴일 {len(holiday_dates)}일 로드 완료.")
-            elif file_suffix in ['.csv', '.txt', '.xlsx', '.xls']: # 지원 형식인데 비어있거나 파싱 실패
-                 print(f"[경고] 공휴일 파일('{holiday_file_path}')이 비어있거나 유효한 날짜를 포함하지 않습니다.")
-
-        except Exception as e:
-            print(f"[경고] 공휴일 파일('{holiday_file_path}') 처리 중 오류: {e}. 공휴일 처리 없이 주말만 검토합니다.")
-
-    if holiday_dates:
-        holiday_mask = df_filtered["전표일자"].dt.normalize().isin(holiday_dates)
-        mask = weekend_mask | holiday_mask
-    else:
-        mask = weekend_mask
-    return df_filtered.loc[mask].copy()
-
-def scenario7_repeating_digits(df: pd.DataFrame, repeat_len: int | None) -> pd.DataFrame:
-    if repeat_len is None or repeat_len < 2 : return pd.DataFrame()
-    repeat_pattern = re.compile(rf"(\d)\1{{{repeat_len - 1}}}$")
-    def _has_repeat(val: float) -> bool:
-        if pd.isna(val) or val == 0: return False # 0은 제외
-        val_str = str(int(abs(val)))
-        return bool(repeat_pattern.search(val_str))
-    mask = df.apply(lambda row: _has_repeat(row["차변금액"]) or _has_repeat(row["대변금액"]), axis=1)
-    return df.loc[mask].copy()
-
-def scenario8_round_numbers(df: pd.DataFrame, zero_digits: int | None) -> pd.DataFrame:
-    if zero_digits is None or zero_digits < 1: return pd.DataFrame()
-    factor = 10 ** zero_digits
-    mask = (((df["차변금액"].astype(int) % factor == 0) & (df["차변금액"] != 0)) |
-            ((df["대변금액"].astype(int) % factor == 0) & (df["대변금액"] != 0)))
-    return df.loc[mask].copy()
-
-######################################################################
-# 4. 메인 (CLI 실행용 - Streamlit에서는 사용되지 않음)
-######################################################################
-def main():
-    args = _parse_args()
-    print(f"[INFO] 입력된 총계정원장 파일: {args.input_gl}")
-    print(f"[INFO] 결과 저장 파일: {args.output}")
-
-    try:
-        # CLI에서는 이 파일의 load_gl 함수를 직접 사용
-        gl_df_cli = load_gl(args.input_gl) # 함수 이름 변경됨
-    except Exception as e:
-        print(f"[오류] 총계정원장 파일 처리 실패: {e}")
-        sys.exit(1)
-
-    results: dict[str, pd.DataFrame] = {}
-
-    if args.keywords:
-        kw_list = [k.strip() for k in args.keywords.split(",") if k.strip()]
-        if kw_list:
-            print(f"[INFO] 시나리오1 (키워드: {kw_list}) 실행...")
-            res = scenario1_keyword(gl_df_cli, kw_list)
-            if not res.empty: results["시나리오1_키워드"] = res
-
-    if args.account_codes:
-        code_list = [c.strip() for c in args.account_codes.split(",") if c.strip()]
-        if code_list:
-            print(f"[INFO] 시나리오2 (계정코드: {code_list}) 실행...")
-            res = scenario2_account_code(gl_df_cli, code_list)
-            if not res.empty: results["시나리오2_계정코드"] = res
+def s2_backdated_entries(df: pd.DataFrame, threshold_days: int) -> pd.DataFrame:
+    if '입력일자' not in df.columns or '전표일자' not in df.columns:
+        return pd.DataFrame() # 필수 컬럼 없으면 빈 DF 반환
     
-    print("[INFO] 시나리오3 (비정상매출) 실행...")
-    res = scenario3_abnormal_sales(gl_df_cli)
-    if not res.empty: results["시나리오3_비정상매출"] = res
+    df_copy = df.dropna(subset=['입력일자', '전표일자']).copy()
+    df_copy['지연일수'] = (df_copy['입력일자'] - df_copy['전표일자']).dt.days
+    return df_copy[df_copy['지연일수'] > threshold_days]
 
-    start_dt_obj = pd.to_datetime(args.start_date, errors='coerce').to_pydatetime(warn=False) if args.start_date else None
-    end_dt_obj = pd.to_datetime(args.end_date, errors='coerce').to_pydatetime(warn=False) if args.end_date else None
-    if start_dt_obj and end_dt_obj and start_dt_obj > end_dt_obj:
-        print("[경고] 시작일이 종료일보다 늦습니다. 날짜 필터링 없이 진행될 수 있습니다.")
+def s3_rare_accounts(df: pd.DataFrame, threshold: int) -> pd.DataFrame:
+    counts = df["계정코드"].value_counts()
+    rare_codes = counts[counts < threshold].index
+    return df[df["계정코드"].isin(rare_codes)].copy()
 
-    if args.freq_account is not None:
-        print(f"[INFO] 시나리오4 (희귀계정, 임계값: {args.freq_account}, 기간: {args.start_date}~{args.end_date}) 실행...")
-        res = scenario4_rare_accounts(gl_df_cli, start_dt_obj, end_dt_obj, args.freq_account)
-        if not res.empty: results["시나리오4_희귀계정"] = res
+def s4_rare_users(df: pd.DataFrame, threshold: int) -> pd.DataFrame:
+    counts = df["입력사원"].value_counts()
+    rare_users = counts[counts < threshold].index
+    return df[df["입력사원"].isin(rare_users)].copy()
 
-    if args.freq_user is not None:
-        print(f"[INFO] 시나리오5 (희귀입력자, 임계값: {args.freq_user}, 기간: {args.start_date}~{args.end_date}) 실행...")
-        res = scenario5_rare_users(gl_df_cli, start_dt_obj, end_dt_obj, args.freq_user)
-        if not res.empty: results["시나리오5_희귀입력자"] = res
+def s5_weekend_holiday(df: pd.DataFrame) -> pd.DataFrame:
+    if '전표일자' not in df.columns: return pd.DataFrame()
+    df_copy = df.dropna(subset=['전표일자']).copy()
+    # 토요일(5), 일요일(6)
+    mask = df_copy["전표일자"].dt.weekday >= 5
+    # (추가) 공휴일 목록을 외부 파일이나 API로 가져와 mask에 | 연산으로 추가 가능
+    return df_copy[mask]
 
-    print(f"[INFO] 시나리오6 (주말/휴일, 공휴일 파일: {args.holidays}) 실행...")
-    res = scenario6_weekend_holiday(gl_df_cli, args.holidays)
-    if not res.empty: results["시나리오6_주말휴일"] = res
+def s6_round_numbers(df: pd.DataFrame, zero_digits: int) -> pd.DataFrame:
+    if zero_digits < 1: return pd.DataFrame()
+    factor = 10 ** zero_digits
+    mask = (((df["차변금액"] % factor == 0) & (df["차변금액"] != 0)) |
+            ((df["대변금액"] % factor == 0) & (df["대변금액"] != 0)))
+    return df[mask].copy()
 
-    if args.repeat_len is not None:
-        print(f"[INFO] 시나리오7 (반복숫자, 길이: {args.repeat_len}) 실행...")
-        res = scenario7_repeating_digits(gl_df_cli, args.repeat_len)
-        if not res.empty: results["시나리오7_반복숫자"] = res
+def s7_abnormal_combo_sales(df: pd.DataFrame) -> pd.DataFrame:
+    """매출의 비경상적 상대계정 조합을 찾는다."""
+    # 정상적인 매출의 상대계정 (차변 또는 대변)
+    allowed_accounts = {'현금', '당좌예금', '보통예금', '외상매출금', '받을어음', '미수금', '선수금', '부가세예수금'}
+    
+    sales_journals = df[df['계정과목'].str.contains('매출', na=False)]
+    if sales_journals.empty: return pd.DataFrame()
+    
+    abnormal_jns = []
+    # 전표번호별로 그룹화하여 계정 조합 분석
+    for jn, group in df.groupby('전표번호'):
+        if jn not in sales_journals['전표번호'].values:
+            continue
+            
+        accounts_in_jn = set(group['계정과목'])
+        # 매출 계정을 제외한 상대 계정들
+        contra_accounts = {acc for acc in accounts_in_jn if '매출' not in acc}
+        
+        # 상대 계정들이 허용 목록에 포함되지 않는 경우 탐지
+        if not contra_accounts.issubset(allowed_accounts):
+            abnormal_jns.append(jn)
+            
+    return df[df['전표번호'].isin(abnormal_jns)].copy()
 
-    if args.zero_digits is not None:
-        print(f"[INFO] 시나리오8 (라운드넘버, 0개수: {args.zero_digits}) 실행...")
-        res = scenario8_round_numbers(gl_df_cli, args.zero_digits)
-        if not res.empty: results["시나리오8_라운드넘버"] = res
 
-    if not results:
-        print("[INFO] 어떤 시나리오에서도 이상 거래가 발견되지 않았습니다.")
-        sys.exit(0)
+# --- 전체 시나리오 실행기 ---
+def run_all_jet_scenarios(df: pd.DataFrame, params: dict) -> dict[str, pd.DataFrame]:
+    """설정된 파라미터에 따라 모든 JET 시나리오를 실행하고 결과를 딕셔너리로 반환"""
+    results = {}
+    
+    # S1
+    kw_list = [k.strip() for k in params['keywords'].split(",") if k.strip()]
+    if kw_list:
+        res = s1_keyword_search(df, kw_list)
+        if not res.empty: results["S1_적요키워드"] = res
+    # S2
+    res = s2_backdated_entries(df, params['backdate_threshold'])
+    if not res.empty: results["S2_기표지연"] = res
+    # S3
+    res = s3_rare_accounts(df, params['rare_account_threshold'])
+    if not res.empty: results["S3_희귀계정"] = res
+    # S4
+    res = s4_rare_users(df, params['rare_user_threshold'])
+    if not res.empty: results["S4_희귀입력자"] = res
+    # S5
+    if params['enable_weekend_holiday']:
+        res = s5_weekend_holiday(df)
+        if not res.empty: results["S5_주말휴일거래"] = res
+    # S6
+    res = s6_round_numbers(df, params['round_number_zeros'])
+    if not res.empty: results["S6_라운드넘버"] = res
+    # S7
+    if params['enable_abnormal_combo']:
+        res = s7_abnormal_combo_sales(df)
+        if not res.empty: results["S7_비경상계정조합(매출)"] = res
 
-    output_path = Path(args.output)
-    try:
-        with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
-            for sheet_name, df_out in results.items():
-                df_out.to_excel(writer, sheet_name=sheet_name[:31], index=False) # 시트 이름 31자 제한
-        print(f"[SUCCESS] 결과가 '{output_path.resolve()}'에 저장되었습니다.")
-    except Exception as e:
-        print(f"[오류] 결과 파일 저장 중 오류 발생: {e}")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
+    return results
