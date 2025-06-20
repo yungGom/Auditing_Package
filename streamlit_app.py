@@ -45,8 +45,8 @@ if "data_loaded" not in st.session_state:
 
 
 # --- UI 구성 ---
-st.title("📊 Advanced Journal Entry Test Program")
-st.markdown("삼일회계법인 실무 자료에 기반한 감사 절차 자동화 프로그램 (Developed for 문용님)")
+st.title("📊 Journal Entry Test Program")
+st.markdown("감사 절차 자동화 프로그램")
 
 if not JET_LOGIC_AVAILABLE or not COMP_LOGIC_AVAILABLE:
     st.error("필수 로직 파일(`logic_jet.py`, `logic_comparison.py`)을 찾을 수 없습니다. 파일들이 `streamlit_app.py`와 같은 폴더에 있는지 확인하세요.")
