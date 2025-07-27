@@ -3,6 +3,7 @@ import pandas as pd
 def compare_trial_balances(calculated_tb, post_tb):
     """
     계산된 당기 시산표와 실제 당기 시산표를 비교하고, 차이가 있는 항목을 찾아 데이터프레임으로 반환합니다.
+    시나리오 A03 (시산표 Reconcilliation 검증)에 해당합니다.
 
     Args:
         calculated_tb (pd.DataFrame): 계산된 당기 시산표
