@@ -1,64 +1,56 @@
 import pandas as pd
 
-def calculate_trial_balance(pre_tb_df, journal_df, post_tb_df):
+def compare_trial_balances(calculated_tb, post_tb):
     """
-    전기 시산표와 분개장 데이터를 바탕으로 당기 시산표를 계산합니다.
+    계산된 당기 시산표와 실제 당기 시산표를 비교하고, 차이가 있는 항목을 찾아 데이터프레임으로 반환합니다.
 
     Args:
-        pre_tb_df (pd.DataFrame): 전기 시산표 데이터프레임
-        journal_df (pd.DataFrame): 분개장 데이터프레임
-        post_tb_df (pd.DataFrame): 당기 시산표 데이터프레임 (계정과목 정보 참조용)
+        calculated_tb (pd.DataFrame): 계산된 당기 시산표
+        post_tb (pd.DataFrame): 실제 당기 시산표
 
     Returns:
-        pd.DataFrame: 계산된 당기 시산표 데이터프레임
+        pd.DataFrame: 차이가 발생한 항목들에 대한 상세 정보가 담긴 데이터프레임. 차이가 없으면 빈 데이터프레임.
     """
-    # --- 1. 데이터 전처리 ---
-    # 전기 시산표의 '차변진액' 오타를 '차변잔액'으로 수정합니다.
-    if '차변진액' in pre_tb_df.columns:
-        pre_tb_df.rename(columns={'차변진액': '차변잔액'}, inplace=True)
+    # --- 1. 데이터 정제 ---
+    # 비교를 위해 양쪽 데이터프레임의 데이터 타입을 정수형으로 통일합니다.
+    for col in ['차변잔액', '대변잔액']:
+        calculated_tb[col] = pd.to_numeric(calculated_tb[col], errors='coerce').fillna(0).astype(int)
+        post_tb[col] = pd.to_numeric(post_tb[col], errors='coerce').fillna(0).astype(int)
 
-    # 분개장 금액 열의 결측값을 0으로 채웁니다.
-    journal_df['차변금액'] = journal_df['차변금액'].fillna(0)
-    journal_df['대변금액'] = journal_df['대변금액'].fillna(0)
-
-    # 숫자가 아닌 데이터가 있어도 오류가 나지 않도록 숫자형으로 변환합니다.
-    journal_df['차변금액'] = pd.to_numeric(journal_df['차변금액'], errors='coerce').fillna(0)
-    journal_df['대변금액'] = pd.to_numeric(journal_df['대변금액'], errors='coerce').fillna(0)
-
-    # 계정코드별로 분개 내역을 합산합니다.
-    journal_sum = journal_df.groupby('계정코드')[['차변금액', '대변금액']].sum().reset_index()
-
-    # --- 2. 데이터 병합 ---
-    # 전기 시산표와 분개장 합계를 계정코드를 기준으로 외부 조인(outer join)합니다.
-    # 이렇게 하면 한쪽에만 존재하는 계정도 결과에 포함됩니다.
-    merged_tb = pd.merge(pre_tb_df, journal_sum, on='계정코드', how='outer')
-
-    # 병합 과정에서 생긴 NaN 값을 0으로 채웁니다.
-    merged_tb = merged_tb.fillna(0)
-
-    # --- 3. 기말 잔액 계산 ---
-    # 회계 원리에 따라 기말 잔액을 계산합니다.
-    # 잔액 = (기초 차변잔액 + 당기 차변금액) - (기초 대변잔액 + 당기 대변금액)
-    balance = (merged_tb['차변잔액'] + merged_tb['차변금액']) - \
-              (merged_tb['대변잔액'] + merged_tb['대변금액'])
-
-    # 계산된 잔액이 양수이면 차변잔액, 음수이면 대변잔액으로 설정합니다.
-    merged_tb['계산된_차변잔액'] = balance.where(balance >= 0, 0).astype(int)
-    merged_tb['계산된_대변잔액'] = abs(balance.where(balance < 0, 0)).astype(int)
-
-    # --- 4. 최종 데이터 정리 ---
-    # 계정과목이 비어있는 경우(분개장에만 있는 신규 계정)를 위해 원본 당기시산표에서 정보를 가져옵니다.
-    if '계정과목' in merged_tb.columns:
-        merged_tb.drop('계정과목', axis=1, inplace=True)
+    # --- 2. 데이터 비교 ---
+    # 계정코드를 기준으로 두 데이터프레임을 병합합니다.
+    # _계산, _원본 접미사를 붙여 출처를 구분합니다.
+    comparison_df = pd.merge(
+        calculated_tb,
+        post_tb,
+        on='계정코드',
+        suffixes=('_계산', '_원본'),
+        how='outer'
+    )
+    # 병합 후 NaN 값은 0으로 채웁니다. (한쪽에만 존재하는 계정 처리)
+    comparison_df.fillna(0, inplace=True)
     
-    # 당기시산표의 계정과목 정보를 사용하여 최종 계정과목을 설정합니다.
-    final_tb = pd.merge(merged_tb[['계정코드', '계산된_차변잔액', '계산된_대변잔액']],
-                        post_tb_df[['계정코드', '계정과목']],
-                        on='계정코드',
-                        how='left')
+    # 계정과목 열을 정리합니다. (원본 데이터의 계정과목을 우선 사용)
+    comparison_df['계정과목'] = comparison_df['계정과목_원본'].combine_first(comparison_df['계정과목_계산'])
 
-    # 컬럼 이름을 표준화합니다.
-    final_tb.rename(columns={'계산된_차변잔액': '차변잔액', '계산된_대변잔액': '대변잔액'}, inplace=True)
+
+    # --- 3. 차이 계산 및 필터링 ---
+    # 차변과 대변의 차이를 계산하여 새로운 열에 저장합니다.
+    comparison_df['차변차이'] = comparison_df['차변잔액_계산'] - comparison_df['차변잔액_원본']
+    comparison_df['대변차이'] = comparison_df['대변잔액_계산'] - comparison_df['대변잔액_원본']
+
+    # 차이가 0이 아닌 행들만 필터링합니다.
+    diff_df = comparison_df[
+        (comparison_df['차변차이'] != 0) |
+        (comparison_df['대변차이'] != 0)
+    ].copy()
+
+    # 보기 좋게 컬럼 순서를 정리합니다.
+    if not diff_df.empty:
+        diff_df = diff_df[[
+            '계정코드', '계정과목',
+            '차변잔액_계산', '차변잔액_원본', '차변차이',
+            '대변잔액_계산', '대변잔액_원본', '대변차이'
+        ]]
     
-    # 최종 컬럼 순서를 정리하여 반환합니다.
-    return final_tb[['계정코드', '계정과목', '차변잔액', '대변잔액']]
+    return diff_df
