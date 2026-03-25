@@ -93,12 +93,14 @@ const TYPE_ICONS = {
   account: "account_balance",
 };
 
-function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount, onDeleteAccount }) {
+function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount, onDeleteAccount, onAddClient, onDeleteClient }) {
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = expanded[node.id] !== false;
   const isSelected = selectedId === node.id;
   const isAccount = node.type === "account";
   const isPhase = node.type === "phase";
+  const isFY = node.type === "fy";
+  const isClient = node.type === "client";
 
   return (
     <div>
@@ -127,6 +129,28 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
         </span>
 
         <span className="flex-1 truncate">{node.label}</span>
+
+        {/* FY: add client button */}
+        {isFY && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onAddClient?.(node); }}
+            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-surface-container-highest transition"
+            title="클라이언트 추가"
+          >
+            <span className="material-symbols-outlined text-[14px] text-outline">add</span>
+          </button>
+        )}
+
+        {/* Client: delete button */}
+        {isClient && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDeleteClient?.(node); }}
+            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-error/10 transition"
+            title="클라이언트 삭제"
+          >
+            <span className="material-symbols-outlined text-[14px] text-error">close</span>
+          </button>
+        )}
 
         {isPhase && (
           <button
@@ -161,6 +185,8 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
               onToggle={onToggle}
               onAddAccount={onAddAccount}
               onDeleteAccount={onDeleteAccount}
+              onAddClient={onAddClient}
+              onDeleteClient={onDeleteClient}
             />
           ))}
         </div>
@@ -339,6 +365,64 @@ export default function Engagements() {
     return search(tree);
   }
 
+  // -- add client under a FY --
+  const onAddClient = (fyNode) => {
+    const name = prompt("새 클라이언트 이름:");
+    if (!name) return;
+
+    const dbId = fyNode.dbId;
+    if (useApi && dbId) {
+      api.createClient({ fy_id: dbId, name, industry: "" })
+        .then(async (created) => {
+          const newId = `client-${created.id}`;
+          // Create default phases
+          const p1 = await api.createPhase({ client_id: created.id, name: "기중감사", sort_order: 0 });
+          const p2 = await api.createPhase({ client_id: created.id, name: "기말감사", sort_order: 1 });
+          const clientNode = {
+            id: newId, label: name, type: "client", dbId: created.id,
+            children: [
+              { id: `phase-${p1.id}`, label: "기중감사", type: "phase", dbId: p1.id, children: [] },
+              { id: `phase-${p2.id}`, label: "기말감사", type: "phase", dbId: p2.id, children: [] },
+            ],
+          };
+          const addChild = (nodes) =>
+            nodes.map((n) => {
+              if (n.id === fyNode.id) return { ...n, children: [...(n.children || []), clientNode] };
+              if (n.children) return { ...n, children: addChild(n.children) };
+              return n;
+            });
+          setTree(addChild(tree));
+        });
+    } else {
+      const newId = `client-${nextId++}`;
+      const addChild = (nodes) =>
+        nodes.map((n) => {
+          if (n.id === fyNode.id) {
+            return { ...n, children: [...(n.children || []), { id: newId, label: name, type: "client", children: [] }] };
+          }
+          if (n.children) return { ...n, children: addChild(n.children) };
+          return n;
+        });
+      setTree(addChild(tree));
+    }
+  };
+
+  // -- delete client --
+  const onDeleteClient = (clientNode) => {
+    if (!confirm(`"${clientNode.label}" 클라이언트를 삭제하시겠습니까?\n하위 모든 감사업무가 삭제됩니다.`)) return;
+
+    if (useApi && clientNode.dbId) {
+      api.deleteClient(clientNode.dbId).catch(() => {});
+    }
+
+    const removeChild = (nodes) =>
+      nodes
+        .filter((n) => n.id !== clientNode.id)
+        .map((n) => (n.children ? { ...n, children: removeChild(n.children) } : n));
+    setTree(removeChild(tree));
+    setSelectedId(null);
+  };
+
   const onAddAccount = (phaseNode) => {
     const name = prompt("새 계정과목 이름:");
     if (!name) return;
@@ -445,6 +529,13 @@ export default function Engagements() {
       <div className="w-80 shrink-0 bg-surface-container-lowest rounded-xl border border-outline-variant p-3 overflow-y-auto">
         <div className="flex items-center justify-between px-2 mb-3">
           <h3 className="font-headline text-sm font-bold text-on-surface">감사업무 목록</h3>
+          <button
+            onClick={() => { if (tree.length) onAddClient(tree[0]); }}
+            className="p-1 rounded-lg hover:bg-surface-container transition"
+            title="클라이언트 추가"
+          >
+            <span className="material-symbols-outlined text-[16px] text-outline">add</span>
+          </button>
         </div>
         {tree.map((node) => (
           <TreeNode
@@ -456,6 +547,8 @@ export default function Engagements() {
             onToggle={onToggle}
             onAddAccount={onAddAccount}
             onDeleteAccount={onDeleteAccount}
+            onAddClient={onAddClient}
+            onDeleteClient={onDeleteClient}
           />
         ))}
       </div>

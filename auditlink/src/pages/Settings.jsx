@@ -129,7 +129,7 @@ export default function Settings() {
         </div>
         <button
           onClick={handleSave}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-label font-semibold hover:bg-primary-container hover:text-on-primary-container transition shadow-sm"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition shadow-sm"
         >
           <span className="material-symbols-outlined text-lg">
             {saved ? "check_circle" : "save"}

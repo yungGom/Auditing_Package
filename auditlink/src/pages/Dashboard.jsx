@@ -2,6 +2,7 @@
 // Dashboard – 대시보드 메인 페이지
 // ---------------------------------------------------------------------------
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api";
 
 const MOCK_DEADLINES = [
@@ -136,12 +137,12 @@ function StatCards({ data }) {
   );
 }
 
-function DeadlinesSection({ deadlines }) {
+function DeadlinesSection({ deadlines, onViewAll }) {
   return (
     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-headline text-base font-bold text-on-surface">주요 마감일</h3>
-        <button className="text-xs font-label text-primary font-semibold hover:underline">
+        <button onClick={onViewAll} className="text-xs font-label text-primary font-semibold hover:underline">
           전체보기
         </button>
       </div>
@@ -177,12 +178,12 @@ function DeadlinesSection({ deadlines }) {
   );
 }
 
-function EngagementsTable({ engagements }) {
+function EngagementsTable({ engagements, onViewAll }) {
   return (
     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-headline text-base font-bold text-on-surface">진행중인 감사</h3>
-        <button className="text-xs font-label text-primary font-semibold hover:underline">
+        <button onClick={onViewAll} className="text-xs font-label text-primary font-semibold hover:underline">
           전체보기
         </button>
       </div>
@@ -253,6 +254,7 @@ function EngagementsTable({ engagements }) {
 // --- Main -------------------------------------------------------------------
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [deadlines, setDeadlines] = useState(MOCK_DEADLINES);
   const [engagements, setEngagements] = useState(MOCK_ENGAGEMENTS);
@@ -283,8 +285,8 @@ export default function Dashboard() {
       <StatCards data={data} />
 
       <div className="grid grid-cols-2 gap-5">
-        <DeadlinesSection deadlines={deadlines} />
-        <EngagementsTable engagements={engagements} />
+        <DeadlinesSection deadlines={deadlines} onViewAll={() => navigate("/engagements")} />
+        <EngagementsTable engagements={engagements} onViewAll={() => navigate("/engagements")} />
       </div>
     </div>
   );

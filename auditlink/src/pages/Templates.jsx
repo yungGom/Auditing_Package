@@ -160,7 +160,7 @@ function TemplateCard({ template, onSelect, onDelete }) {
       <div className="flex gap-2 mt-auto pt-2 border-t border-outline-variant/50">
         <button
           onClick={(e) => { e.stopPropagation(); }}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-on-primary text-xs font-label font-semibold hover:bg-primary-container hover:text-on-primary-container transition"
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-label font-semibold hover:bg-primary-container hover:text-white transition"
         >
           <span className="material-symbols-outlined text-base">play_arrow</span>
           적용
@@ -258,7 +258,7 @@ function TemplateDetail({ template, onClose }) {
           >
             닫기
           </button>
-          <button className="px-4 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-label font-semibold hover:bg-primary-container hover:text-on-primary-container transition flex items-center gap-2">
+          <button className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition flex items-center gap-2">
             <span className="material-symbols-outlined text-base">play_arrow</span>
             이 템플릿 적용
           </button>
@@ -296,7 +296,7 @@ export default function Templates() {
             업종별 감사 템플릿을 관리하고 새로운 감사에 적용하세요
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-label font-semibold hover:bg-primary-container hover:text-on-primary-container transition shadow-sm">
+        <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition shadow-sm">
           <span className="material-symbols-outlined text-lg">add</span>
           새 템플릿
         </button>
