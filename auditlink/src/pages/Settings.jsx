@@ -2,6 +2,7 @@
 // Settings – 설정 페이지
 // ---------------------------------------------------------------------------
 import { useState, useEffect, useCallback } from "react";
+import api from "../api";
 
 const STORAGE_KEY = "auditlink_settings";
 
@@ -74,8 +75,23 @@ export default function Settings() {
     setSaved(false);
   }, []);
 
+  // Load from API on mount
+  useEffect(() => {
+    api.getSettings().then((apiSettings) => {
+      if (apiSettings && Object.keys(apiSettings).length) {
+        const parsed = { ...settings };
+        for (const [k, v] of Object.entries(apiSettings)) {
+          try { parsed[k] = JSON.parse(v); } catch { parsed[k] = v; }
+        }
+        setSettings((prev) => ({ ...prev, ...parsed }));
+      }
+    }).catch(() => {});
+  }, []);
+
   const handleSave = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    // Also save to API
+    api.updateSettings(settings).catch(() => {});
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };

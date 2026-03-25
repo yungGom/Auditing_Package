@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import api from "../api";
 
 // ---------------------------------------------------------------------------
-// Mock Data
+// Fallback Mock Data
 // ---------------------------------------------------------------------------
 
 const STATUS_MAP = {
@@ -17,67 +18,38 @@ const PRIORITY_MAP = {
   low: { label: "하", dot: "bg-secondary" },
 };
 
-const initialTree = [
+const fallbackTree = [
   {
-    id: "fy2025",
-    label: "FY2025",
-    type: "fy",
-    children: [
+    id: "fy2025", label: "FY2025", type: "fy", children: [
       {
-        id: "hanbit",
-        label: "한빛제조",
-        type: "client",
-        children: [
-          {
-            id: "hanbit-interim",
-            label: "기중감사",
-            type: "phase",
-            children: [
-              { id: "hanbit-interim-ar", label: "매출채권", type: "account" },
-              { id: "hanbit-interim-inv", label: "재고자산", type: "account" },
-            ],
-          },
-          {
-            id: "hanbit-final",
-            label: "기말감사",
-            type: "phase",
-            children: [
-              { id: "hanbit-final-ppe", label: "유형자산", type: "account" },
-              { id: "hanbit-final-lease", label: "리스", type: "account" },
-            ],
-          },
+        id: "hanbit", label: "한빛제조", type: "client", children: [
+          { id: "hanbit-interim", label: "기중감사", type: "phase", children: [
+            { id: "hanbit-interim-ar", label: "매출채권", type: "account" },
+            { id: "hanbit-interim-inv", label: "재고자산", type: "account" },
+          ]},
+          { id: "hanbit-final", label: "기말감사", type: "phase", children: [
+            { id: "hanbit-final-ppe", label: "유형자산", type: "account" },
+            { id: "hanbit-final-lease", label: "리스", type: "account" },
+          ]},
         ],
       },
       {
-        id: "seohyun",
-        label: "서현테크",
-        type: "client",
-        children: [
-          {
-            id: "seohyun-interim",
-            label: "기중감사",
-            type: "phase",
-            children: [
-              { id: "seohyun-interim-rev", label: "수익인식", type: "account" },
-              { id: "seohyun-interim-cash", label: "현금및현금성자산", type: "account" },
-            ],
-          },
-          {
-            id: "seohyun-final",
-            label: "기말감사",
-            type: "phase",
-            children: [
-              { id: "seohyun-final-equity", label: "자본", type: "account" },
-              { id: "seohyun-final-provision", label: "충당부채", type: "account" },
-            ],
-          },
+        id: "seohyun", label: "서현테크", type: "client", children: [
+          { id: "seohyun-interim", label: "기중감사", type: "phase", children: [
+            { id: "seohyun-interim-rev", label: "수익인식", type: "account" },
+            { id: "seohyun-interim-cash", label: "현금및현금성자산", type: "account" },
+          ]},
+          { id: "seohyun-final", label: "기말감사", type: "phase", children: [
+            { id: "seohyun-final-equity", label: "자본", type: "account" },
+            { id: "seohyun-final-provision", label: "충당부채", type: "account" },
+          ]},
         ],
       },
     ],
   },
 ];
 
-const initialTasks = {
+const fallbackTasks = {
   "hanbit-interim-ar": [
     { id: 1, title: "매출채권 확인서 발송", status: "in_progress", assignee: "김감사", deadline: "2025-03-26", priority: "high", memo: "거래처 30곳 대상" },
     { id: 2, title: "대손충당금 적정성 검토", status: "todo", assignee: "이주임", deadline: "2025-03-28", priority: "mid", memo: "" },
@@ -123,7 +95,7 @@ const TYPE_ICONS = {
 
 function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount, onDeleteAccount }) {
   const hasChildren = node.children && node.children.length > 0;
-  const isExpanded = expanded[node.id] !== false; // default open
+  const isExpanded = expanded[node.id] !== false;
   const isSelected = selectedId === node.id;
   const isAccount = node.type === "account";
   const isPhase = node.type === "phase";
@@ -142,7 +114,6 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
           if (isAccount) onSelect(node.id);
         }}
       >
-        {/* expand / collapse */}
         {hasChildren ? (
           <span className={`material-symbols-outlined text-[16px] text-outline transition-transform ${isExpanded ? "rotate-90" : ""}`}>
             chevron_right
@@ -157,10 +128,9 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
 
         <span className="flex-1 truncate">{node.label}</span>
 
-        {/* Phase: add account button */}
         {isPhase && (
           <button
-            onClick={(e) => { e.stopPropagation(); onAddAccount(node.id); }}
+            onClick={(e) => { e.stopPropagation(); onAddAccount(node); }}
             className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-surface-container-highest transition"
             title="계정과목 추가"
           >
@@ -168,10 +138,9 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
           </button>
         )}
 
-        {/* Account: delete button */}
         {isAccount && (
           <button
-            onClick={(e) => { e.stopPropagation(); onDeleteAccount(node.id); }}
+            onClick={(e) => { e.stopPropagation(); onDeleteAccount(node); }}
             className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-error/10 transition"
             title="계정과목 삭제"
           >
@@ -220,7 +189,6 @@ function TaskPanel({ accountId, accountLabel, tasks, onAddTask, onToggleStatus }
 
   return (
     <div className="flex-1 overflow-y-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="font-headline text-lg font-bold text-on-surface">{accountLabel}</h3>
@@ -237,11 +205,10 @@ function TaskPanel({ accountId, accountLabel, tasks, onAddTask, onToggleStatus }
         </button>
       </div>
 
-      {/* Task list */}
       <div className="space-y-3">
         {tasks.map((task) => {
-          const st = STATUS_MAP[task.status];
-          const pr = PRIORITY_MAP[task.priority];
+          const st = STATUS_MAP[task.status] || STATUS_MAP.todo;
+          const pr = PRIORITY_MAP[task.priority] || PRIORITY_MAP.mid;
           return (
             <div
               key={task.id}
@@ -250,14 +217,12 @@ function TaskPanel({ accountId, accountLabel, tasks, onAddTask, onToggleStatus }
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
-                    {/* status badge */}
                     <button
                       onClick={() => onToggleStatus(task.id)}
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xl text-[11px] font-label font-semibold ${st.bg} ${st.text} hover:opacity-80 transition`}
                     >
                       {st.label}
                     </button>
-                    {/* priority dot */}
                     <span className="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
                       <span className={`w-1.5 h-1.5 rounded-full ${pr.dot}`} />
                       {pr.label}
@@ -270,7 +235,7 @@ function TaskPanel({ accountId, accountLabel, tasks, onAddTask, onToggleStatus }
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-xs font-label text-on-surface-variant">{task.assignee}</p>
-                  <p className="text-[11px] text-outline font-label mt-0.5">{task.deadline}</p>
+                  <p className="text-[11px] text-outline font-label mt-0.5">{task.deadline || task.due_date}</p>
                 </div>
               </div>
             </div>
@@ -294,15 +259,61 @@ function TaskPanel({ accountId, accountLabel, tasks, onAddTask, onToggleStatus }
 let nextId = 100;
 
 export default function Engagements() {
-  const [tree, setTree] = useState(initialTree);
-  const [tasks, setTasks] = useState(initialTasks);
-  const [selectedId, setSelectedId] = useState("hanbit-interim-ar");
+  const [tree, setTree] = useState(fallbackTree);
+  const [tasks, setTasks] = useState(fallbackTasks);
+  const [selectedId, setSelectedId] = useState(null);
   const [expanded, setExpanded] = useState({});
+  const [useApi, setUseApi] = useState(false);
+
+  // Load tree from API
+  useEffect(() => {
+    api.getEngagementTree().then((apiTree) => {
+      if (apiTree?.length) {
+        setTree(apiTree);
+        setUseApi(true);
+        // select first account
+        const firstAccount = findFirstAccount(apiTree);
+        if (firstAccount) setSelectedId(firstAccount.id);
+      }
+    }).catch(() => {
+      setSelectedId("hanbit-interim-ar");
+    });
+  }, []);
+
+  function findFirstAccount(nodes) {
+    for (const n of nodes) {
+      if (n.type === "account") return n;
+      if (n.children) {
+        const found = findFirstAccount(n.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  // Load tasks when account selected
+  useEffect(() => {
+    if (!selectedId || !useApi) return;
+    const dbId = extractDbId(selectedId);
+    if (!dbId) return;
+    api.getTasks(dbId).then((apiTasks) => {
+      setTasks((prev) => ({
+        ...prev,
+        [selectedId]: apiTasks.map((t) => ({
+          ...t, deadline: t.due_date,
+        })),
+      }));
+    }).catch(() => {});
+  }, [selectedId, useApi]);
+
+  function extractDbId(nodeId) {
+    const m = nodeId.match(/^account-(\d+)$/);
+    return m ? parseInt(m[1]) : null;
+  }
 
   const onToggle = (id) =>
     setExpanded((prev) => ({ ...prev, [id]: prev[id] === false ? true : false }));
 
-  // -- find label for selected account --
   function findLabel(nodes) {
     for (const n of nodes) {
       if (n.id === selectedId) return n.label;
@@ -313,40 +324,6 @@ export default function Engagements() {
     }
     return null;
   }
-
-  // -- add account under a phase --
-  const onAddAccount = (phaseId) => {
-    const name = prompt("새 계정과목 이름:");
-    if (!name) return;
-    const newId = `account-${nextId++}`;
-    const addChild = (nodes) =>
-      nodes.map((n) => {
-        if (n.id === phaseId) {
-          return { ...n, children: [...(n.children || []), { id: newId, label: name, type: "account" }] };
-        }
-        if (n.children) return { ...n, children: addChild(n.children) };
-        return n;
-      });
-    setTree(addChild(tree));
-    setTasks((prev) => ({ ...prev, [newId]: [] }));
-    setSelectedId(newId);
-  };
-
-  // -- delete account --
-  const onDeleteAccount = (accountId) => {
-    if (!confirm(`"${findLabelById(accountId)}" 계정과목을 삭제하시겠습니까?`)) return;
-    const removeChild = (nodes) =>
-      nodes
-        .filter((n) => n.id !== accountId)
-        .map((n) => (n.children ? { ...n, children: removeChild(n.children) } : n));
-    setTree(removeChild(tree));
-    setTasks((prev) => {
-      const copy = { ...prev };
-      delete copy[accountId];
-      return copy;
-    });
-    if (selectedId === accountId) setSelectedId(null);
-  };
 
   function findLabelById(id) {
     const search = (nodes) => {
@@ -362,43 +339,109 @@ export default function Engagements() {
     return search(tree);
   }
 
-  // -- add task --
+  const onAddAccount = (phaseNode) => {
+    const name = prompt("새 계정과목 이름:");
+    if (!name) return;
+
+    const dbId = phaseNode.dbId;
+    if (useApi && dbId) {
+      api.createAccount({ phase_id: dbId, name, sort_order: (phaseNode.children?.length || 0) })
+        .then((created) => {
+          const newId = `account-${created.id}`;
+          const addChild = (nodes) =>
+            nodes.map((n) => {
+              if (n.id === phaseNode.id) {
+                return { ...n, children: [...(n.children || []), { id: newId, label: name, type: "account", dbId: created.id }] };
+              }
+              if (n.children) return { ...n, children: addChild(n.children) };
+              return n;
+            });
+          setTree(addChild(tree));
+          setTasks((prev) => ({ ...prev, [newId]: [] }));
+          setSelectedId(newId);
+        });
+    } else {
+      const newId = `account-${nextId++}`;
+      const addChild = (nodes) =>
+        nodes.map((n) => {
+          if (n.id === phaseNode.id) {
+            return { ...n, children: [...(n.children || []), { id: newId, label: name, type: "account" }] };
+          }
+          if (n.children) return { ...n, children: addChild(n.children) };
+          return n;
+        });
+      setTree(addChild(tree));
+      setTasks((prev) => ({ ...prev, [newId]: [] }));
+      setSelectedId(newId);
+    }
+  };
+
+  const onDeleteAccount = (accountNode) => {
+    if (!confirm(`"${accountNode.label}" 계정과목을 삭제하시겠습니까?`)) return;
+
+    if (useApi && accountNode.dbId) {
+      api.deleteAccount(accountNode.dbId).catch(() => {});
+    }
+
+    const removeChild = (nodes) =>
+      nodes
+        .filter((n) => n.id !== accountNode.id)
+        .map((n) => (n.children ? { ...n, children: removeChild(n.children) } : n));
+    setTree(removeChild(tree));
+    setTasks((prev) => {
+      const copy = { ...prev };
+      delete copy[accountNode.id];
+      return copy;
+    });
+    if (selectedId === accountNode.id) setSelectedId(null);
+  };
+
   const onAddTask = () => {
     const title = prompt("할일 제목:");
     if (!title) return;
-    setTasks((prev) => ({
-      ...prev,
-      [selectedId]: [
-        ...(prev[selectedId] || []),
-        {
-          id: nextId++,
-          title,
-          status: "todo",
-          assignee: "미배정",
-          deadline: "미정",
-          priority: "mid",
-          memo: "",
-        },
-      ],
-    }));
+
+    const dbId = extractDbId(selectedId);
+    if (useApi && dbId) {
+      api.createTask({ account_id: dbId, title, status: "todo", assignee: "미배정", priority: "mid", memo: "" })
+        .then((created) => {
+          setTasks((prev) => ({
+            ...prev,
+            [selectedId]: [...(prev[selectedId] || []), { ...created, deadline: created.due_date }],
+          }));
+        });
+    } else {
+      setTasks((prev) => ({
+        ...prev,
+        [selectedId]: [
+          ...(prev[selectedId] || []),
+          { id: nextId++, title, status: "todo", assignee: "미배정", deadline: "미정", priority: "mid", memo: "" },
+        ],
+      }));
+    }
   };
 
-  // -- cycle status --
   const statusOrder = ["todo", "in_progress", "review", "done"];
   const onToggleStatus = (taskId) => {
-    setTasks((prev) => {
-      const list = prev[selectedId].map((t) => {
-        if (t.id !== taskId) return t;
-        const idx = statusOrder.indexOf(t.status);
-        return { ...t, status: statusOrder[(idx + 1) % statusOrder.length] };
-      });
-      return { ...prev, [selectedId]: list };
-    });
+    const list = tasks[selectedId] || [];
+    const task = list.find((t) => t.id === taskId);
+    if (!task) return;
+    const idx = statusOrder.indexOf(task.status);
+    const newStatus = statusOrder[(idx + 1) % statusOrder.length];
+
+    if (useApi) {
+      api.updateTask(taskId, { status: newStatus }).catch(() => {});
+    }
+
+    setTasks((prev) => ({
+      ...prev,
+      [selectedId]: prev[selectedId].map((t) =>
+        t.id === taskId ? { ...t, status: newStatus } : t
+      ),
+    }));
   };
 
   return (
     <div className="flex gap-5 h-[calc(100vh-7rem)]">
-      {/* Left: Tree */}
       <div className="w-80 shrink-0 bg-surface-container-lowest rounded-xl border border-outline-variant p-3 overflow-y-auto">
         <div className="flex items-center justify-between px-2 mb-3">
           <h3 className="font-headline text-sm font-bold text-on-surface">감사업무 목록</h3>
@@ -417,7 +460,6 @@ export default function Engagements() {
         ))}
       </div>
 
-      {/* Right: Task Panel */}
       <div className="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant p-5 overflow-y-auto">
         <TaskPanel
           accountId={selectedId}

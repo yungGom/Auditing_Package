@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
 // Templates – 감사 템플릿 관리 페이지
 // ---------------------------------------------------------------------------
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import api from "../api";
 
 const MOCK_TEMPLATES = [
   {
@@ -102,7 +103,7 @@ const INDUSTRY_COLORS = {
 
 // --- Sub-components ---------------------------------------------------------
 
-function TemplateCard({ template, onSelect }) {
+function TemplateCard({ template, onSelect, onDelete }) {
   const colors = INDUSTRY_COLORS[template.industry] || INDUSTRY_COLORS["제조업"];
 
   return (
@@ -172,7 +173,7 @@ function TemplateCard({ template, onSelect }) {
           수정
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); onDelete?.(template); }}
           className="flex items-center justify-center px-2.5 py-2 rounded-xl border border-outline-variant text-on-surface-variant text-xs hover:bg-error/10 hover:text-error hover:border-error/30 transition"
         >
           <span className="material-symbols-outlined text-base">delete</span>
@@ -271,6 +272,19 @@ function TemplateDetail({ template, onClose }) {
 
 export default function Templates() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templates, setTemplates] = useState(MOCK_TEMPLATES);
+
+  useEffect(() => {
+    api.getTemplates().then((data) => {
+      if (data?.length) setTemplates(data);
+    }).catch(() => {});
+  }, []);
+
+  const handleDelete = (tpl) => {
+    if (!confirm(`"${tpl.name}" 템플릿을 삭제하시겠습니까?`)) return;
+    api.deleteTemplate(tpl.id).catch(() => {});
+    setTemplates((prev) => prev.filter((t) => t.id !== tpl.id));
+  };
 
   return (
     <div className="space-y-6">
@@ -290,8 +304,8 @@ export default function Templates() {
 
       {/* 카드 그리드 */}
       <div className="grid grid-cols-3 gap-5">
-        {MOCK_TEMPLATES.map((tpl) => (
-          <TemplateCard key={tpl.id} template={tpl} onSelect={setSelectedTemplate} />
+        {templates.map((tpl) => (
+          <TemplateCard key={tpl.id} template={tpl} onSelect={setSelectedTemplate} onDelete={handleDelete} />
         ))}
       </div>
 

@@ -1,6 +1,8 @@
 // ---------------------------------------------------------------------------
 // Dashboard – 대시보드 메인 페이지
 // ---------------------------------------------------------------------------
+import { useState, useEffect } from "react";
+import api from "../api";
 
 const MOCK_DEADLINES = [
   { id: 1, dDay: 3, task: "매출채권 확인서 발송", client: "한빛제조", date: "2025-03-26" },
@@ -17,12 +19,19 @@ const MOCK_ENGAGEMENTS = [
   { id: 4, name: "미래에너지", initials: "미래", industry: "에너지", progress: 31, nextDeadline: "2025-04-17", color: "bg-primary-container" },
 ];
 
+const CLIENT_COLORS = ["bg-primary", "bg-secondary", "bg-on-tertiary-container", "bg-primary-container"];
+
 // --- Helpers ----------------------------------------------------------------
 
 function dDayBadge(d) {
   if (d <= 7) return { bg: "bg-error/10", text: "text-error", border: "border-error/30" };
   if (d <= 15) return { bg: "bg-on-tertiary-container/10", text: "text-on-tertiary-container", border: "border-on-tertiary-container/30" };
   return { bg: "bg-secondary/10", text: "text-secondary", border: "border-secondary/30" };
+}
+
+function calcDDay(dateStr) {
+  const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+  return diff > 0 ? diff : 0;
 }
 
 // --- Sub-components ---------------------------------------------------------
@@ -58,25 +67,32 @@ function CircularProgress({ value, size = 120, strokeWidth = 10 }) {
   );
 }
 
-function StatCards() {
+function StatCards({ data }) {
+  const overallPct = data?.overallProgress ?? 64;
+  const totalTasks = data?.totalTasks ?? 14;
+  const doneTasks = data?.doneTasks ?? 9;
+  const pendingCount = totalTasks - doneTasks;
+  const icfrTotal = data?.icfrTotal ?? 50;
+  const icfrDone = data?.icfrCompleted ?? 39;
+  const icfrPct = icfrTotal > 0 ? Math.round(icfrDone / icfrTotal * 100) : 0;
+  const clientCount = data?.clients?.length ?? 4;
+
   return (
     <div className="grid grid-cols-3 gap-5">
-      {/* 전체 감사 진척률 */}
       <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5 flex flex-col items-center gap-3">
         <h3 className="text-sm font-label font-semibold text-on-surface-variant w-full">
           전체 감사 진척률
         </h3>
-        <CircularProgress value={64} />
-        <p className="text-xs text-outline font-label">4건 진행 중 · 평균 64%</p>
+        <CircularProgress value={overallPct} />
+        <p className="text-xs text-outline font-label">{clientCount}건 진행 중 · 평균 {overallPct}%</p>
       </div>
 
-      {/* 미처리 항목 */}
       <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5 border-l-4 border-l-error">
         <h3 className="text-sm font-label font-semibold text-on-surface-variant">
           미처리 항목
         </h3>
         <div className="mt-4 flex items-end gap-2">
-          <span className="text-4xl font-headline font-bold text-error">12</span>
+          <span className="text-4xl font-headline font-bold text-error">{pendingCount}</span>
           <span className="text-sm text-on-surface-variant font-body mb-1">건</span>
         </div>
         <div className="mt-4 space-y-2">
@@ -95,25 +111,24 @@ function StatCards() {
         </div>
       </div>
 
-      {/* 내부회계 테스트 완료율 */}
       <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
         <h3 className="text-sm font-label font-semibold text-on-surface-variant">
           내부회계 테스트 완료율
         </h3>
         <div className="mt-4 flex items-end gap-2">
-          <span className="text-4xl font-headline font-bold text-primary">78</span>
+          <span className="text-4xl font-headline font-bold text-primary">{icfrPct}</span>
           <span className="text-sm text-on-surface-variant font-body mb-1">%</span>
         </div>
         <div className="mt-4">
           <div className="w-full h-2.5 bg-surface-container-highest rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-primary to-primary-container rounded-full transition-all duration-700"
-              style={{ width: "78%" }}
+              style={{ width: `${icfrPct}%` }}
             />
           </div>
           <div className="mt-2 flex justify-between text-xs font-label text-on-surface-variant">
-            <span>완료 39건</span>
-            <span>전체 50건</span>
+            <span>완료 {icfrDone}건</span>
+            <span>전체 {icfrTotal}건</span>
           </div>
         </div>
       </div>
@@ -121,7 +136,7 @@ function StatCards() {
   );
 }
 
-function DeadlinesSection() {
+function DeadlinesSection({ deadlines }) {
   return (
     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
       <div className="flex items-center justify-between mb-4">
@@ -132,8 +147,9 @@ function DeadlinesSection() {
       </div>
 
       <div className="space-y-3">
-        {MOCK_DEADLINES.map((item) => {
-          const badge = dDayBadge(item.dDay);
+        {deadlines.map((item) => {
+          const d = item.dDay ?? calcDDay(item.date);
+          const badge = dDayBadge(d);
           return (
             <div
               key={item.id}
@@ -142,7 +158,7 @@ function DeadlinesSection() {
               <span
                 className={`inline-flex items-center justify-center min-w-[52px] px-2 py-1 rounded-xl text-xs font-label font-bold border ${badge.bg} ${badge.text} ${badge.border}`}
               >
-                D-{item.dDay}
+                D-{d}
               </span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-label font-semibold text-on-surface truncate">
@@ -161,7 +177,7 @@ function DeadlinesSection() {
   );
 }
 
-function EngagementsTable() {
+function EngagementsTable({ engagements }) {
   return (
     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
       <div className="flex items-center justify-between mb-4">
@@ -181,50 +197,53 @@ function EngagementsTable() {
           </tr>
         </thead>
         <tbody>
-          {MOCK_ENGAGEMENTS.map((e) => (
-            <tr
-              key={e.id}
-              className="border-b border-outline-variant/50 last:border-b-0 hover:bg-surface-container-low transition"
-            >
-              <td className="py-3.5">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-8 h-8 rounded-full ${e.color} flex items-center justify-center`}
-                  >
-                    <span className="text-[10px] font-label font-bold text-white">
-                      {e.initials.slice(0, 2)}
+          {engagements.map((e, i) => {
+            const progress = e.progress ?? (e.total_tasks > 0 ? Math.round(e.done_tasks / e.total_tasks * 100) : 0);
+            const color = e.color || CLIENT_COLORS[i % CLIENT_COLORS.length];
+            const initials = e.initials || e.name.slice(0, 2);
+            return (
+              <tr
+                key={e.id}
+                className="border-b border-outline-variant/50 last:border-b-0 hover:bg-surface-container-low transition"
+              >
+                <td className="py-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full ${color} flex items-center justify-center`}>
+                      <span className="text-[10px] font-label font-bold text-white">
+                        {initials.slice(0, 2)}
+                      </span>
+                    </div>
+                    <span className="text-sm font-label font-semibold text-on-surface">
+                      {e.name}
                     </span>
                   </div>
-                  <span className="text-sm font-label font-semibold text-on-surface">
-                    {e.name}
+                </td>
+                <td className="py-3.5">
+                  <span className="text-xs font-label text-on-surface-variant px-2 py-0.5 bg-surface-container rounded-xl">
+                    {e.industry}
                   </span>
-                </div>
-              </td>
-              <td className="py-3.5">
-                <span className="text-xs font-label text-on-surface-variant px-2 py-0.5 bg-surface-container rounded-xl">
-                  {e.industry}
-                </span>
-              </td>
-              <td className="py-3.5">
-                <div className="flex items-center gap-3">
-                  <div className="w-24 h-2 bg-surface-container-highest rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-700"
-                      style={{ width: `${e.progress}%` }}
-                    />
+                </td>
+                <td className="py-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-24 h-2 bg-surface-container-highest rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-700"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-label font-semibold text-on-surface w-8 text-right">
+                      {progress}%
+                    </span>
                   </div>
-                  <span className="text-xs font-label font-semibold text-on-surface w-8 text-right">
-                    {e.progress}%
+                </td>
+                <td className="py-3.5 text-right">
+                  <span className="text-xs font-label text-on-surface-variant">
+                    {e.nextDeadline || "—"}
                   </span>
-                </div>
-              </td>
-              <td className="py-3.5 text-right">
-                <span className="text-xs font-label text-on-surface-variant">
-                  {e.nextDeadline}
-                </span>
-              </td>
-            </tr>
-          ))}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -234,6 +253,24 @@ function EngagementsTable() {
 // --- Main -------------------------------------------------------------------
 
 export default function Dashboard() {
+  const [data, setData] = useState(null);
+  const [deadlines, setDeadlines] = useState(MOCK_DEADLINES);
+  const [engagements, setEngagements] = useState(MOCK_ENGAGEMENTS);
+
+  useEffect(() => {
+    api.getDashboard().then((d) => {
+      setData(d);
+      if (d.deadlines?.length) {
+        setDeadlines(d.deadlines.map((dl) => ({
+          ...dl, dDay: calcDDay(dl.date),
+        })));
+      }
+      if (d.clients?.length) {
+        setEngagements(d.clients);
+      }
+    }).catch(() => { /* fallback to mock */ });
+  }, []);
+
   return (
     <div className="space-y-6">
       <div>
@@ -243,11 +280,11 @@ export default function Dashboard() {
         </p>
       </div>
 
-      <StatCards />
+      <StatCards data={data} />
 
       <div className="grid grid-cols-2 gap-5">
-        <DeadlinesSection />
-        <EngagementsTable />
+        <DeadlinesSection deadlines={deadlines} />
+        <EngagementsTable engagements={engagements} />
       </div>
     </div>
   );

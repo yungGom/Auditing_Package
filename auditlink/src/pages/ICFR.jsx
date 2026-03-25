@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
 // ICFR – 내부회계관리제도 테스트 추적 페이지
 // ---------------------------------------------------------------------------
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
+import api from "../api";
 
 const STATUS = {
   미실시: { bg: "bg-outline/10", text: "text-outline", border: "border-outline/30" },
@@ -118,16 +119,32 @@ function StatusBadge({ status }) {
 // --- Main -------------------------------------------------------------------
 
 export default function ICFR() {
+  const [data, setData] = useState(MOCK_DATA);
   const [clientFilter, setClientFilter] = useState("전체");
   const [statusFilter, setStatusFilter] = useState("전체");
 
+  useEffect(() => {
+    api.getICFRTests().then((rows) => {
+      if (rows?.length) {
+        setData(rows.map((r) => ({
+          ...r,
+          client: r.client_name,
+          control: r.control_name,
+          method: r.test_method,
+        })));
+      }
+    }).catch(() => {});
+  }, []);
+
+  const allClients = useMemo(() => ["전체", ...new Set(data.map((d) => d.client))], [data]);
+
   const filtered = useMemo(() => {
-    return MOCK_DATA.filter((d) => {
+    return data.filter((d) => {
       if (clientFilter !== "전체" && d.client !== clientFilter) return false;
       if (statusFilter !== "전체" && d.status !== statusFilter) return false;
       return true;
     });
-  }, [clientFilter, statusFilter]);
+  }, [clientFilter, statusFilter, data]);
 
   return (
     <div className="space-y-6">
@@ -140,7 +157,7 @@ export default function ICFR() {
       </div>
 
       {/* 요약 바 */}
-      <SummaryBar filtered={filtered} total={MOCK_DATA.length} />
+      <SummaryBar filtered={filtered} total={data.length} />
 
       {/* 필터 + 테이블 */}
       <div className="bg-surface-container-lowest rounded-xl border border-outline-variant">
@@ -149,7 +166,7 @@ export default function ICFR() {
           <FilterDropdown
             label="클라이언트"
             icon="business"
-            options={ALL_CLIENTS}
+            options={allClients}
             value={clientFilter}
             onChange={setClientFilter}
           />
