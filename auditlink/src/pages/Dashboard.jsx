@@ -79,7 +79,7 @@ function StatCards({ data }) {
   const clientCount = data?.clients?.length ?? 4;
 
   return (
-    <div className="grid grid-cols-3 gap-5">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-5">
       <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5 flex flex-col items-center gap-3">
         <h3 className="text-sm font-label font-semibold text-on-surface-variant w-full">
           전체 감사 진척률
@@ -429,7 +429,7 @@ export default function Dashboard() {
 
       <StatCards data={data} />
 
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
         <DeadlinesSection deadlines={deadlines} onViewAll={() => navigate("/engagements")} />
         <EngagementsTable engagements={engagements} onViewAll={() => navigate("/engagements")} />
         <CalendarView deadlines={deadlines} />

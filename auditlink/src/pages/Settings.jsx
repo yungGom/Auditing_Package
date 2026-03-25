@@ -138,7 +138,7 @@ export default function Settings() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5">
         {/* ── 회계연도 관리 ────────────────────────────── */}
         <SectionCard icon="calendar_today" title="회계연도 관리" description="감사 대상 회계연도를 관리합니다">
           {/* 활성 FY */}
