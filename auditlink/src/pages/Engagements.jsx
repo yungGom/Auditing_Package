@@ -244,6 +244,14 @@ function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, o
 function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange, onAddTask, onToggleStatus, onTaskContextMenu, onTaskClick, onDrop, onReorder, highlightTaskId }) {
   const [dragIdx, setDragIdx] = useState(null);
 
+  // Group tasks by status for kanban – must be before any early return
+  const grouped = useMemo(() => {
+    const g = {};
+    for (const s of STATUS_ORDER) g[s] = [];
+    for (const t of tasks) (g[t.status] || (g[t.status] = [])).push(t);
+    return g;
+  }, [tasks]);
+
   if (!accountId) {
     return (
       <div className="flex-1 flex items-center justify-center text-on-surface-variant font-body">
@@ -254,14 +262,6 @@ function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange,
       </div>
     );
   }
-
-  // Group tasks by status for kanban
-  const grouped = useMemo(() => {
-    const g = {};
-    for (const s of STATUS_ORDER) g[s] = [];
-    for (const t of tasks) (g[t.status] || (g[t.status] = [])).push(t);
-    return g;
-  }, [tasks]);
 
   // List drag reorder handlers
   const handleListDragStart = (e, idx) => {
