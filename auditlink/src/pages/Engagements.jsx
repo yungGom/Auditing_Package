@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api";
 import TaskDetailPanel from "../components/TaskDetailPanel";
+import ClientSummaryPanel from "../components/ClientSummaryPanel";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -124,16 +125,16 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = expanded[node.id] !== false;
   const isSelected = selectedId === node.id;
-  const isAccount = node.type === "account";
+  const isSelectable = node.type === "account" || node.type === "client";
 
   return (
     <div>
       <div
         className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-xl cursor-pointer text-sm font-label transition-all ${
-          isSelected && isAccount ? "bg-surface-container-lowest shadow-sm text-primary font-semibold" : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+          isSelected && isSelectable ? "bg-surface-container-lowest shadow-sm text-primary font-semibold" : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
         }`}
         style={{ paddingLeft: `${(node.depth || 0) * 16 + 8}px` }}
-        onClick={() => { if (hasChildren) onToggle(node.id); if (isAccount) onSelect(node.id); }}
+        onClick={() => { if (hasChildren) onToggle(node.id); if (isSelectable) onSelect(node.id, node.type); }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, node); }}
       >
         {hasChildren ? (
@@ -375,6 +376,7 @@ export default function Engagements() {
   const [tree, setTree] = useState(fallbackTree);
   const [tasks, setTasks] = useState(fallbackTasks);
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedType, setSelectedType] = useState("account"); // "account" or "client"
   const [expanded, setExpanded] = useState({});
   const [useApi, setUseApi] = useState(false);
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -420,9 +422,16 @@ export default function Engagements() {
           const node = findNodeById(apiTree, selectNode);
           if (node && node.type === "account") {
             setSelectedId(selectNode);
+            setSelectedType("account");
+          } else if (node && node.type === "client") {
+            setSelectedId(selectNode);
+            setSelectedType("account"); // search nav goes to account view
+            // If there's a highlight, find the account
+            const firstAcc = findFirstAccount(node.children || []);
+            if (firstAcc) { setSelectedId(firstAcc.id); setSelectedType("account"); }
           } else if (node && node.children) {
             const firstAcc = findFirstAccount(node.children);
-            if (firstAcc) setSelectedId(firstAcc.id);
+            if (firstAcc) { setSelectedId(firstAcc.id); setSelectedType("account"); }
             else setSelectedId(selectNode);
           } else {
             setSelectedId(selectNode);
@@ -437,10 +446,10 @@ export default function Engagements() {
           setSearchParams({}, { replace: true });
         } else {
           const first = findFirstAccount(apiTree);
-          if (first) setSelectedId(first.id);
+          if (first) { setSelectedId(first.id); setSelectedType("account"); }
         }
       }
-    }).catch(() => { setSelectedId("hanbit-interim-ar"); });
+    }).catch(() => { setSelectedId("hanbit-interim-ar"); setSelectedType("account"); });
   }, []);
 
   function findFirstAccount(nodes) {
@@ -459,20 +468,25 @@ export default function Engagements() {
     return null;
   }
 
-  // Load tasks
+  // Load tasks when an account is selected
   useEffect(() => {
-    if (!selectedId || !useApi) return;
+    if (!selectedId || !useApi || selectedType !== "account") return;
     const dbId = extractDbId(selectedId);
     if (!dbId) return;
     api.getTasks(dbId).then((apiTasks) => {
       setTasks((prev) => ({ ...prev, [selectedId]: apiTasks.map((t) => ({ ...t, deadline: t.due_date })) }));
     }).catch(() => {});
-  }, [selectedId, useApi]);
+  }, [selectedId, selectedType, useApi]);
 
   function extractDbId(nodeId) {
     const m = nodeId.match(/^(?:account|phase|client)-(\d+)$/);
     return m ? parseInt(m[1]) : null;
   }
+
+  const handleTreeSelect = (id, type) => {
+    setSelectedId(id);
+    setSelectedType(type || "account");
+  };
 
   const onToggle = (id) => setExpanded((prev) => ({ ...prev, [id]: prev[id] === false ? true : false }));
 
@@ -542,7 +556,7 @@ export default function Engagements() {
   const doDeleteClient = (node) => {
     if (!confirm(`"${node.label}" 클라이언트를 삭제하시겠습니까?\n하위 모든 감사업무가 삭제됩니다.`)) return;
     if (useApi && node.dbId) api.deleteClient(node.dbId).catch(() => {});
-    removeNode(node.id); setSelectedId(null);
+    removeNode(node.id); setSelectedId(null); setSelectedType("account");
   };
 
   const doAddPhase = (clientNode) => {
@@ -556,22 +570,22 @@ export default function Engagements() {
   const doDeletePhase = (node) => {
     if (!confirm(`"${node.label}" Phase를 삭제하시겠습니까?`)) return;
     if (useApi && node.dbId) api.deletePhase(node.dbId).catch(() => {});
-    removeNode(node.id); setSelectedId(null);
+    removeNode(node.id); setSelectedId(null); setSelectedType("account");
   };
 
   const doAddAccount = (phaseNode) => {
     const name = prompt("새 계정과목 이름:"); if (!name) return;
     if (useApi && phaseNode.dbId) {
       api.createAccount({ phase_id: phaseNode.dbId, name, sort_order: (phaseNode.children?.length || 0) })
-        .then((c) => { const id = `account-${c.id}`; addChildToNode(phaseNode.id, { id, label: name, type: "account", dbId: c.id }); setTasks((p) => ({ ...p, [id]: [] })); setSelectedId(id); });
-    } else { const id = `account-${nextId++}`; addChildToNode(phaseNode.id, { id, label: name, type: "account" }); setTasks((p) => ({ ...p, [id]: [] })); setSelectedId(id); }
+        .then((c) => { const id = `account-${c.id}`; addChildToNode(phaseNode.id, { id, label: name, type: "account", dbId: c.id }); setTasks((p) => ({ ...p, [id]: [] })); setSelectedId(id); setSelectedType("account"); });
+    } else { const id = `account-${nextId++}`; addChildToNode(phaseNode.id, { id, label: name, type: "account" }); setTasks((p) => ({ ...p, [id]: [] })); setSelectedId(id); setSelectedType("account"); }
   };
 
   const doDeleteAccount = (node) => {
     if (!confirm(`"${node.label}" 계정과목을 삭제하시겠습니까?`)) return;
     if (useApi && node.dbId) api.deleteAccount(node.dbId).catch(() => {});
     removeNode(node.id); setTasks((p) => { const c = { ...p }; delete c[node.id]; return c; });
-    if (selectedId === node.id) setSelectedId(null);
+    if (selectedId === node.id) { setSelectedId(null); setSelectedType("account"); }
   };
 
   const doAddTask = (statusOrAccountId) => {
@@ -682,7 +696,7 @@ export default function Engagements() {
         items.push({ icon: "delete", label: "Phase 삭제", danger: true, action: () => doDeletePhase(node) });
         break;
       case "account":
-        items.push({ icon: "add_task", label: "할일 추가", action: () => { setSelectedId(node.id); setTimeout(() => doAddTask(node.id), 100); } });
+        items.push({ icon: "add_task", label: "할일 추가", action: () => { setSelectedId(node.id); setSelectedType("account"); setTimeout(() => doAddTask(node.id), 100); } });
         items.push({ divider: true });
         items.push({ icon: "delete", label: "계정과목 삭제", danger: true, action: () => doDeleteAccount(node) });
         break;
@@ -723,7 +737,7 @@ export default function Engagements() {
               </div>
             </div>
             {tree.map((node) => (
-              <TreeNode key={node.id} node={{ ...node, depth: 0 }} selectedId={selectedId} onSelect={setSelectedId} expanded={expanded} onToggle={onToggle} onContextMenu={buildTreeContextMenu} />
+              <TreeNode key={node.id} node={{ ...node, depth: 0 }} selectedId={selectedId} onSelect={handleTreeSelect} expanded={expanded} onToggle={onToggle} onContextMenu={buildTreeContextMenu} />
             ))}
           </>
         ) : (
@@ -734,22 +748,30 @@ export default function Engagements() {
         )}
       </div>
 
-      {/* Task panel */}
+      {/* Right panel: client summary or task panel */}
       <div className="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant p-3 lg:p-5 overflow-hidden min-w-0">
-        <TaskPanel
-          accountId={selectedId}
-          accountLabel={findLabel(tree)}
-          tasks={tasks[selectedId] || []}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onAddTask={doAddTask}
-          onToggleStatus={onToggleStatus}
-          onTaskContextMenu={buildTaskContextMenu}
-          onTaskClick={openTaskDetail}
-          onDrop={onKanbanDrop}
-          onReorder={onReorder}
-          highlightTaskId={highlightTaskId}
-        />
+        {selectedType === "client" && selectedId?.startsWith("client-") ? (
+          <ClientSummaryPanel
+            clientNodeId={selectedId}
+            useApi={useApi}
+            onSelectAccount={(accountNodeId) => handleTreeSelect(accountNodeId, "account")}
+          />
+        ) : (
+          <TaskPanel
+            accountId={selectedId}
+            accountLabel={findLabel(tree)}
+            tasks={tasks[selectedId] || []}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            onAddTask={doAddTask}
+            onToggleStatus={onToggleStatus}
+            onTaskContextMenu={buildTaskContextMenu}
+            onTaskClick={openTaskDetail}
+            onDrop={onKanbanDrop}
+            onReorder={onReorder}
+            highlightTaskId={highlightTaskId}
+          />
+        )}
       </div>
 
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}

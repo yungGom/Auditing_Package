@@ -23,6 +23,7 @@ const api = {
 
   // Clients
   getClients: (fyId) => request(`/api/clients${fyId ? `?fy_id=${fyId}` : ""}`),
+  getClientSummary: (id) => request(`/api/clients/${id}/summary`),
   createClient: (data) => request("/api/clients", { method: "POST", body: JSON.stringify(data) }),
   updateClient: (id, data) => request(`/api/clients/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteClient: (id) => request(`/api/clients/${id}`, { method: "DELETE" }),

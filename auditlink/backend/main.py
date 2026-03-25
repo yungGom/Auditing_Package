@@ -173,6 +173,88 @@ def get_client(client_id: int):
         raise HTTPException(404)
     return row_to_dict(row)
 
+@app.get("/api/clients/{client_id}/summary")
+def get_client_summary(client_id: int):
+    """Return full summary: client info, accounts table, status breakdown, assignee breakdown."""
+    from datetime import date as dt_date
+    conn = _db()
+    client = conn.execute("""
+        SELECT c.*, fy.name AS fy_name
+        FROM clients c JOIN fiscal_years fy ON fy.id = c.fy_id
+        WHERE c.id = ?
+    """, (client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(404)
+    client = dict(client)
+
+    today = dt_date.today().isoformat()
+
+    # Per-account breakdown
+    accounts = rows_to_list(conn.execute("""
+        SELECT a.id, a.name, p.name AS phase_name,
+               COUNT(t.id) AS total_tasks,
+               SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) AS done_tasks,
+               MIN(CASE WHEN t.status != 'done' AND t.due_date IS NOT NULL THEN t.due_date END) AS next_deadline
+        FROM accounts a
+        JOIN phases p ON p.id = a.phase_id
+        LEFT JOIN tasks t ON t.account_id = a.id
+        WHERE p.client_id = ?
+        GROUP BY a.id
+        ORDER BY p.sort_order, a.sort_order
+    """, (client_id,)).fetchall())
+
+    for acc in accounts:
+        acc["progress"] = round(acc["done_tasks"] / acc["total_tasks"] * 100) if acc["total_tasks"] else 0
+        acc["overdue"] = bool(acc["next_deadline"] and acc["next_deadline"] < today)
+        acc["node_id"] = f"account-{acc['id']}"
+
+    # Status breakdown
+    status_counts = rows_to_list(conn.execute("""
+        SELECT t.status, COUNT(*) AS cnt
+        FROM tasks t
+        JOIN accounts a ON a.id = t.account_id
+        JOIN phases p ON p.id = a.phase_id
+        WHERE p.client_id = ?
+        GROUP BY t.status
+    """, (client_id,)).fetchall())
+
+    # Assignee breakdown
+    assignees = rows_to_list(conn.execute("""
+        SELECT t.assignee,
+               COUNT(*) AS total,
+               SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) AS done
+        FROM tasks t
+        JOIN accounts a ON a.id = t.account_id
+        JOIN phases p ON p.id = a.phase_id
+        WHERE p.client_id = ?
+        GROUP BY t.assignee
+        ORDER BY COUNT(*) DESC
+    """, (client_id,)).fetchall())
+    for a in assignees:
+        a["progress"] = round(a["done"] / a["total"] * 100) if a["total"] else 0
+
+    # Totals
+    total_tasks = sum(a["total_tasks"] for a in accounts)
+    done_tasks = sum(a["done_tasks"] for a in accounts)
+
+    conn.close()
+    return {
+        "client": {
+            "id": client["id"],
+            "name": client["name"],
+            "industry": client["industry"],
+            "report_date": client["report_date"],
+            "fy_name": client["fy_name"],
+        },
+        "total_tasks": total_tasks,
+        "done_tasks": done_tasks,
+        "progress": round(done_tasks / total_tasks * 100) if total_tasks else 0,
+        "accounts": accounts,
+        "status_counts": {r["status"]: r["cnt"] for r in status_counts},
+        "assignees": assignees,
+    }
+
 @app.post("/api/clients", status_code=201)
 def create_client(body: ClientCreate):
     conn = _db()
