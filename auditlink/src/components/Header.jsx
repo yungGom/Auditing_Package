@@ -160,7 +160,195 @@ function highlightMatch(text, query) {
 }
 
 // ---------------------------------------------------------------------------
-// New Engagement Modal (unchanged)
+// Notification Dropdown
+// ---------------------------------------------------------------------------
+
+function NotificationDropdown({ data, onSelect, onClose }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const sections = [
+    { key: "overdue", label: "기한 초과", icon: "error", items: data?.overdue || [], danger: true },
+    { key: "due_today", label: "오늘 마감", icon: "today", items: data?.due_today || [], danger: false },
+    { key: "due_week", label: "이번 주 마감 (7일 이내)", icon: "date_range", items: data?.due_week || [], danger: false },
+    { key: "review", label: "검토 대기", icon: "rate_review", items: data?.review || [], danger: false },
+  ];
+
+  const hasSome = sections.some((s) => s.items.length > 0);
+
+  return (
+    <div ref={ref} className="absolute top-full right-0 mt-1.5 w-[380px] bg-surface-container-lowest rounded-xl border border-outline-variant shadow-2xl max-h-[480px] overflow-y-auto z-50">
+      <div className="px-4 py-3 border-b border-outline-variant flex items-center gap-2">
+        <span className="material-symbols-outlined text-primary text-lg">notifications</span>
+        <span className="text-sm font-headline font-bold text-on-surface">알림</span>
+        <span className="text-[11px] font-label text-outline ml-auto">{data?.total_count || 0}건</span>
+      </div>
+
+      {!hasSome && (
+        <div className="px-4 py-8 text-center">
+          <span className="material-symbols-outlined text-3xl text-outline-variant block mb-2">notifications_off</span>
+          <p className="text-sm text-on-surface-variant font-body">알림이 없습니다</p>
+        </div>
+      )}
+
+      {sections.map((section) => {
+        if (!section.items.length) return null;
+        return (
+          <div key={section.key}>
+            <div className="px-4 py-2 text-[10px] font-label font-bold text-outline uppercase tracking-wider flex items-center gap-1.5 bg-surface-container-low/50">
+              <span className={`material-symbols-outlined text-[14px] ${section.danger ? "text-error" : "text-on-surface-variant"}`}>{section.icon}</span>
+              {section.label}
+              <span className={`ml-auto px-1.5 py-0.5 rounded-lg text-[10px] font-bold ${section.danger ? "bg-error/10 text-error" : "bg-primary-fixed text-primary"}`}>{section.items.length}</span>
+            </div>
+            {section.items.map((item) => (
+              <button key={item.id}
+                onClick={() => { onSelect(item); onClose(); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-container transition">
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-label font-semibold truncate ${section.danger ? "text-error" : "text-on-surface"}`}>{item.title}</p>
+                  <p className="text-[11px] text-on-surface-variant font-body truncate">{item.client_name}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  {item.due_date && <DdayBadge dueDate={item.due_date} />}
+                  <p className="text-[10px] text-outline font-label mt-0.5">{item.due_date}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DdayBadge({ dueDate }) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  const diff = Math.round((due - today) / (1000 * 60 * 60 * 24));
+  const label = diff === 0 ? "D-Day" : diff < 0 ? `D+${-diff}` : `D-${diff}`;
+  const isOverdue = diff < 0;
+  const isToday = diff === 0;
+  return (
+    <span className={`inline-flex px-1.5 py-0.5 rounded-lg text-[10px] font-label font-bold border ${
+      isOverdue ? "bg-error/10 text-error border-error/20" : isToday ? "bg-on-tertiary-container/10 text-on-tertiary-container border-on-tertiary-container/20" : "bg-primary-fixed text-primary border-primary/20"
+    }`}>{label}</span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Startup Alert Modal
+// ---------------------------------------------------------------------------
+
+function StartupAlert({ data, onItemClick, onClose }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed || !data) return null;
+
+  const overdueCount = data.overdue?.length || 0;
+  const todayCount = data.due_today?.length || 0;
+  const weekCount = data.due_week?.length || 0;
+  const total = overdueCount + todayCount + weekCount;
+
+  if (total === 0) return null;
+
+  // Check sessionStorage for "don't show today"
+  const todayKey = `alert-dismissed-${new Date().toISOString().slice(0, 10)}`;
+  if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(todayKey)) return null;
+
+  const handleDismissToday = () => {
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(todayKey, "1");
+    setDismissed(true);
+    onClose();
+  };
+
+  const allItems = [
+    ...(data.overdue || []).map((t) => ({ ...t, _group: "overdue" })),
+    ...(data.due_today || []).map((t) => ({ ...t, _group: "today" })),
+    ...(data.due_week || []).slice(0, 5).map((t) => ({ ...t, _group: "week" })),
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => { setDismissed(true); onClose(); }} />
+      <div className="relative bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-outline-variant">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-on-tertiary-container/10 flex items-center justify-center">
+              <span className="material-symbols-outlined text-on-tertiary-container text-xl">notifications_active</span>
+            </div>
+            <div>
+              <h3 className="font-headline text-base font-bold text-on-surface">오늘의 알림</h3>
+              <p className="text-[11px] text-on-surface-variant font-label">{new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })}</p>
+            </div>
+          </div>
+          <button onClick={() => { setDismissed(true); onClose(); }} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-surface-container transition">
+            <span className="material-symbols-outlined text-on-surface-variant text-lg">close</span>
+          </button>
+        </div>
+
+        {/* Summary */}
+        <div className="px-5 py-4 flex gap-3">
+          {overdueCount > 0 && (
+            <div className="flex-1 p-3 rounded-xl bg-error/5 border border-error/10 text-center">
+              <p className="text-lg font-headline font-bold text-error">{overdueCount}</p>
+              <p className="text-[10px] font-label text-error/80">기한 초과</p>
+            </div>
+          )}
+          {todayCount > 0 && (
+            <div className="flex-1 p-3 rounded-xl bg-on-tertiary-container/5 border border-on-tertiary-container/10 text-center">
+              <p className="text-lg font-headline font-bold text-on-tertiary-container">{todayCount}</p>
+              <p className="text-[10px] font-label text-on-tertiary-container/80">오늘 마감</p>
+            </div>
+          )}
+          {weekCount > 0 && (
+            <div className="flex-1 p-3 rounded-xl bg-primary-fixed border border-primary/10 text-center">
+              <p className="text-lg font-headline font-bold text-primary">{weekCount}</p>
+              <p className="text-[10px] font-label text-primary/80">이번 주 마감</p>
+            </div>
+          )}
+        </div>
+
+        {/* Items */}
+        <div className="px-5 pb-2 max-h-48 overflow-y-auto space-y-1.5">
+          {allItems.map((item) => (
+            <button key={item.id} onClick={() => { onItemClick(item); setDismissed(true); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left hover:bg-surface-container transition">
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-label font-semibold truncate ${item._group === "overdue" ? "text-error" : "text-on-surface"}`}>{item.title}</p>
+                <p className="text-[10px] text-on-surface-variant font-body">{item.client_name}</p>
+              </div>
+              {item.due_date && <DdayBadge dueDate={item.due_date} />}
+            </button>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-5 py-3 border-t border-outline-variant">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" onChange={(e) => { if (e.target.checked) handleDismissToday(); }}
+              className="w-3.5 h-3.5 rounded border-outline-variant text-primary focus:ring-primary" />
+            <span className="text-[11px] font-label text-on-surface-variant">오늘은 그만 보기</span>
+          </label>
+          <button onClick={() => { setDismissed(true); onClose(); }}
+            className="px-3 py-1.5 rounded-xl text-xs font-label font-semibold text-primary hover:bg-primary-fixed transition">
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// New Engagement Modal
 // ---------------------------------------------------------------------------
 
 function NewEngagementModal({ open, onClose }) {
@@ -278,6 +466,26 @@ export default function Header({ onMenuToggle }) {
   const wrapperRef = useRef(null);
   const debounceRef = useRef(null);
   const flatItemsRef = useRef([]);
+
+  // Notification state
+  const [notifData, setNotifData] = useState(null);
+  const [showNotif, setShowNotif] = useState(false);
+  const [showStartupAlert, setShowStartupAlert] = useState(false);
+  const notifWrapperRef = useRef(null);
+
+  // Load notifications on mount
+  useEffect(() => {
+    api.getNotifications().then((data) => {
+      setNotifData(data);
+      if (data.total_count > 0) setShowStartupAlert(true);
+    }).catch(() => {});
+  }, []);
+
+  const notifCount = notifData?.total_count || 0;
+
+  const navigateToTask = (item) => {
+    navigate(`/engagements?select=${item.node_id}&highlight=${item.id}`);
+  };
 
   // Debounced search
   const doSearch = useCallback((q) => {
@@ -413,9 +621,22 @@ export default function Header({ onMenuToggle }) {
 
         {/* Right actions */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          <button className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container transition hidden sm:flex">
-            <span className="material-symbols-outlined text-[20px]">notifications</span>
-          </button>
+          {/* Notifications bell */}
+          <div ref={notifWrapperRef} className="relative">
+            <button onClick={() => setShowNotif((v) => !v)}
+              className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container transition relative">
+              <span className="material-symbols-outlined text-[20px]">notifications</span>
+              {notifCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 rounded-full bg-error text-white text-[10px] font-label font-bold">
+                  {notifCount > 99 ? "99+" : notifCount}
+                </span>
+              )}
+            </button>
+            {showNotif && notifData && (
+              <NotificationDropdown data={notifData} onSelect={navigateToTask} onClose={() => setShowNotif(false)} />
+            )}
+          </div>
+
           <button className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container transition hidden sm:flex">
             <span className="material-symbols-outlined text-[20px]">help</span>
           </button>
@@ -431,6 +652,10 @@ export default function Header({ onMenuToggle }) {
       </header>
 
       <NewEngagementModal open={modalOpen} onClose={() => setModalOpen(false)} />
+
+      {showStartupAlert && (
+        <StartupAlert data={notifData} onItemClick={navigateToTask} onClose={() => setShowStartupAlert(false)} />
+      )}
     </>
   );
 }

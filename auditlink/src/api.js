@@ -67,6 +67,9 @@ const api = {
   getSettings: () => request("/api/settings"),
   updateSettings: (data) => request("/api/settings", { method: "PUT", body: JSON.stringify(data) }),
 
+  // Notifications
+  getNotifications: () => request("/api/notifications"),
+
   // Search
   search: (q) => request(`/api/search?q=${encodeURIComponent(q)}`),
 

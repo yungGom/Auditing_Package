@@ -627,6 +627,66 @@ def update_settings(body: dict):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Notifications
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/notifications")
+def notifications():
+    """Return tasks grouped by urgency: overdue, due_today, due_this_week, review_pending."""
+    from datetime import date, timedelta
+    conn = _db()
+    today = date.today().isoformat()
+    week_end = (date.today() + timedelta(days=7)).isoformat()
+
+    base_sql = """
+        SELECT t.id, t.title, t.status, t.due_date, t.priority, t.assignee,
+               a.id AS account_id, a.name AS account_name,
+               c.name AS client_name
+        FROM tasks t
+        JOIN accounts a ON a.id = t.account_id
+        JOIN phases p ON p.id = a.phase_id
+        JOIN clients c ON c.id = p.client_id
+    """
+
+    # Overdue: past due_date and not done
+    overdue = rows_to_list(conn.execute(
+        base_sql + " WHERE t.status != 'done' AND t.due_date IS NOT NULL AND t.due_date < ? ORDER BY t.due_date",
+        (today,)
+    ).fetchall())
+
+    # Due today
+    due_today = rows_to_list(conn.execute(
+        base_sql + " WHERE t.status != 'done' AND t.due_date = ? ORDER BY t.priority DESC",
+        (today,)
+    ).fetchall())
+
+    # Due this week (next 7 days, excluding today)
+    due_week = rows_to_list(conn.execute(
+        base_sql + " WHERE t.status != 'done' AND t.due_date > ? AND t.due_date <= ? ORDER BY t.due_date",
+        (today, week_end)
+    ).fetchall())
+
+    # Review pending
+    review = rows_to_list(conn.execute(
+        base_sql + " WHERE t.status = 'review' ORDER BY t.due_date",
+    ).fetchall())
+
+    # Add node_id for navigation
+    for lst in [overdue, due_today, due_week, review]:
+        for item in lst:
+            item["node_id"] = f"account-{item['account_id']}"
+
+    conn.close()
+    return {
+        "overdue": overdue,
+        "due_today": due_today,
+        "due_week": due_week,
+        "review": review,
+        "total_count": len(overdue) + len(due_today) + len(due_week) + len(review),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Search
 # ═══════════════════════════════════════════════════════════════════════════
 
