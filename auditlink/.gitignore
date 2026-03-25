@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python
+__pycache__/
+*.pyc
+*.db
+*.egg-info/
+
+# PyInstaller
+build/
+*.exe
+*.spec.bak
