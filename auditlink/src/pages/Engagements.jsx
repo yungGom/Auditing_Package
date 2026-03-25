@@ -402,7 +402,8 @@ export default function Engagements() {
     return path;
   }
 
-  // Load tree
+  // Load tree (re-run when navigated here with reload/select params)
+  const reloadKey = searchParams.get("reload") || "";
   useEffect(() => {
     api.getEngagementTree().then((apiTree) => {
       if (apiTree?.length) {
@@ -452,7 +453,9 @@ export default function Engagements() {
         }
       }
     }).catch(() => { setSelectedId("hanbit-interim-ar"); setSelectedType("account"); });
-  }, []);
+    // Clear reload param after loading
+    if (reloadKey) setSearchParams({}, { replace: true });
+  }, [reloadKey]);
 
   function findFirstAccount(nodes) {
     for (const n of nodes) {

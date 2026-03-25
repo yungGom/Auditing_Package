@@ -354,6 +354,7 @@ function StartupAlert({ data, onItemClick, onClose }) {
 function NewEngagementModal({ open, onClose }) {
   const navigate = useNavigate();
   const [fiscalYears, setFiscalYears] = useState([]);
+  const [loadingFY, setLoadingFY] = useState(false);
   const [form, setForm] = useState({
     fy_id: "",
     name: "",
@@ -364,10 +365,15 @@ function NewEngagementModal({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return;
+    setLoadingFY(true);
     api.getFiscalYears().then((fys) => {
       setFiscalYears(fys);
-      if (fys.length) setForm((f) => ({ ...f, fy_id: String(fys[0].id) }));
-    }).catch(() => {});
+      // Prefer is_active FY, otherwise first
+      const activeFY = fys.find((f) => f.is_active) || fys[0];
+      if (activeFY) setForm((f) => ({ ...f, fy_id: String(activeFY.id) }));
+    }).catch(() => {
+      setFiscalYears([]);
+    }).finally(() => setLoadingFY(false));
   }, [open]);
 
   if (!open) return null;
@@ -375,6 +381,10 @@ function NewEngagementModal({ open, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
+    if (!form.fy_id) {
+      alert("회계연도를 선택해주세요.");
+      return;
+    }
     try {
       const client = await api.createClient({
         fy_id: Number(form.fy_id),
@@ -385,9 +395,11 @@ function NewEngagementModal({ open, onClose }) {
       await api.createPhase({ client_id: client.id, name: "기중감사", sort_order: 0 });
       await api.createPhase({ client_id: client.id, name: "기말감사", sort_order: 1 });
       onClose();
-      navigate("/engagements");
-    } catch {
-      alert("생성에 실패했습니다.");
+      // Force tree reload by navigating with a timestamp param
+      navigate(`/engagements?reload=${Date.now()}`);
+    } catch (err) {
+      console.error("감사업무 생성 실패:", err);
+      alert("생성에 실패했습니다. 콘솔을 확인해주세요.");
     }
   };
 
@@ -408,11 +420,24 @@ function NewEngagementModal({ open, onClose }) {
         </div>
         <div className="p-6 space-y-4">
           <label className="block">
-            <span className="text-xs font-label font-semibold text-on-surface-variant mb-1.5 block">회계연도 (FY)</span>
-            <select value={form.fy_id} onChange={(e) => setForm({ ...form, fy_id: e.target.value })}
-              className="appearance-none w-full pl-3 pr-8 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface cursor-pointer focus:border-primary focus:outline-none transition">
-              {fiscalYears.map((fy) => <option key={fy.id} value={fy.id}>{fy.name}</option>)}
-            </select>
+            <span className="text-xs font-label font-semibold text-on-surface-variant mb-1.5 block">회계연도 (FY) *</span>
+            {fiscalYears.length === 0 && !loadingFY ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-on-tertiary-container/30 bg-on-tertiary-container/5 text-xs font-label text-on-tertiary-container">
+                <span className="material-symbols-outlined text-[16px]">info</span>
+                먼저 설정에서 회계연도를 추가하세요
+              </div>
+            ) : (
+              <select value={form.fy_id} onChange={(e) => setForm({ ...form, fy_id: e.target.value })}
+                required
+                className="appearance-none w-full pl-3 pr-8 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface cursor-pointer focus:border-primary focus:outline-none transition">
+                {!form.fy_id && <option value="">선택하세요</option>}
+                {fiscalYears.map((fy) => (
+                  <option key={fy.id} value={fy.id}>
+                    {fy.name}{fy.is_active ? " (활성)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
           <label className="block">
             <span className="text-xs font-label font-semibold text-on-surface-variant mb-1.5 block">클라이언트명 *</span>
