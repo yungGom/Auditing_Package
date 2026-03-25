@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Dashboard – 대시보드 메인 페이지
 // ---------------------------------------------------------------------------
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 
@@ -251,6 +251,151 @@ function EngagementsTable({ engagements, onViewAll }) {
   );
 }
 
+// --- Calendar ---------------------------------------------------------------
+
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+function CalendarView({ deadlines }) {
+  const today = new Date();
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth()); // 0-indexed
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  // Build map: "YYYY-MM-DD" → [task, ...]
+  const dateMap = useMemo(() => {
+    const m = {};
+    for (const dl of deadlines) {
+      const d = dl.date;
+      if (!d) continue;
+      if (!m[d]) m[d] = [];
+      m[d].push(dl);
+    }
+    return m;
+  }, [deadlines]);
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+
+  // Leading blanks
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const prevMonth = () => {
+    if (month === 0) { setYear(year - 1); setMonth(11); }
+    else setMonth(month - 1);
+    setSelectedDate(null);
+  };
+  const nextMonth = () => {
+    if (month === 11) { setYear(year + 1); setMonth(0); }
+    else setMonth(month + 1);
+    setSelectedDate(null);
+  };
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const toKey = (d) => `${year}-${pad(month + 1)}-${pad(d)}`;
+  const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+
+  const selectedTasks = selectedDate ? (dateMap[selectedDate] || []) : [];
+
+  return (
+    <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-headline text-base font-bold text-on-surface">감사 캘린더</h3>
+        <div className="flex items-center gap-2">
+          <button onClick={prevMonth} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-container transition">
+            <span className="material-symbols-outlined text-sm text-on-surface-variant">chevron_left</span>
+          </button>
+          <span className="text-sm font-label font-semibold text-on-surface min-w-[100px] text-center">
+            {year}년 {month + 1}월
+          </span>
+          <button onClick={nextMonth} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-container transition">
+            <span className="material-symbols-outlined text-sm text-on-surface-variant">chevron_right</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {WEEKDAYS.map((w, i) => (
+          <div key={w} className={`text-center text-[11px] font-label font-semibold py-1 ${i === 0 ? "text-error" : "text-on-surface-variant"}`}>
+            {w}
+          </div>
+        ))}
+      </div>
+
+      {/* Days grid */}
+      <div className="grid grid-cols-7">
+        {cells.map((day, i) => {
+          if (day === null) return <div key={`b-${i}`} />;
+          const key = toKey(day);
+          const hasTasks = !!dateMap[key];
+          const isToday = key === todayKey;
+          const isSelected = key === selectedDate;
+          const dDay = hasTasks ? calcDDay(key) : null;
+
+          // Dot color
+          let dotColor = "bg-outline";
+          if (dDay !== null) {
+            if (dDay <= 7) dotColor = "bg-error";
+            else if (dDay <= 15) dotColor = "bg-on-tertiary-container";
+          }
+
+          return (
+            <button
+              key={key}
+              onClick={() => setSelectedDate(isSelected ? null : key)}
+              className={`relative flex flex-col items-center justify-center py-1.5 rounded-lg text-xs font-label transition ${
+                isSelected
+                  ? "bg-primary text-white font-bold"
+                  : isToday
+                    ? "bg-primary/10 text-primary font-bold"
+                    : "text-on-surface hover:bg-surface-container"
+              } ${i % 7 === 0 && !isSelected ? "text-error/70" : ""}`}
+            >
+              {day}
+              {hasTasks && (
+                <span className={`absolute bottom-0.5 w-1.5 h-1.5 rounded-full ${isSelected ? "bg-white" : dotColor}`} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected date tasks */}
+      {selectedDate && (
+        <div className="mt-4 pt-4 border-t border-outline-variant">
+          <p className="text-xs font-label font-semibold text-on-surface-variant mb-2">
+            {selectedDate} 마감 할일 ({selectedTasks.length}건)
+          </p>
+          {selectedTasks.length === 0 ? (
+            <p className="text-xs text-outline font-body">해당 날짜에 마감 할일이 없습니다</p>
+          ) : (
+            <div className="space-y-2">
+              {selectedTasks.map((t) => {
+                const d = calcDDay(t.date);
+                const badge = dDayBadge(d);
+                return (
+                  <div key={t.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-surface-container-low">
+                    <span className={`inline-flex items-center justify-center min-w-[40px] px-1.5 py-0.5 rounded-lg text-[10px] font-label font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                      D-{d}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-label font-semibold text-on-surface truncate">{t.task}</p>
+                      <p className="text-[11px] text-on-surface-variant font-body">{t.client}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Main -------------------------------------------------------------------
 
 export default function Dashboard() {
@@ -284,9 +429,10 @@ export default function Dashboard() {
 
       <StatCards data={data} />
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-3 gap-5">
         <DeadlinesSection deadlines={deadlines} onViewAll={() => navigate("/engagements")} />
         <EngagementsTable engagements={engagements} onViewAll={() => navigate("/engagements")} />
+        <CalendarView deadlines={deadlines} />
       </div>
     </div>
   );

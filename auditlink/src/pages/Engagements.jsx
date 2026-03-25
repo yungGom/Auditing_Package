@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import api from "../api";
 
 // ---------------------------------------------------------------------------
-// Fallback Mock Data
+// Constants
 // ---------------------------------------------------------------------------
 
 const STATUS_MAP = {
@@ -17,6 +17,19 @@ const PRIORITY_MAP = {
   mid: { label: "중", dot: "bg-on-tertiary-container" },
   low: { label: "하", dot: "bg-secondary" },
 };
+
+const STATUS_ORDER = ["todo", "in_progress", "review", "done"];
+
+const TYPE_ICONS = {
+  fy: "calendar_today",
+  client: "business",
+  phase: "folder",
+  account: "account_balance",
+};
+
+// ---------------------------------------------------------------------------
+// Fallback Mock Data
+// ---------------------------------------------------------------------------
 
 const fallbackTree = [
   {
@@ -83,24 +96,64 @@ const fallbackTasks = {
 };
 
 // ---------------------------------------------------------------------------
+// Context Menu Component
+// ---------------------------------------------------------------------------
+
+function ContextMenu({ x, y, items, onClose }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("contextmenu", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("contextmenu", handler);
+    };
+  }, [onClose]);
+
+  // Adjust position so menu doesn't overflow viewport
+  const style = { position: "fixed", top: y, left: x, zIndex: 100 };
+
+  return (
+    <div ref={ref} style={style} className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-xl py-1.5 min-w-[180px]">
+      {items.map((item, i) =>
+        item.divider ? (
+          <div key={i} className="my-1 border-t border-outline-variant" />
+        ) : (
+          <button
+            key={i}
+            onClick={() => { item.action(); onClose(); }}
+            className={`w-full flex items-center gap-2.5 px-4 py-2 text-xs font-label transition hover:bg-surface-container ${
+              item.danger ? "text-error hover:bg-error/5" : "text-on-surface"
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">{item.icon}</span>
+            {item.label}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tree Component
 // ---------------------------------------------------------------------------
 
-const TYPE_ICONS = {
-  fy: "calendar_today",
-  client: "business",
-  phase: "folder",
-  account: "account_balance",
-};
-
-function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount, onDeleteAccount, onAddClient, onDeleteClient }) {
+function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMenu }) {
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = expanded[node.id] !== false;
   const isSelected = selectedId === node.id;
   const isAccount = node.type === "account";
-  const isPhase = node.type === "phase";
-  const isFY = node.type === "fy";
-  const isClient = node.type === "client";
+
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onContextMenu(e, node);
+  };
 
   return (
     <div>
@@ -115,6 +168,7 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
           if (hasChildren) onToggle(node.id);
           if (isAccount) onSelect(node.id);
         }}
+        onContextMenu={handleContextMenu}
       >
         {hasChildren ? (
           <span className={`material-symbols-outlined text-[16px] text-outline transition-transform ${isExpanded ? "rotate-90" : ""}`}>
@@ -129,48 +183,6 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
         </span>
 
         <span className="flex-1 truncate">{node.label}</span>
-
-        {/* FY: add client button */}
-        {isFY && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onAddClient?.(node); }}
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-surface-container-highest transition"
-            title="클라이언트 추가"
-          >
-            <span className="material-symbols-outlined text-[14px] text-outline">add</span>
-          </button>
-        )}
-
-        {/* Client: delete button */}
-        {isClient && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDeleteClient?.(node); }}
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-error/10 transition"
-            title="클라이언트 삭제"
-          >
-            <span className="material-symbols-outlined text-[14px] text-error">close</span>
-          </button>
-        )}
-
-        {isPhase && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onAddAccount(node); }}
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-surface-container-highest transition"
-            title="계정과목 추가"
-          >
-            <span className="material-symbols-outlined text-[14px] text-outline">add</span>
-          </button>
-        )}
-
-        {isAccount && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDeleteAccount(node); }}
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-error/10 transition"
-            title="계정과목 삭제"
-          >
-            <span className="material-symbols-outlined text-[14px] text-error">close</span>
-          </button>
-        )}
       </div>
 
       {hasChildren && isExpanded && (
@@ -183,10 +195,7 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
               onSelect={onSelect}
               expanded={expanded}
               onToggle={onToggle}
-              onAddAccount={onAddAccount}
-              onDeleteAccount={onDeleteAccount}
-              onAddClient={onAddClient}
-              onDeleteClient={onDeleteClient}
+              onContextMenu={onContextMenu}
             />
           ))}
         </div>
@@ -199,7 +208,7 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onAddAccount
 // Task Panel
 // ---------------------------------------------------------------------------
 
-function TaskPanel({ accountId, accountLabel, tasks, onAddTask, onToggleStatus }) {
+function TaskPanel({ accountId, accountLabel, tasks, onAddTask, onToggleStatus, onTaskContextMenu }) {
   if (!accountId) {
     return (
       <div className="flex-1 flex items-center justify-center text-on-surface-variant font-body">
@@ -239,6 +248,7 @@ function TaskPanel({ accountId, accountLabel, tasks, onAddTask, onToggleStatus }
             <div
               key={task.id}
               className="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 hover:shadow-sm transition"
+              onContextMenu={(e) => { e.preventDefault(); onTaskContextMenu(e, task); }}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -290,6 +300,7 @@ export default function Engagements() {
   const [selectedId, setSelectedId] = useState(null);
   const [expanded, setExpanded] = useState({});
   const [useApi, setUseApi] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState(null); // { x, y, items }
 
   // Load tree from API
   useEffect(() => {
@@ -297,7 +308,6 @@ export default function Engagements() {
       if (apiTree?.length) {
         setTree(apiTree);
         setUseApi(true);
-        // select first account
         const firstAccount = findFirstAccount(apiTree);
         if (firstAccount) setSelectedId(firstAccount.id);
       }
@@ -325,15 +335,13 @@ export default function Engagements() {
     api.getTasks(dbId).then((apiTasks) => {
       setTasks((prev) => ({
         ...prev,
-        [selectedId]: apiTasks.map((t) => ({
-          ...t, deadline: t.due_date,
-        })),
+        [selectedId]: apiTasks.map((t) => ({ ...t, deadline: t.due_date })),
       }));
     }).catch(() => {});
   }, [selectedId, useApi]);
 
   function extractDbId(nodeId) {
-    const m = nodeId.match(/^account-(\d+)$/);
+    const m = nodeId.match(/^(?:account|phase|client)-(\d+)$/);
     return m ? parseInt(m[1]) : null;
   }
 
@@ -351,186 +359,242 @@ export default function Engagements() {
     return null;
   }
 
-  function findLabelById(id) {
-    const search = (nodes) => {
-      for (const n of nodes) {
-        if (n.id === id) return n.label;
-        if (n.children) {
-          const f = search(n.children);
-          if (f) return f;
-        }
-      }
-      return null;
-    };
-    return search(tree);
+  // ── Tree helpers (reuse existing logic but as helpers) ──
+
+  function updateTree(updater) {
+    setTree((prev) => updater(prev));
   }
 
-  // -- add client under a FY --
-  const onAddClient = (fyNode) => {
-    const name = prompt("새 클라이언트 이름:");
-    if (!name) return;
-
-    const dbId = fyNode.dbId;
-    if (useApi && dbId) {
-      api.createClient({ fy_id: dbId, name, industry: "" })
-        .then(async (created) => {
-          const newId = `client-${created.id}`;
-          // Create default phases
-          const p1 = await api.createPhase({ client_id: created.id, name: "기중감사", sort_order: 0 });
-          const p2 = await api.createPhase({ client_id: created.id, name: "기말감사", sort_order: 1 });
-          const clientNode = {
-            id: newId, label: name, type: "client", dbId: created.id,
-            children: [
-              { id: `phase-${p1.id}`, label: "기중감사", type: "phase", dbId: p1.id, children: [] },
-              { id: `phase-${p2.id}`, label: "기말감사", type: "phase", dbId: p2.id, children: [] },
-            ],
-          };
-          const addChild = (nodes) =>
-            nodes.map((n) => {
-              if (n.id === fyNode.id) return { ...n, children: [...(n.children || []), clientNode] };
-              if (n.children) return { ...n, children: addChild(n.children) };
-              return n;
-            });
-          setTree(addChild(tree));
-        });
-    } else {
-      const newId = `client-${nextId++}`;
-      const addChild = (nodes) =>
-        nodes.map((n) => {
-          if (n.id === fyNode.id) {
-            return { ...n, children: [...(n.children || []), { id: newId, label: name, type: "client", children: [] }] };
-          }
-          if (n.children) return { ...n, children: addChild(n.children) };
+  function addChildToNode(nodeId, childNode) {
+    updateTree((nodes) => {
+      const walk = (list) =>
+        list.map((n) => {
+          if (n.id === nodeId) return { ...n, children: [...(n.children || []), childNode] };
+          if (n.children) return { ...n, children: walk(n.children) };
           return n;
         });
-      setTree(addChild(tree));
+      return walk(nodes);
+    });
+  }
+
+  function removeNode(nodeId) {
+    updateTree((nodes) => {
+      const walk = (list) =>
+        list.filter((n) => n.id !== nodeId).map((n) => (n.children ? { ...n, children: walk(n.children) } : n));
+      return walk(nodes);
+    });
+  }
+
+  function renameNode(nodeId, newLabel) {
+    updateTree((nodes) => {
+      const walk = (list) =>
+        list.map((n) => {
+          if (n.id === nodeId) return { ...n, label: newLabel };
+          if (n.children) return { ...n, children: walk(n.children) };
+          return n;
+        });
+      return walk(nodes);
+    });
+  }
+
+  // ── CRUD operations ──
+
+  const doAddClient = (fyNode) => {
+    const name = prompt("새 클라이언트 이름:");
+    if (!name) return;
+    const dbId = fyNode.dbId;
+    if (useApi && dbId) {
+      api.createClient({ fy_id: dbId, name, industry: "" }).then(async (created) => {
+        const p1 = await api.createPhase({ client_id: created.id, name: "기중감사", sort_order: 0 });
+        const p2 = await api.createPhase({ client_id: created.id, name: "기말감사", sort_order: 1 });
+        addChildToNode(fyNode.id, {
+          id: `client-${created.id}`, label: name, type: "client", dbId: created.id,
+          children: [
+            { id: `phase-${p1.id}`, label: "기중감사", type: "phase", dbId: p1.id, children: [] },
+            { id: `phase-${p2.id}`, label: "기말감사", type: "phase", dbId: p2.id, children: [] },
+          ],
+        });
+      });
+    } else {
+      addChildToNode(fyNode.id, { id: `client-${nextId++}`, label: name, type: "client", children: [] });
     }
   };
 
-  // -- delete client --
-  const onDeleteClient = (clientNode) => {
-    if (!confirm(`"${clientNode.label}" 클라이언트를 삭제하시겠습니까?\n하위 모든 감사업무가 삭제됩니다.`)) return;
+  const doRenameClient = (node) => {
+    const name = prompt("클라이언트 이름 변경:", node.label);
+    if (!name || name === node.label) return;
+    if (useApi && node.dbId) api.updateClient(node.dbId, { name }).catch(() => {});
+    renameNode(node.id, name);
+  };
 
+  const doDeleteClient = (node) => {
+    if (!confirm(`"${node.label}" 클라이언트를 삭제하시겠습니까?\n하위 모든 감사업무가 삭제됩니다.`)) return;
+    if (useApi && node.dbId) api.deleteClient(node.dbId).catch(() => {});
+    removeNode(node.id);
+    if (selectedId?.startsWith?.("account-")) setSelectedId(null);
+  };
+
+  const doAddPhase = (clientNode) => {
+    const name = prompt("새 Phase 이름 (예: 기중감사, 기말감사):");
+    if (!name) return;
     if (useApi && clientNode.dbId) {
-      api.deleteClient(clientNode.dbId).catch(() => {});
+      api.createPhase({ client_id: clientNode.dbId, name, sort_order: (clientNode.children?.length || 0) })
+        .then((created) => {
+          addChildToNode(clientNode.id, { id: `phase-${created.id}`, label: name, type: "phase", dbId: created.id, children: [] });
+        });
+    } else {
+      addChildToNode(clientNode.id, { id: `phase-${nextId++}`, label: name, type: "phase", children: [] });
     }
+  };
 
-    const removeChild = (nodes) =>
-      nodes
-        .filter((n) => n.id !== clientNode.id)
-        .map((n) => (n.children ? { ...n, children: removeChild(n.children) } : n));
-    setTree(removeChild(tree));
+  const doDeletePhase = (node) => {
+    if (!confirm(`"${node.label}" Phase를 삭제하시겠습니까?\n하위 계정과목이 모두 삭제됩니다.`)) return;
+    if (useApi && node.dbId) api.deletePhase(node.dbId).catch(() => {});
+    removeNode(node.id);
     setSelectedId(null);
   };
 
-  const onAddAccount = (phaseNode) => {
+  const doAddAccount = (phaseNode) => {
     const name = prompt("새 계정과목 이름:");
     if (!name) return;
-
-    const dbId = phaseNode.dbId;
-    if (useApi && dbId) {
-      api.createAccount({ phase_id: dbId, name, sort_order: (phaseNode.children?.length || 0) })
+    if (useApi && phaseNode.dbId) {
+      api.createAccount({ phase_id: phaseNode.dbId, name, sort_order: (phaseNode.children?.length || 0) })
         .then((created) => {
           const newId = `account-${created.id}`;
-          const addChild = (nodes) =>
-            nodes.map((n) => {
-              if (n.id === phaseNode.id) {
-                return { ...n, children: [...(n.children || []), { id: newId, label: name, type: "account", dbId: created.id }] };
-              }
-              if (n.children) return { ...n, children: addChild(n.children) };
-              return n;
-            });
-          setTree(addChild(tree));
+          addChildToNode(phaseNode.id, { id: newId, label: name, type: "account", dbId: created.id });
           setTasks((prev) => ({ ...prev, [newId]: [] }));
           setSelectedId(newId);
         });
     } else {
       const newId = `account-${nextId++}`;
-      const addChild = (nodes) =>
-        nodes.map((n) => {
-          if (n.id === phaseNode.id) {
-            return { ...n, children: [...(n.children || []), { id: newId, label: name, type: "account" }] };
-          }
-          if (n.children) return { ...n, children: addChild(n.children) };
-          return n;
-        });
-      setTree(addChild(tree));
+      addChildToNode(phaseNode.id, { id: newId, label: name, type: "account" });
       setTasks((prev) => ({ ...prev, [newId]: [] }));
       setSelectedId(newId);
     }
   };
 
-  const onDeleteAccount = (accountNode) => {
-    if (!confirm(`"${accountNode.label}" 계정과목을 삭제하시겠습니까?`)) return;
-
-    if (useApi && accountNode.dbId) {
-      api.deleteAccount(accountNode.dbId).catch(() => {});
-    }
-
-    const removeChild = (nodes) =>
-      nodes
-        .filter((n) => n.id !== accountNode.id)
-        .map((n) => (n.children ? { ...n, children: removeChild(n.children) } : n));
-    setTree(removeChild(tree));
-    setTasks((prev) => {
-      const copy = { ...prev };
-      delete copy[accountNode.id];
-      return copy;
-    });
-    if (selectedId === accountNode.id) setSelectedId(null);
+  const doDeleteAccount = (node) => {
+    if (!confirm(`"${node.label}" 계정과목을 삭제하시겠습니까?`)) return;
+    if (useApi && node.dbId) api.deleteAccount(node.dbId).catch(() => {});
+    removeNode(node.id);
+    setTasks((prev) => { const c = { ...prev }; delete c[node.id]; return c; });
+    if (selectedId === node.id) setSelectedId(null);
   };
 
-  const onAddTask = () => {
+  const doAddTask = (accountId) => {
     const title = prompt("할일 제목:");
     if (!title) return;
-
-    const dbId = extractDbId(selectedId);
+    const dbId = extractDbId(accountId || selectedId);
+    const target = accountId || selectedId;
     if (useApi && dbId) {
       api.createTask({ account_id: dbId, title, status: "todo", assignee: "미배정", priority: "mid", memo: "" })
         .then((created) => {
           setTasks((prev) => ({
             ...prev,
-            [selectedId]: [...(prev[selectedId] || []), { ...created, deadline: created.due_date }],
+            [target]: [...(prev[target] || []), { ...created, deadline: created.due_date }],
           }));
         });
     } else {
       setTasks((prev) => ({
         ...prev,
-        [selectedId]: [
-          ...(prev[selectedId] || []),
-          { id: nextId++, title, status: "todo", assignee: "미배정", deadline: "미정", priority: "mid", memo: "" },
-        ],
+        [target]: [...(prev[target] || []), { id: nextId++, title, status: "todo", assignee: "미배정", deadline: "미정", priority: "mid", memo: "" }],
       }));
     }
   };
 
-  const statusOrder = ["todo", "in_progress", "review", "done"];
+  const doEditTask = (task) => {
+    const title = prompt("할일 제목:", task.title);
+    if (!title || title === task.title) return;
+    if (useApi) api.updateTask(task.id, { title }).catch(() => {});
+    setTasks((prev) => ({
+      ...prev,
+      [selectedId]: prev[selectedId].map((t) => (t.id === task.id ? { ...t, title } : t)),
+    }));
+  };
+
+  const doDeleteTask = (task) => {
+    if (!confirm(`"${task.title}" 할일을 삭제하시겠습니까?`)) return;
+    if (useApi) api.deleteTask(task.id).catch(() => {});
+    setTasks((prev) => ({
+      ...prev,
+      [selectedId]: prev[selectedId].filter((t) => t.id !== task.id),
+    }));
+  };
+
+  const doChangeTaskStatus = (task, newStatus) => {
+    if (useApi) api.updateTask(task.id, { status: newStatus }).catch(() => {});
+    setTasks((prev) => ({
+      ...prev,
+      [selectedId]: prev[selectedId].map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)),
+    }));
+  };
+
   const onToggleStatus = (taskId) => {
     const list = tasks[selectedId] || [];
     const task = list.find((t) => t.id === taskId);
     if (!task) return;
-    const idx = statusOrder.indexOf(task.status);
-    const newStatus = statusOrder[(idx + 1) % statusOrder.length];
+    const idx = STATUS_ORDER.indexOf(task.status);
+    doChangeTaskStatus(task, STATUS_ORDER[(idx + 1) % STATUS_ORDER.length]);
+  };
 
-    if (useApi) {
-      api.updateTask(taskId, { status: newStatus }).catch(() => {});
+  // ── Context menu builder ──
+
+  const buildTreeContextMenu = (e, node) => {
+    const items = [];
+    switch (node.type) {
+      case "fy":
+        items.push({ icon: "person_add", label: "클라이언트 추가", action: () => doAddClient(node) });
+        break;
+      case "client":
+        items.push({ icon: "edit", label: "이름 변경", action: () => doRenameClient(node) });
+        items.push({ icon: "create_new_folder", label: "Phase 추가", action: () => doAddPhase(node) });
+        items.push({ divider: true });
+        items.push({ icon: "delete", label: "클라이언트 삭제", danger: true, action: () => doDeleteClient(node) });
+        break;
+      case "phase":
+        items.push({ icon: "add", label: "계정과목 추가", action: () => doAddAccount(node) });
+        items.push({ divider: true });
+        items.push({ icon: "delete", label: "Phase 삭제", danger: true, action: () => doDeletePhase(node) });
+        break;
+      case "account":
+        items.push({ icon: "add_task", label: "할일 추가", action: () => { setSelectedId(node.id); setTimeout(() => doAddTask(node.id), 100); } });
+        items.push({ divider: true });
+        items.push({ icon: "delete", label: "계정과목 삭제", danger: true, action: () => doDeleteAccount(node) });
+        break;
     }
+    setCtxMenu({ x: e.clientX, y: e.clientY, items });
+  };
 
-    setTasks((prev) => ({
-      ...prev,
-      [selectedId]: prev[selectedId].map((t) =>
-        t.id === taskId ? { ...t, status: newStatus } : t
-      ),
-    }));
+  const buildTaskContextMenu = (e, task) => {
+    const statusItems = STATUS_ORDER
+      .filter((s) => s !== task.status)
+      .map((s) => ({
+        icon: s === "done" ? "check_circle" : s === "in_progress" ? "pending" : s === "review" ? "rate_review" : "radio_button_unchecked",
+        label: `→ ${STATUS_MAP[s].label}`,
+        action: () => doChangeTaskStatus(task, s),
+      }));
+
+    setCtxMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { icon: "edit", label: "제목 수정", action: () => doEditTask(task) },
+        { divider: true },
+        ...statusItems,
+        { divider: true },
+        { icon: "delete", label: "할일 삭제", danger: true, action: () => doDeleteTask(task) },
+      ],
+    });
   };
 
   return (
     <div className="flex gap-5 h-[calc(100vh-7rem)]">
+      {/* Left: Tree */}
       <div className="w-80 shrink-0 bg-surface-container-lowest rounded-xl border border-outline-variant p-3 overflow-y-auto">
         <div className="flex items-center justify-between px-2 mb-3">
           <h3 className="font-headline text-sm font-bold text-on-surface">감사업무 목록</h3>
           <button
-            onClick={() => { if (tree.length) onAddClient(tree[0]); }}
+            onClick={() => { if (tree.length) doAddClient(tree[0]); }}
             className="p-1 rounded-lg hover:bg-surface-container transition"
             title="클라이언트 추가"
           >
@@ -545,23 +609,32 @@ export default function Engagements() {
             onSelect={setSelectedId}
             expanded={expanded}
             onToggle={onToggle}
-            onAddAccount={onAddAccount}
-            onDeleteAccount={onDeleteAccount}
-            onAddClient={onAddClient}
-            onDeleteClient={onDeleteClient}
+            onContextMenu={buildTreeContextMenu}
           />
         ))}
       </div>
 
+      {/* Right: Task Panel */}
       <div className="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant p-5 overflow-y-auto">
         <TaskPanel
           accountId={selectedId}
           accountLabel={findLabel(tree)}
           tasks={tasks[selectedId] || []}
-          onAddTask={onAddTask}
+          onAddTask={() => doAddTask()}
           onToggleStatus={onToggleStatus}
+          onTaskContextMenu={buildTaskContextMenu}
         />
       </div>
+
+      {/* Context Menu */}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={ctxMenu.items}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }
