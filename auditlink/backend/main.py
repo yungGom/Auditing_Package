@@ -342,6 +342,7 @@ class TaskCreate(BaseModel):
     due_date: Optional[str] = None
     priority: str = "mid"
     memo: str = ""
+    file_path: str = ""
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -350,6 +351,7 @@ class TaskUpdate(BaseModel):
     due_date: Optional[str] = None
     priority: Optional[str] = None
     memo: Optional[str] = None
+    file_path: Optional[str] = None
 
 @app.get("/api/tasks")
 def list_tasks(account_id: Optional[int] = None):
@@ -363,33 +365,77 @@ def list_tasks(account_id: Optional[int] = None):
 
 @app.post("/api/tasks", status_code=201)
 def create_task(body: TaskCreate):
+    from datetime import datetime
     conn = _db()
+    now = datetime.now().isoformat(timespec="seconds")
     conn.execute(
-        "INSERT INTO tasks (account_id, title, status, assignee, due_date, priority, memo) VALUES (?,?,?,?,?,?,?)",
-        (body.account_id, body.title, body.status, body.assignee, body.due_date, body.priority, body.memo),
+        "INSERT INTO tasks (account_id, title, status, assignee, due_date, priority, memo, file_path, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        (body.account_id, body.title, body.status, body.assignee, body.due_date, body.priority, body.memo, body.file_path, now),
     )
     rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.commit()
     conn.close()
-    return {"id": rid, **body.model_dump()}
+    return {"id": rid, **body.model_dump(), "updated_at": now}
 
 @app.put("/api/tasks/{task_id}")
 def update_task(task_id: int, body: TaskUpdate):
+    from datetime import datetime
     conn = _db()
+    existing = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(404)
+    # Record status change history
+    if body.status is not None and body.status != existing["status"]:
+        now = datetime.now().isoformat(timespec="seconds")
+        conn.execute(
+            "INSERT INTO task_history (task_id, old_status, new_status, changed_at) VALUES (?,?,?,?)",
+            (task_id, existing["status"], body.status, now),
+        )
     sets, vals = [], []
-    for field in ["title", "status", "assignee", "due_date", "priority", "memo"]:
+    for field in ["title", "status", "assignee", "due_date", "priority", "memo", "file_path"]:
         v = getattr(body, field)
         if v is not None:
             sets.append(f"{field}=?"); vals.append(v)
     if sets:
+        now = datetime.now().isoformat(timespec="seconds")
+        sets.append("updated_at=?"); vals.append(now)
         vals.append(task_id)
         conn.execute(f"UPDATE tasks SET {','.join(sets)} WHERE id=?", vals)
         conn.commit()
     row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     conn.close()
+    return row_to_dict(row)
+
+@app.get("/api/tasks/{task_id}")
+def get_task(task_id: int):
+    """Return a single task with its breadcrumb path."""
+    conn = _db()
+    row = conn.execute("""
+        SELECT t.*, a.name AS account_name, p.name AS phase_name,
+               c.name AS client_name, fy.name AS fy_name
+        FROM tasks t
+        JOIN accounts a ON a.id = t.account_id
+        JOIN phases p ON p.id = a.phase_id
+        JOIN clients c ON c.id = p.client_id
+        JOIN fiscal_years fy ON fy.id = c.fy_id
+        WHERE t.id = ?
+    """, (task_id,)).fetchone()
+    conn.close()
     if not row:
         raise HTTPException(404)
-    return row_to_dict(row)
+    d = dict(row)
+    d["path"] = f"{d.pop('fy_name')} > {d.pop('client_name')} > {d.pop('phase_name')} > {d.pop('account_name')}"
+    return d
+
+@app.get("/api/tasks/{task_id}/history")
+def get_task_history(task_id: int):
+    conn = _db()
+    rows = conn.execute(
+        "SELECT * FROM task_history WHERE task_id=? ORDER BY changed_at DESC", (task_id,)
+    ).fetchall()
+    conn.close()
+    return rows_to_list(rows)
 
 @app.delete("/api/tasks/{task_id}")
 def delete_task(task_id: int):

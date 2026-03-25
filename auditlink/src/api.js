@@ -39,9 +39,11 @@ const api = {
 
   // Tasks
   getTasks: (accountId) => request(`/api/tasks${accountId ? `?account_id=${accountId}` : ""}`),
+  getTask: (id) => request(`/api/tasks/${id}`),
   createTask: (data) => request("/api/tasks", { method: "POST", body: JSON.stringify(data) }),
   updateTask: (id, data) => request(`/api/tasks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTask: (id) => request(`/api/tasks/${id}`, { method: "DELETE" }),
+  getTaskHistory: (id) => request(`/api/tasks/${id}/history`),
 
   // Templates
   getTemplates: () => request("/api/templates"),

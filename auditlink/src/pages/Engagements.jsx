@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api";
+import TaskDetailPanel from "../components/TaskDetailPanel";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -156,14 +157,15 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
 // Kanban Card (draggable)
 // ---------------------------------------------------------------------------
 
-function KanbanCard({ task, onDragStart, onContextMenu, highlight }) {
+function KanbanCard({ task, onDragStart, onContextMenu, onClick, highlight }) {
   const pr = PRIORITY_MAP[task.priority] || PRIORITY_MAP.mid;
   return (
     <div
       draggable
       onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(task.id)); onDragStart(task); }}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, task); }}
-      className={`bg-surface-container-lowest rounded-xl border p-3 hover:shadow-md transition cursor-grab active:cursor-grabbing ${highlight ? "border-primary ring-2 ring-primary/30 animate-pulse" : "border-outline-variant"}`}
+      onClick={() => onClick && onClick(task)}
+      className={`bg-surface-container-lowest rounded-xl border p-3 hover:shadow-md transition cursor-pointer active:cursor-grabbing ${highlight ? "border-primary ring-2 ring-primary/30 animate-pulse" : "border-outline-variant"}`}
     >
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="flex items-center gap-1 text-[10px] font-label text-on-surface-variant">
@@ -185,7 +187,7 @@ function KanbanCard({ task, onDragStart, onContextMenu, highlight }) {
 // Kanban Column
 // ---------------------------------------------------------------------------
 
-function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, onAddTask, highlightTaskId }) {
+function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, onTaskClick, onAddTask, highlightTaskId }) {
   const st = STATUS_MAP[status];
   const [dragOver, setDragOver] = useState(false);
 
@@ -221,7 +223,7 @@ function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, o
       {/* Cards */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[80px]">
         {tasks.map((task) => (
-          <KanbanCard key={task.id} task={task} onDragStart={onDragStart} onContextMenu={onTaskContextMenu} highlight={highlightTaskId === task.id} />
+          <KanbanCard key={task.id} task={task} onDragStart={onDragStart} onContextMenu={onTaskContextMenu} onClick={onTaskClick} highlight={highlightTaskId === task.id} />
         ))}
         {tasks.length === 0 && (
           <div className="text-center py-6 text-[11px] text-outline font-label">
@@ -237,7 +239,7 @@ function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, o
 // Task Panel (list view + kanban toggle)
 // ---------------------------------------------------------------------------
 
-function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange, onAddTask, onToggleStatus, onTaskContextMenu, onDrop, onReorder, highlightTaskId }) {
+function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange, onAddTask, onToggleStatus, onTaskContextMenu, onTaskClick, onDrop, onReorder, highlightTaskId }) {
   const [dragIdx, setDragIdx] = useState(null);
 
   if (!accountId) {
@@ -308,7 +310,7 @@ function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange,
       {viewMode === "kanban" ? (
         <div className="flex-1 flex gap-3 overflow-x-auto pb-2">
           {STATUS_ORDER.map((s) => (
-            <KanbanColumn key={s} status={s} tasks={grouped[s]} onDrop={onDrop} onDragStart={() => {}} onTaskContextMenu={onTaskContextMenu}
+            <KanbanColumn key={s} status={s} tasks={grouped[s]} onDrop={onDrop} onDragStart={() => {}} onTaskContextMenu={onTaskContextMenu} onTaskClick={onTaskClick}
               onAddTask={(status) => onAddTask(status)} highlightTaskId={highlightTaskId} />
           ))}
         </div>
@@ -324,8 +326,9 @@ function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange,
                 onDragStart={(e) => handleListDragStart(e, idx)}
                 onDragOver={(e) => handleListDragOver(e, idx)}
                 onDragEnd={handleListDragEnd}
+                onClick={() => onTaskClick && onTaskClick(task)}
                 onContextMenu={(e) => { e.preventDefault(); onTaskContextMenu(e, task); }}
-                className={`bg-surface-container-lowest rounded-xl border p-4 hover:shadow-sm transition cursor-grab active:cursor-grabbing ${dragIdx === idx ? "opacity-50" : ""} ${highlightTaskId === task.id ? "border-primary ring-2 ring-primary/30 animate-pulse" : "border-outline-variant"}`}
+                className={`bg-surface-container-lowest rounded-xl border p-4 hover:shadow-sm transition cursor-pointer active:cursor-grabbing ${dragIdx === idx ? "opacity-50" : ""} ${highlightTaskId === task.id ? "border-primary ring-2 ring-primary/30 animate-pulse" : "border-outline-variant"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2 shrink-0 mt-0.5 text-outline">
@@ -378,6 +381,8 @@ export default function Engagements() {
   const [viewMode, setViewMode] = useState("kanban");
   const [treeOpen, setTreeOpen] = useState(true);
   const [highlightTaskId, setHighlightTaskId] = useState(null);
+  const [detailTask, setDetailTask] = useState(null); // task object for detail panel
+  const [detailPath, setDetailPath] = useState("");
 
   // Helper: expand all ancestors of a node in the tree
   function expandPathTo(nodeId, treeData) {
@@ -621,6 +626,44 @@ export default function Engagements() {
     });
   };
 
+  // ── Task detail panel ──
+
+  const openTaskDetail = (task) => {
+    // Load full task detail with path from API if available
+    if (useApi && task.id) {
+      api.getTask(task.id).then((full) => {
+        setDetailTask({ ...task, ...full, deadline: full.due_date });
+        setDetailPath(full.path || "");
+      }).catch(() => {
+        setDetailTask(task);
+        setDetailPath("");
+      });
+    } else {
+      setDetailTask(task);
+      setDetailPath("");
+    }
+  };
+
+  const handleDetailSave = (taskId, updates) => {
+    if (useApi) api.updateTask(taskId, updates).catch(() => {});
+    setTasks((prev) => ({
+      ...prev,
+      [selectedId]: prev[selectedId].map((t) =>
+        t.id === taskId ? { ...t, ...updates, deadline: updates.due_date } : t
+      ),
+    }));
+    setDetailTask(null);
+  };
+
+  const handleDetailDelete = (taskId) => {
+    if (useApi) api.deleteTask(taskId).catch(() => {});
+    setTasks((prev) => ({
+      ...prev,
+      [selectedId]: prev[selectedId].filter((t) => t.id !== taskId),
+    }));
+    setDetailTask(null);
+  };
+
   // ── Context menus ──
 
   const buildTreeContextMenu = (e, node) => {
@@ -702,6 +745,7 @@ export default function Engagements() {
           onAddTask={doAddTask}
           onToggleStatus={onToggleStatus}
           onTaskContextMenu={buildTaskContextMenu}
+          onTaskClick={openTaskDetail}
           onDrop={onKanbanDrop}
           onReorder={onReorder}
           highlightTaskId={highlightTaskId}
@@ -709,6 +753,17 @@ export default function Engagements() {
       </div>
 
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}
+
+      {detailTask && (
+        <TaskDetailPanel
+          task={detailTask}
+          path={detailPath}
+          onClose={() => setDetailTask(null)}
+          onSave={handleDetailSave}
+          onDelete={handleDetailDelete}
+          useApi={useApi}
+        />
+      )}
     </div>
   );
 }

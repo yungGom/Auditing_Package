@@ -45,7 +45,17 @@ CREATE TABLE IF NOT EXISTS tasks (
     assignee    TEXT    NOT NULL DEFAULT '',
     due_date    TEXT,
     priority    TEXT    NOT NULL DEFAULT 'mid',
-    memo        TEXT    NOT NULL DEFAULT ''
+    memo        TEXT    NOT NULL DEFAULT '',
+    file_path   TEXT    NOT NULL DEFAULT '',
+    updated_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS task_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    old_status  TEXT    NOT NULL,
+    new_status  TEXT    NOT NULL,
+    changed_at  TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS templates (
@@ -86,6 +96,12 @@ def get_connection() -> sqlite3.Connection:
 def init_db():
     conn = get_connection()
     conn.executescript(SCHEMA)
+    # Migrate: add file_path, updated_at columns if missing
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+    if "file_path" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN file_path TEXT NOT NULL DEFAULT ''")
+    if "updated_at" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN updated_at TEXT")
     # Seed only when fiscal_years is empty
     row = conn.execute("SELECT COUNT(*) c FROM fiscal_years").fetchone()
     if row["c"] == 0:
