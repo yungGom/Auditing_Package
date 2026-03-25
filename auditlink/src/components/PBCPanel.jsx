@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import api from "../api";
+import PBCExcelUpload from "./PBCExcelUpload";
 
 const PBC_STATUS_MAP = {
   "미요청": { bg: "bg-outline-variant/30", text: "text-on-surface-variant" },
@@ -182,6 +183,7 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [detailItem, setDetailItem] = useState(null);
+  const [excelOpen, setExcelOpen] = useState(false);
 
   const dbClientId = clientId ? parseInt(String(clientId).replace("client-", "")) : null;
   const dbAccountId = accountId && filterByAccount ? parseInt(String(accountId).replace("account-", "")) : null;
@@ -284,6 +286,11 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs text-on-surface-variant font-label">전체 {total}건 중 수령완료 {received}건</p>
           <div className="flex items-center gap-2">
+            <button onClick={() => setExcelOpen(true)}
+              className="px-2.5 py-1.5 rounded-xl border border-outline-variant text-[11px] font-label font-semibold text-on-surface-variant hover:bg-surface-container transition flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px]">upload_file</span>
+              엑셀 업로드
+            </button>
             <button onClick={handleBulkImport}
               className="px-2.5 py-1.5 rounded-xl border border-outline-variant text-[11px] font-label font-semibold text-on-surface-variant hover:bg-surface-container transition flex items-center gap-1">
               <span className="material-symbols-outlined text-[14px]">file_copy</span>
@@ -344,6 +351,11 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
       {/* Detail panel */}
       {detailItem && (
         <PBCDetailPanel item={detailItem} accounts={accounts} onClose={() => setDetailItem(null)} onSave={handleSave} onDelete={handleDelete} />
+      )}
+
+      {/* Excel upload modal */}
+      {excelOpen && (
+        <PBCExcelUpload clientId={clientId} onClose={() => setExcelOpen(false)} />
       )}
     </div>
   );

@@ -88,6 +88,15 @@ const api = {
   deletePBCItem: (id) => request(`/api/pbc-items/${id}`, { method: "DELETE" }),
   bulkCreatePBCItems: (items) => request("/api/pbc-items/bulk", { method: "POST", body: JSON.stringify(items) }),
 
+  // PBC Excel Items
+  getPBCExcelItems: (clientId, fileName) => {
+    const sp = new URLSearchParams({ client_id: clientId });
+    if (fileName) sp.set("file_name", fileName);
+    return request(`/api/pbc-excel-items?${sp}`);
+  },
+  upsertPBCExcelItem: (data) => request("/api/pbc-excel-items", { method: "PUT", body: JSON.stringify(data) }),
+  bulkUpsertPBCExcel: (items) => request("/api/pbc-excel-items/bulk", { method: "PUT", body: JSON.stringify(items) }),
+
   // Notifications
   getNotifications: () => request("/api/notifications"),
 

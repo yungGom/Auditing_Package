@@ -904,6 +904,77 @@ def bulk_create_pbc_items(items: list[PBCCreate]):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# PBC Excel Items
+# ═══════════════════════════════════════════════════════════════════════════
+
+class PBCExcelUpsert(BaseModel):
+    client_id: int
+    file_name: str = ""
+    sheet_name: str = ""
+    row_index: int
+    is_received: bool = False
+    received_date: Optional[str] = None
+    completion_status: str = ""
+    note: str = ""
+
+@app.get("/api/pbc-excel-items")
+def list_pbc_excel_items(client_id: int, file_name: Optional[str] = None):
+    conn = _db()
+    sql = "SELECT * FROM pbc_excel_items WHERE client_id=?"
+    params: list = [client_id]
+    if file_name:
+        sql += " AND file_name=?"
+        params.append(file_name)
+    sql += " ORDER BY sheet_name, row_index"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return rows_to_list(rows)
+
+@app.put("/api/pbc-excel-items")
+def upsert_pbc_excel_item(body: PBCExcelUpsert):
+    conn = _db()
+    existing = conn.execute(
+        "SELECT id FROM pbc_excel_items WHERE client_id=? AND file_name=? AND sheet_name=? AND row_index=?",
+        (body.client_id, body.file_name, body.sheet_name, body.row_index),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE pbc_excel_items SET is_received=?, received_date=?, completion_status=?, note=? WHERE id=?",
+            (int(body.is_received), body.received_date, body.completion_status, body.note, existing["id"]),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO pbc_excel_items (client_id, file_name, sheet_name, row_index, is_received, received_date, completion_status, note) VALUES (?,?,?,?,?,?,?,?)",
+            (body.client_id, body.file_name, body.sheet_name, body.row_index, int(body.is_received), body.received_date, body.completion_status, body.note),
+        )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.put("/api/pbc-excel-items/bulk")
+def bulk_upsert_pbc_excel(items: list[PBCExcelUpsert]):
+    conn = _db()
+    for body in items:
+        existing = conn.execute(
+            "SELECT id FROM pbc_excel_items WHERE client_id=? AND file_name=? AND sheet_name=? AND row_index=?",
+            (body.client_id, body.file_name, body.sheet_name, body.row_index),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE pbc_excel_items SET is_received=?, received_date=?, completion_status=?, note=? WHERE id=?",
+                (int(body.is_received), body.received_date, body.completion_status, body.note, existing["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO pbc_excel_items (client_id, file_name, sheet_name, row_index, is_received, received_date, completion_status, note) VALUES (?,?,?,?,?,?,?,?)",
+                (body.client_id, body.file_name, body.sheet_name, body.row_index, int(body.is_received), body.received_date, body.completion_status, body.note),
+            )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Notifications
 # ═══════════════════════════════════════════════════════════════════════════
 
