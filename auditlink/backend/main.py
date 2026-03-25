@@ -3,9 +3,13 @@ AuditLink FastAPI backend – CRUD for all tables.
 Run: uvicorn backend.main:app --reload --port 8000
 """
 import json
+import os
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -15,6 +19,13 @@ from .database import init_db, get_connection
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
+
+def _get_dist_dir():
+    """Locate the React build output (dist/) directory."""
+    if getattr(sys, "frozen", False):
+        return os.path.join(sys._MEIPASS, "dist")
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "dist")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,6 +40,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve React static build if dist/ exists
+_dist = _get_dist_dir()
+if os.path.isdir(_dist):
+    # Mount assets sub-folder for JS/CSS
+    _assets = os.path.join(_dist, "assets")
+    if os.path.isdir(_assets):
+        app.mount("/assets", StaticFiles(directory=_assets), name="assets")
+
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request
+
+    class SPAMiddleware(BaseHTTPMiddleware):
+        """Serve index.html for non-API, non-static routes (SPA fallback)."""
+        async def dispatch(self, request: Request, call_next):
+            response = await call_next(request)
+            path = request.url.path
+            if response.status_code == 404 and not path.startswith("/api/") and not path.startswith("/assets/"):
+                return FileResponse(os.path.join(_dist, "index.html"))
+            return response
+
+    app.add_middleware(SPAMiddleware)
 
 
 # ---------------------------------------------------------------------------
