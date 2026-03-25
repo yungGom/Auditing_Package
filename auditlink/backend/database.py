@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS pbc_items (
     client_contact  TEXT    NOT NULL DEFAULT '',
     note            TEXT    NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS template_checklists (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id     INTEGER NOT NULL,
+    sheet_name      TEXT    NOT NULL DEFAULT '',
+    row_index       INTEGER NOT NULL,
+    is_completed    INTEGER NOT NULL DEFAULT 0,
+    note            TEXT    NOT NULL DEFAULT ''
+);
 """
 
 

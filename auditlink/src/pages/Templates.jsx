@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 import { useState, useEffect } from "react";
 import api from "../api";
+import ExcelChecklist from "../components/ExcelChecklist";
 
 const MOCK_TEMPLATES = [
   {
@@ -103,7 +104,7 @@ const INDUSTRY_COLORS = {
 
 // --- Sub-components ---------------------------------------------------------
 
-function TemplateCard({ template, onSelect, onDelete }) {
+function TemplateCard({ template, onSelect, onDelete, onChecklist }) {
   const colors = INDUSTRY_COLORS[template.industry] || INDUSTRY_COLORS["제조업"];
 
   return (
@@ -159,18 +160,17 @@ function TemplateCard({ template, onSelect, onDelete }) {
       {/* 버튼 */}
       <div className="flex gap-2 mt-auto pt-2 border-t border-outline-variant/50">
         <button
-          onClick={(e) => { e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); onChecklist?.(template); }}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-label font-semibold hover:bg-primary-container hover:text-white transition"
         >
-          <span className="material-symbols-outlined text-base">play_arrow</span>
-          적용
+          <span className="material-symbols-outlined text-base">checklist</span>
+          체크리스트
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onSelect(template); }}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-outline-variant text-on-surface-variant text-xs font-label font-semibold hover:bg-surface-container transition"
+          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-outline-variant text-on-surface-variant text-xs font-label font-semibold hover:bg-surface-container transition"
         >
           <span className="material-symbols-outlined text-base">edit</span>
-          수정
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete?.(template); }}
@@ -273,6 +273,8 @@ function TemplateDetail({ template, onClose }) {
 export default function Templates() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templates, setTemplates] = useState(MOCK_TEMPLATES);
+  const [checklistOpen, setChecklistOpen] = useState(false);
+  const [checklistTemplateId, setChecklistTemplateId] = useState(null);
 
   useEffect(() => {
     api.getTemplates().then((data) => {
@@ -296,16 +298,26 @@ export default function Templates() {
             업종별 감사 템플릿을 관리하고 새로운 감사에 적용하세요
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition shadow-sm">
-          <span className="material-symbols-outlined text-lg">add</span>
-          새 템플릿
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setChecklistTemplateId(null); setChecklistOpen(true); }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-outline-variant text-on-surface-variant text-sm font-label font-semibold hover:bg-surface-container transition"
+          >
+            <span className="material-symbols-outlined text-lg">upload_file</span>
+            템플릿 가져오기
+          </button>
+          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition shadow-sm">
+            <span className="material-symbols-outlined text-lg">add</span>
+            새 템플릿
+          </button>
+        </div>
       </div>
 
       {/* 카드 그리드 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
         {templates.map((tpl) => (
-          <TemplateCard key={tpl.id} template={tpl} onSelect={setSelectedTemplate} onDelete={handleDelete} />
+          <TemplateCard key={tpl.id} template={tpl} onSelect={setSelectedTemplate} onDelete={handleDelete}
+            onChecklist={(t) => { setChecklistTemplateId(t.id); setChecklistOpen(true); }} />
         ))}
       </div>
 
@@ -314,6 +326,14 @@ export default function Templates() {
         <TemplateDetail
           template={selectedTemplate}
           onClose={() => setSelectedTemplate(null)}
+        />
+      )}
+
+      {/* 엑셀 체크리스트 */}
+      {checklistOpen && (
+        <ExcelChecklist
+          templateId={checklistTemplateId}
+          onClose={() => setChecklistOpen(false)}
         />
       )}
     </div>

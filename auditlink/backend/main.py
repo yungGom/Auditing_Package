@@ -709,6 +709,81 @@ def update_settings(body: dict):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Template Checklists
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/template-checklists")
+def list_template_checklists(template_id: int):
+    conn = _db()
+    rows = conn.execute(
+        "SELECT * FROM template_checklists WHERE template_id=? ORDER BY sheet_name, row_index",
+        (template_id,)
+    ).fetchall()
+    conn.close()
+    return rows_to_list(rows)
+
+class ChecklistUpsert(BaseModel):
+    template_id: int
+    sheet_name: str = ""
+    row_index: int
+    is_completed: bool = False
+    note: str = ""
+
+@app.put("/api/template-checklists")
+def upsert_template_checklist(body: ChecklistUpsert):
+    """Insert or update a single checklist row."""
+    conn = _db()
+    existing = conn.execute(
+        "SELECT id FROM template_checklists WHERE template_id=? AND sheet_name=? AND row_index=?",
+        (body.template_id, body.sheet_name, body.row_index),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE template_checklists SET is_completed=?, note=? WHERE id=?",
+            (int(body.is_completed), body.note, existing["id"]),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO template_checklists (template_id, sheet_name, row_index, is_completed, note) VALUES (?,?,?,?,?)",
+            (body.template_id, body.sheet_name, body.row_index, int(body.is_completed), body.note),
+        )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.put("/api/template-checklists/bulk")
+def bulk_upsert_checklists(items: list[ChecklistUpsert]):
+    """Bulk upsert checklist states."""
+    conn = _db()
+    for body in items:
+        existing = conn.execute(
+            "SELECT id FROM template_checklists WHERE template_id=? AND sheet_name=? AND row_index=?",
+            (body.template_id, body.sheet_name, body.row_index),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE template_checklists SET is_completed=?, note=? WHERE id=?",
+                (int(body.is_completed), body.note, existing["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO template_checklists (template_id, sheet_name, row_index, is_completed, note) VALUES (?,?,?,?,?)",
+                (body.template_id, body.sheet_name, body.row_index, int(body.is_completed), body.note),
+            )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.delete("/api/template-checklists")
+def delete_template_checklists(template_id: int):
+    conn = _db()
+    conn.execute("DELETE FROM template_checklists WHERE template_id=?", (template_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # PBC Items
 # ═══════════════════════════════════════════════════════════════════════════
 

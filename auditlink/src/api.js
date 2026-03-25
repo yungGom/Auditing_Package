@@ -68,6 +68,12 @@ const api = {
   getSettings: () => request("/api/settings"),
   updateSettings: (data) => request("/api/settings", { method: "PUT", body: JSON.stringify(data) }),
 
+  // Template Checklists
+  getTemplateChecklists: (templateId) => request(`/api/template-checklists?template_id=${templateId}`),
+  upsertChecklist: (data) => request("/api/template-checklists", { method: "PUT", body: JSON.stringify(data) }),
+  bulkUpsertChecklists: (items) => request("/api/template-checklists/bulk", { method: "PUT", body: JSON.stringify(items) }),
+  deleteTemplateChecklists: (templateId) => request(`/api/template-checklists?template_id=${templateId}`, { method: "DELETE" }),
+
   // PBC Items
   getPBCItems: (params) => {
     const sp = new URLSearchParams();
