@@ -581,6 +581,92 @@ def update_settings(body: dict):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Search
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/search")
+def search(q: str = ""):
+    """Full-text search across clients, accounts, tasks, assignees."""
+    q = q.strip()
+    if not q:
+        return {"clients": [], "tasks": []}
+    conn = _db()
+    pattern = f"%{q}%"
+
+    # Search clients (name match) – include breadcrumb path
+    client_rows = conn.execute("""
+        SELECT c.id, c.name, c.industry, fy.name AS fy_name
+        FROM clients c
+        JOIN fiscal_years fy ON fy.id = c.fy_id
+        WHERE c.name LIKE ?
+        ORDER BY c.id LIMIT 20
+    """, (pattern,)).fetchall()
+    clients = []
+    for r in client_rows:
+        r = dict(r)
+        clients.append({
+            "id": r["id"],
+            "name": r["name"],
+            "industry": r["industry"],
+            "path": r["fy_name"],
+            "node_id": f"client-{r['id']}",
+        })
+
+    # Search accounts (name match) – include breadcrumb path
+    account_rows = conn.execute("""
+        SELECT a.id, a.name AS account_name,
+               p.name AS phase_name, c.name AS client_name, fy.name AS fy_name,
+               c.id AS client_id, p.id AS phase_id
+        FROM accounts a
+        JOIN phases p ON p.id = a.phase_id
+        JOIN clients c ON c.id = p.client_id
+        JOIN fiscal_years fy ON fy.id = c.fy_id
+        WHERE a.name LIKE ?
+        ORDER BY a.id LIMIT 20
+    """, (pattern,)).fetchall()
+    account_results = []
+    for r in account_rows:
+        r = dict(r)
+        account_results.append({
+            "type": "account",
+            "account_id": r["id"],
+            "title": r["account_name"],
+            "path": f"{r['fy_name']} > {r['client_name']} > {r['phase_name']}",
+            "node_id": f"account-{r['id']}",
+        })
+
+    # Search tasks (title, assignee, memo match) – include breadcrumb path
+    task_rows = conn.execute("""
+        SELECT t.id, t.title, t.assignee, t.status, t.priority, t.memo,
+               a.id AS account_id, a.name AS account_name,
+               p.name AS phase_name, c.name AS client_name, fy.name AS fy_name
+        FROM tasks t
+        JOIN accounts a ON a.id = t.account_id
+        JOIN phases p ON p.id = a.phase_id
+        JOIN clients c ON c.id = p.client_id
+        JOIN fiscal_years fy ON fy.id = c.fy_id
+        WHERE t.title LIKE ? OR t.assignee LIKE ? OR t.memo LIKE ?
+        ORDER BY t.id LIMIT 30
+    """, (pattern, pattern, pattern)).fetchall()
+    tasks = []
+    for r in task_rows:
+        r = dict(r)
+        tasks.append({
+            "id": r["id"],
+            "title": r["title"],
+            "assignee": r["assignee"],
+            "status": r["status"],
+            "priority": r["priority"],
+            "account_id": r["account_id"],
+            "path": f"{r['fy_name']} > {r['client_name']} > {r['phase_name']} > {r['account_name']}",
+            "node_id": f"account-{r['account_id']}",
+        })
+
+    conn.close()
+    return {"clients": clients, "accounts": account_results, "tasks": tasks}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Dashboard aggregation (convenience endpoint)
 # ═══════════════════════════════════════════════════════════════════════════
 

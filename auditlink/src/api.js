@@ -65,6 +65,9 @@ const api = {
   getSettings: () => request("/api/settings"),
   updateSettings: (data) => request("/api/settings", { method: "PUT", body: JSON.stringify(data) }),
 
+  // Search
+  search: (q) => request(`/api/search?q=${encodeURIComponent(q)}`),
+
   // Dashboard
   getDashboard: () => request("/api/dashboard"),
 

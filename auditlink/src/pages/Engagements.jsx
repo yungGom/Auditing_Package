@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import api from "../api";
 
 // ---------------------------------------------------------------------------
@@ -155,14 +156,14 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
 // Kanban Card (draggable)
 // ---------------------------------------------------------------------------
 
-function KanbanCard({ task, onDragStart, onContextMenu }) {
+function KanbanCard({ task, onDragStart, onContextMenu, highlight }) {
   const pr = PRIORITY_MAP[task.priority] || PRIORITY_MAP.mid;
   return (
     <div
       draggable
       onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(task.id)); onDragStart(task); }}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, task); }}
-      className="bg-surface-container-lowest rounded-xl border border-outline-variant p-3 hover:shadow-md transition cursor-grab active:cursor-grabbing"
+      className={`bg-surface-container-lowest rounded-xl border p-3 hover:shadow-md transition cursor-grab active:cursor-grabbing ${highlight ? "border-primary ring-2 ring-primary/30 animate-pulse" : "border-outline-variant"}`}
     >
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="flex items-center gap-1 text-[10px] font-label text-on-surface-variant">
@@ -184,7 +185,7 @@ function KanbanCard({ task, onDragStart, onContextMenu }) {
 // Kanban Column
 // ---------------------------------------------------------------------------
 
-function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, onAddTask }) {
+function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, onAddTask, highlightTaskId }) {
   const st = STATUS_MAP[status];
   const [dragOver, setDragOver] = useState(false);
 
@@ -220,7 +221,7 @@ function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, o
       {/* Cards */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[80px]">
         {tasks.map((task) => (
-          <KanbanCard key={task.id} task={task} onDragStart={onDragStart} onContextMenu={onTaskContextMenu} />
+          <KanbanCard key={task.id} task={task} onDragStart={onDragStart} onContextMenu={onTaskContextMenu} highlight={highlightTaskId === task.id} />
         ))}
         {tasks.length === 0 && (
           <div className="text-center py-6 text-[11px] text-outline font-label">
@@ -236,7 +237,7 @@ function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, o
 // Task Panel (list view + kanban toggle)
 // ---------------------------------------------------------------------------
 
-function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange, onAddTask, onToggleStatus, onTaskContextMenu, onDrop, onReorder }) {
+function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange, onAddTask, onToggleStatus, onTaskContextMenu, onDrop, onReorder, highlightTaskId }) {
   const [dragIdx, setDragIdx] = useState(null);
 
   if (!accountId) {
@@ -308,7 +309,7 @@ function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange,
         <div className="flex-1 flex gap-3 overflow-x-auto pb-2">
           {STATUS_ORDER.map((s) => (
             <KanbanColumn key={s} status={s} tasks={grouped[s]} onDrop={onDrop} onDragStart={() => {}} onTaskContextMenu={onTaskContextMenu}
-              onAddTask={(status) => onAddTask(status)} />
+              onAddTask={(status) => onAddTask(status)} highlightTaskId={highlightTaskId} />
           ))}
         </div>
       ) : (
@@ -324,7 +325,7 @@ function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange,
                 onDragOver={(e) => handleListDragOver(e, idx)}
                 onDragEnd={handleListDragEnd}
                 onContextMenu={(e) => { e.preventDefault(); onTaskContextMenu(e, task); }}
-                className={`bg-surface-container-lowest rounded-xl border border-outline-variant p-4 hover:shadow-sm transition cursor-grab active:cursor-grabbing ${dragIdx === idx ? "opacity-50" : ""}`}
+                className={`bg-surface-container-lowest rounded-xl border p-4 hover:shadow-sm transition cursor-grab active:cursor-grabbing ${dragIdx === idx ? "opacity-50" : ""} ${highlightTaskId === task.id ? "border-primary ring-2 ring-primary/30 animate-pulse" : "border-outline-variant"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2 shrink-0 mt-0.5 text-outline">
@@ -367,6 +368,7 @@ function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange,
 let nextId = 100;
 
 export default function Engagements() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tree, setTree] = useState(fallbackTree);
   const [tasks, setTasks] = useState(fallbackTasks);
   const [selectedId, setSelectedId] = useState(null);
@@ -375,6 +377,21 @@ export default function Engagements() {
   const [ctxMenu, setCtxMenu] = useState(null);
   const [viewMode, setViewMode] = useState("kanban");
   const [treeOpen, setTreeOpen] = useState(true);
+  const [highlightTaskId, setHighlightTaskId] = useState(null);
+
+  // Helper: expand all ancestors of a node in the tree
+  function expandPathTo(nodeId, treeData) {
+    const path = [];
+    function walk(nodes, trail) {
+      for (const n of nodes) {
+        if (n.id === nodeId) { path.push(...trail); return true; }
+        if (n.children) { if (walk(n.children, [...trail, n.id])) return true; }
+      }
+      return false;
+    }
+    walk(treeData, []);
+    return path;
+  }
 
   // Load tree
   useEffect(() => {
@@ -382,8 +399,41 @@ export default function Engagements() {
       if (apiTree?.length) {
         setTree(apiTree);
         setUseApi(true);
-        const first = findFirstAccount(apiTree);
-        if (first) setSelectedId(first.id);
+
+        // Handle URL params for search navigation
+        const selectNode = searchParams.get("select");
+        const highlightId = searchParams.get("highlight");
+
+        if (selectNode) {
+          // Expand ancestors and select the target node
+          const ancestors = expandPathTo(selectNode, apiTree);
+          const expMap = {};
+          ancestors.forEach((id) => { expMap[id] = true; });
+          setExpanded((prev) => ({ ...prev, ...expMap }));
+
+          // If it's a client/phase node, find its first account child
+          const node = findNodeById(apiTree, selectNode);
+          if (node && node.type === "account") {
+            setSelectedId(selectNode);
+          } else if (node && node.children) {
+            const firstAcc = findFirstAccount(node.children);
+            if (firstAcc) setSelectedId(firstAcc.id);
+            else setSelectedId(selectNode);
+          } else {
+            setSelectedId(selectNode);
+          }
+
+          if (highlightId) {
+            setHighlightTaskId(Number(highlightId));
+            setTimeout(() => setHighlightTaskId(null), 3000);
+          }
+
+          // Clear URL params
+          setSearchParams({}, { replace: true });
+        } else {
+          const first = findFirstAccount(apiTree);
+          if (first) setSelectedId(first.id);
+        }
       }
     }).catch(() => { setSelectedId("hanbit-interim-ar"); });
   }, []);
@@ -392,6 +442,14 @@ export default function Engagements() {
     for (const n of nodes) {
       if (n.type === "account") return n;
       if (n.children) { const f = findFirstAccount(n.children); if (f) return f; }
+    }
+    return null;
+  }
+
+  function findNodeById(nodes, id) {
+    for (const n of nodes) {
+      if (n.id === id) return n;
+      if (n.children) { const f = findNodeById(n.children, id); if (f) return f; }
     }
     return null;
   }
@@ -646,6 +704,7 @@ export default function Engagements() {
           onTaskContextMenu={buildTaskContextMenu}
           onDrop={onKanbanDrop}
           onReorder={onReorder}
+          highlightTaskId={highlightTaskId}
         />
       </div>
 
