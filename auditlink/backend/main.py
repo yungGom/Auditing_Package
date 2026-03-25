@@ -709,6 +709,126 @@ def update_settings(body: dict):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# PBC Items
+# ═══════════════════════════════════════════════════════════════════════════
+
+class PBCCreate(BaseModel):
+    client_id: int
+    account_id: Optional[int] = None
+    name: str
+    request_date: Optional[str] = None
+    due_date: Optional[str] = None
+    status: str = "미요청"
+    auditor: str = ""
+    client_contact: str = ""
+    note: str = ""
+
+class PBCUpdate(BaseModel):
+    account_id: Optional[int] = None
+    name: Optional[str] = None
+    request_date: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+    auditor: Optional[str] = None
+    client_contact: Optional[str] = None
+    note: Optional[str] = None
+
+@app.get("/api/pbc-items")
+def list_pbc_items(client_id: Optional[int] = None, account_id: Optional[int] = None):
+    conn = _db()
+    sql = """
+        SELECT p.*, a.name AS account_name
+        FROM pbc_items p
+        LEFT JOIN accounts a ON a.id = p.account_id
+        WHERE 1=1
+    """
+    params = []
+    if client_id:
+        sql += " AND p.client_id=?"
+        params.append(client_id)
+    if account_id:
+        sql += " AND p.account_id=?"
+        params.append(account_id)
+    sql += " ORDER BY p.id"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return rows_to_list(rows)
+
+@app.get("/api/pbc-items/{item_id}")
+def get_pbc_item(item_id: int):
+    conn = _db()
+    row = conn.execute("""
+        SELECT p.*, a.name AS account_name
+        FROM pbc_items p
+        LEFT JOIN accounts a ON a.id = p.account_id
+        WHERE p.id = ?
+    """, (item_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404)
+    return row_to_dict(row)
+
+@app.post("/api/pbc-items", status_code=201)
+def create_pbc_item(body: PBCCreate):
+    conn = _db()
+    conn.execute(
+        "INSERT INTO pbc_items (client_id, account_id, name, request_date, due_date, status, auditor, client_contact, note) VALUES (?,?,?,?,?,?,?,?,?)",
+        (body.client_id, body.account_id, body.name, body.request_date, body.due_date, body.status, body.auditor, body.client_contact, body.note),
+    )
+    rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    conn.close()
+    return {"id": rid, **body.model_dump()}
+
+@app.put("/api/pbc-items/{item_id}")
+def update_pbc_item(item_id: int, body: PBCUpdate):
+    conn = _db()
+    sets, vals = [], []
+    for field in ["account_id", "name", "request_date", "due_date", "status", "auditor", "client_contact", "note"]:
+        v = getattr(body, field)
+        if v is not None:
+            sets.append(f"{field}=?"); vals.append(v)
+    if sets:
+        vals.append(item_id)
+        conn.execute(f"UPDATE pbc_items SET {','.join(sets)} WHERE id=?", vals)
+        conn.commit()
+    row = conn.execute("""
+        SELECT p.*, a.name AS account_name
+        FROM pbc_items p
+        LEFT JOIN accounts a ON a.id = p.account_id
+        WHERE p.id = ?
+    """, (item_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404)
+    return row_to_dict(row)
+
+@app.delete("/api/pbc-items/{item_id}")
+def delete_pbc_item(item_id: int):
+    conn = _db()
+    conn.execute("DELETE FROM pbc_items WHERE id=?", (item_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.post("/api/pbc-items/bulk", status_code=201)
+def bulk_create_pbc_items(items: list[PBCCreate]):
+    """Bulk create PBC items (e.g., from template)."""
+    conn = _db()
+    created = []
+    for body in items:
+        conn.execute(
+            "INSERT INTO pbc_items (client_id, account_id, name, request_date, due_date, status, auditor, client_contact, note) VALUES (?,?,?,?,?,?,?,?,?)",
+            (body.client_id, body.account_id, body.name, body.request_date, body.due_date, body.status, body.auditor, body.client_contact, body.note),
+        )
+        rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        created.append({"id": rid, **body.model_dump()})
+    conn.commit()
+    conn.close()
+    return created
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Notifications
 # ═══════════════════════════════════════════════════════════════════════════
 

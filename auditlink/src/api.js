@@ -68,6 +68,20 @@ const api = {
   getSettings: () => request("/api/settings"),
   updateSettings: (data) => request("/api/settings", { method: "PUT", body: JSON.stringify(data) }),
 
+  // PBC Items
+  getPBCItems: (params) => {
+    const sp = new URLSearchParams();
+    if (params?.client_id) sp.set("client_id", params.client_id);
+    if (params?.account_id) sp.set("account_id", params.account_id);
+    const qs = sp.toString();
+    return request(`/api/pbc-items${qs ? `?${qs}` : ""}`);
+  },
+  getPBCItem: (id) => request(`/api/pbc-items/${id}`),
+  createPBCItem: (data) => request("/api/pbc-items", { method: "POST", body: JSON.stringify(data) }),
+  updatePBCItem: (id, data) => request(`/api/pbc-items/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deletePBCItem: (id) => request(`/api/pbc-items/${id}`, { method: "DELETE" }),
+  bulkCreatePBCItems: (items) => request("/api/pbc-items/bulk", { method: "POST", body: JSON.stringify(items) }),
+
   // Notifications
   getNotifications: () => request("/api/notifications"),
 

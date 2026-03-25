@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import api from "../api";
 import TaskDetailPanel from "../components/TaskDetailPanel";
 import ClientSummaryPanel from "../components/ClientSummaryPanel";
+import PBCPanel from "../components/PBCPanel";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -383,8 +384,9 @@ export default function Engagements() {
   const [viewMode, setViewMode] = useState("kanban");
   const [treeOpen, setTreeOpen] = useState(true);
   const [highlightTaskId, setHighlightTaskId] = useState(null);
-  const [detailTask, setDetailTask] = useState(null); // task object for detail panel
+  const [detailTask, setDetailTask] = useState(null);
   const [detailPath, setDetailPath] = useState("");
+  const [activeTab, setActiveTab] = useState("main"); // "main" or "pbc"
 
   // Helper: expand all ancestors of a node in the tree
   function expandPathTo(nodeId, treeData) {
@@ -468,6 +470,36 @@ export default function Engagements() {
     return null;
   }
 
+  // Find the client node that owns a given node id
+  function findClientForNode(nodes, targetId, parentClient) {
+    for (const n of nodes) {
+      const curClient = n.type === "client" ? n : parentClient;
+      if (n.id === targetId) return curClient;
+      if (n.children) {
+        const found = findClientForNode(n.children, targetId, curClient);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  // Collect all accounts under a client node for dropdowns
+  function collectAccounts(nodes) {
+    const result = [];
+    function walk(list) {
+      for (const n of list) {
+        if (n.type === "account") result.push({ id: n.dbId || parseInt(String(n.id).replace("account-", "")), label: n.label, name: n.label });
+        if (n.children) walk(n.children);
+      }
+    }
+    walk(nodes);
+    return result;
+  }
+
+  const ownerClient = selectedId ? findClientForNode(tree, selectedId, null) : null;
+  const ownerClientNodeId = ownerClient ? ownerClient.id : selectedId;
+  const clientAccounts = ownerClient?.children ? collectAccounts(ownerClient.children) : [];
+
   // Load tasks when an account is selected
   useEffect(() => {
     if (!selectedId || !useApi || selectedType !== "account") return;
@@ -486,6 +518,7 @@ export default function Engagements() {
   const handleTreeSelect = (id, type) => {
     setSelectedId(id);
     setSelectedType(type || "account");
+    setActiveTab("main");
   };
 
   const onToggle = (id) => setExpanded((prev) => ({ ...prev, [id]: prev[id] === false ? true : false }));
@@ -748,30 +781,61 @@ export default function Engagements() {
         )}
       </div>
 
-      {/* Right panel: client summary or task panel */}
-      <div className="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant p-3 lg:p-5 overflow-hidden min-w-0">
-        {selectedType === "client" && selectedId?.startsWith("client-") ? (
-          <ClientSummaryPanel
-            clientNodeId={selectedId}
-            useApi={useApi}
-            onSelectAccount={(accountNodeId) => handleTreeSelect(accountNodeId, "account")}
-          />
-        ) : (
-          <TaskPanel
-            accountId={selectedId}
-            accountLabel={findLabel(tree)}
-            tasks={tasks[selectedId] || []}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            onAddTask={doAddTask}
-            onToggleStatus={onToggleStatus}
-            onTaskContextMenu={buildTaskContextMenu}
-            onTaskClick={openTaskDetail}
-            onDrop={onKanbanDrop}
-            onReorder={onReorder}
-            highlightTaskId={highlightTaskId}
-          />
+      {/* Right panel with tabs */}
+      <div className="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant p-3 lg:p-5 overflow-hidden min-w-0 flex flex-col">
+        {/* Tabs – shown when something is selected */}
+        {selectedId && (
+          <div className="flex items-center gap-1 mb-4 border-b border-outline-variant/50 pb-2 shrink-0">
+            <button onClick={() => setActiveTab("main")}
+              className={`px-3 py-1.5 rounded-t-xl text-xs font-label font-semibold transition ${activeTab === "main" ? "text-primary border-b-2 border-primary" : "text-on-surface-variant hover:text-on-surface"}`}>
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[16px]">{selectedType === "client" ? "analytics" : "checklist"}</span>
+                {selectedType === "client" ? "요약" : "할일"}
+              </span>
+            </button>
+            <button onClick={() => setActiveTab("pbc")}
+              className={`px-3 py-1.5 rounded-t-xl text-xs font-label font-semibold transition ${activeTab === "pbc" ? "text-primary border-b-2 border-primary" : "text-on-surface-variant hover:text-on-surface"}`}>
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[16px]">description</span>
+                요청자료
+              </span>
+            </button>
+          </div>
         )}
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+          {activeTab === "pbc" && selectedId ? (
+            <PBCPanel
+              clientId={ownerClientNodeId}
+              accountId={selectedId}
+              filterByAccount={selectedType === "account"}
+              useApi={useApi}
+              accounts={clientAccounts}
+            />
+          ) : selectedType === "client" && selectedId?.startsWith("client-") ? (
+            <ClientSummaryPanel
+              clientNodeId={selectedId}
+              useApi={useApi}
+              onSelectAccount={(accountNodeId) => handleTreeSelect(accountNodeId, "account")}
+            />
+          ) : (
+            <TaskPanel
+              accountId={selectedId}
+              accountLabel={findLabel(tree)}
+              tasks={tasks[selectedId] || []}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onAddTask={doAddTask}
+              onToggleStatus={onToggleStatus}
+              onTaskContextMenu={buildTaskContextMenu}
+              onTaskClick={openTaskDetail}
+              onDrop={onKanbanDrop}
+              onReorder={onReorder}
+              highlightTaskId={highlightTaskId}
+            />
+          )}
+        </div>
       </div>
 
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}

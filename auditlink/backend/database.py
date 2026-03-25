@@ -82,6 +82,19 @@ CREATE TABLE IF NOT EXISTS settings (
     key     TEXT PRIMARY KEY,
     value   TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS pbc_items (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id       INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    account_id      INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+    name            TEXT    NOT NULL,
+    request_date    TEXT,
+    due_date        TEXT,
+    status          TEXT    NOT NULL DEFAULT '미요청',
+    auditor         TEXT    NOT NULL DEFAULT '',
+    client_contact  TEXT    NOT NULL DEFAULT '',
+    note            TEXT    NOT NULL DEFAULT ''
+);
 """
 
 
@@ -283,3 +296,21 @@ def _seed(conn: sqlite3.Connection):
     }
     for k, v in default_settings.items():
         conn.execute("INSERT INTO settings (key, value) VALUES (?,?)", (k, v))
+
+    # -- PBC Items (한빛제조) --
+    # We need account IDs – they were created starting from 1 in order
+    pbc_data = [
+        (hb, 1, "매출채권 잔액 확인서", "2025-03-10", "2025-03-25", "수령완료", "김감사", "재무팀 박과장", "30곳 중 28곳 회수"),
+        (hb, 1, "매출채권 연령분석표", "2025-03-10", "2025-03-20", "수령완료", "김감사", "재무팀 박과장", ""),
+        (hb, 2, "재고자산 실사 보고서", "2025-03-05", "2025-03-18", "수령완료", "이주임", "경영지원팀 김대리", ""),
+        (hb, 2, "재고자산 평가 조서", "2025-03-12", "2025-04-01", "요청완료", "이주임", "경영지원팀 김대리", "저가법 적용 내역 포함"),
+        (hb, 3, "유형자산 대장", "2025-03-20", "2025-04-08", "요청완료", "박대리", "재무팀 이차장", ""),
+        (hb, 3, "감가상각 명세서", None, "2025-04-10", "미요청", "박대리", "재무팀 이차장", ""),
+        (hb, 4, "리스 계약서 사본", None, "2025-04-12", "미요청", "이주임", "법무팀 정대리", "IFRS 16 관련"),
+        (hb, 4, "리스료 지급 스케줄", "2025-03-25", "2025-04-12", "보완요청", "이주임", "법무팀 정대리", "일부 계약 누락"),
+    ]
+    for cid, acc_id, name, req_date, due, status, auditor, contact, note in pbc_data:
+        conn.execute(
+            "INSERT INTO pbc_items (client_id, account_id, name, request_date, due_date, status, auditor, client_contact, note) VALUES (?,?,?,?,?,?,?,?,?)",
+            (cid, acc_id, name, req_date, due, status, auditor, contact, note),
+        )
