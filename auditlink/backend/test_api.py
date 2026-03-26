@@ -206,6 +206,17 @@ class TestAccounts:
         r = client.delete(f"/api/accounts/{created['id']}")
         assert r.status_code == 200
 
+    def test_bulk_create(self, seed):
+        items = [
+            {"phase_id": seed["phase"]["id"], "name": f"일괄계정{i}", "sort_order": 10 + i}
+            for i in range(4)
+        ]
+        r = client.post("/api/accounts/bulk", json=items)
+        assert r.status_code == 201
+        data = r.json()
+        assert len(data) == 4
+        assert data[0]["name"] == "일괄계정0"
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 5. Tasks CRUD + Status History
@@ -259,6 +270,30 @@ class TestTasks:
         }).json()
         r = client.delete(f"/api/tasks/{created['id']}")
         assert r.status_code == 200
+
+    def test_bulk_create(self, seed):
+        items = [
+            {"account_id": seed["account"]["id"], "title": f"일괄할일{i}", "status": "todo", "priority": "mid", "assignee": "테스터"}
+            for i in range(5)
+        ]
+        r = client.post("/api/tasks/bulk", json=items)
+        assert r.status_code == 201
+        data = r.json()
+        assert len(data) == 5
+        assert all("updated_at" in d for d in data)
+
+    def test_bulk_create_with_tab_fields(self, seed):
+        """Verify assignee and due_date from tab-separated input."""
+        items = [
+            {"account_id": seed["account"]["id"], "title": "확인서 발송", "assignee": "김감사", "due_date": "2025-03-30", "status": "todo", "priority": "mid"},
+            {"account_id": seed["account"]["id"], "title": "잔액검증", "assignee": "", "status": "todo", "priority": "mid"},
+        ]
+        r = client.post("/api/tasks/bulk", json=items)
+        assert r.status_code == 201
+        data = r.json()
+        assert data[0]["assignee"] == "김감사"
+        assert data[0]["due_date"] == "2025-03-30"
+        assert data[1]["assignee"] == ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -411,6 +411,21 @@ def delete_account(account_id: int):
     conn.close()
     return {"ok": True}
 
+@app.post("/api/accounts/bulk", status_code=201)
+def bulk_create_accounts(items: list[AccountCreate]):
+    conn = _db()
+    created = []
+    for body in items:
+        conn.execute(
+            "INSERT INTO accounts (phase_id, name, sort_order) VALUES (?,?,?)",
+            (body.phase_id, body.name, body.sort_order),
+        )
+        rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        created.append({"id": rid, **body.model_dump()})
+    conn.commit()
+    conn.close()
+    return created
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Tasks
@@ -526,6 +541,23 @@ def delete_task(task_id: int):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+@app.post("/api/tasks/bulk", status_code=201)
+def bulk_create_tasks(items: list[TaskCreate]):
+    from datetime import datetime
+    conn = _db()
+    now = datetime.now().isoformat(timespec="seconds")
+    created = []
+    for body in items:
+        conn.execute(
+            "INSERT INTO tasks (account_id, title, status, assignee, due_date, priority, memo, file_path, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (body.account_id, body.title, body.status, body.assignee, body.due_date, body.priority, body.memo, body.file_path, now),
+        )
+        rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        created.append({"id": rid, **body.model_dump(), "updated_at": now})
+    conn.commit()
+    conn.close()
+    return created
 
 
 # ═══════════════════════════════════════════════════════════════════════════

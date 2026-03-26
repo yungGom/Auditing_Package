@@ -36,12 +36,14 @@ const api = {
   // Accounts
   getAccounts: (phaseId) => request(`/api/accounts${phaseId ? `?phase_id=${phaseId}` : ""}`),
   createAccount: (data) => request("/api/accounts", { method: "POST", body: JSON.stringify(data) }),
+  bulkCreateAccounts: (items) => request("/api/accounts/bulk", { method: "POST", body: JSON.stringify(items) }),
   deleteAccount: (id) => request(`/api/accounts/${id}`, { method: "DELETE" }),
 
   // Tasks
   getTasks: (accountId) => request(`/api/tasks${accountId ? `?account_id=${accountId}` : ""}`),
   getTask: (id) => request(`/api/tasks/${id}`),
   createTask: (data) => request("/api/tasks", { method: "POST", body: JSON.stringify(data) }),
+  bulkCreateTasks: (items) => request("/api/tasks/bulk", { method: "POST", body: JSON.stringify(items) }),
   updateTask: (id, data) => request(`/api/tasks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTask: (id) => request(`/api/tasks/${id}`, { method: "DELETE" }),
   getTaskHistory: (id) => request(`/api/tasks/${id}/history`),

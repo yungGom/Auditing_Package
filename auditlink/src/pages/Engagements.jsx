@@ -4,6 +4,7 @@ import api from "../api";
 import TaskDetailPanel from "../components/TaskDetailPanel";
 import ClientSummaryPanel from "../components/ClientSummaryPanel";
 import PBCPanel from "../components/PBCPanel";
+import BulkAddModal from "../components/BulkAddModal";
 import { usePersistedState, usePersistedScroll } from "../hooks/usePersistedState";
 
 // ---------------------------------------------------------------------------
@@ -242,7 +243,7 @@ function KanbanColumn({ status, tasks, onDrop, onDragStart, onTaskContextMenu, o
 // Task Panel (list view + kanban toggle)
 // ---------------------------------------------------------------------------
 
-function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange, onAddTask, onToggleStatus, onTaskContextMenu, onTaskClick, onDrop, onReorder, highlightTaskId }) {
+function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange, onAddTask, onBulkAddTasks, onToggleStatus, onTaskContextMenu, onTaskClick, onDrop, onReorder, highlightTaskId }) {
   const [dragIdx, setDragIdx] = useState(null);
 
   // Group tasks by status for kanban – must be before any early return
@@ -301,10 +302,15 @@ function TaskPanel({ accountId, accountLabel, tasks, viewMode, onViewModeChange,
               <span className="material-symbols-outlined text-[16px]">view_kanban</span>
             </button>
           </div>
+          <button onClick={onBulkAddTasks}
+            className="px-2.5 py-1.5 rounded-xl border border-outline-variant text-[11px] font-label font-semibold text-on-surface-variant hover:bg-surface-container transition flex items-center gap-1">
+            <span className="material-symbols-outlined text-[14px]">playlist_add</span>
+            <span className="hidden sm:inline">일괄</span>
+          </button>
           <button onClick={() => onAddTask()}
             className="px-3 py-1.5 bg-gradient-to-r from-primary to-primary-container text-white text-xs font-label font-semibold rounded-xl hover:opacity-90 transition flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[16px]">add</span>
-            <span className="hidden sm:inline">할일 추가</span>
+            <span className="hidden sm:inline">추가</span>
           </button>
         </div>
       </div>
@@ -391,6 +397,7 @@ export default function Engagements() {
   const [treeOpen, setTreeOpen] = usePersistedState("eng:treeOpen", true);
   const [activeTab, setActiveTab] = usePersistedState("eng:activeTab", "main");
   const taskScrollRef = usePersistedScroll("eng:taskScroll");
+  const [bulkModal, setBulkModal] = useState(null); // null | { mode: "account"|"task", phaseNode? }
 
   // Helper: expand all ancestors of a node in the tree
   function expandPathTo(nodeId, treeData) {
@@ -643,6 +650,56 @@ export default function Engagements() {
     }
   };
 
+  // ── Bulk create handlers ──
+
+  const doBulkAddAccounts = async (phaseNode, items) => {
+    if (useApi && phaseNode.dbId) {
+      const startOrder = phaseNode.children?.length || 0;
+      const bodies = items.map((item, i) => ({
+        phase_id: phaseNode.dbId, name: item.name, sort_order: startOrder + i,
+      }));
+      try {
+        const created = await api.bulkCreateAccounts(bodies);
+        for (const c of created) {
+          const newId = `account-${c.id}`;
+          addChildToNode(phaseNode.id, { id: newId, label: c.name, type: "account", dbId: c.id });
+          setTasks((p) => ({ ...p, [newId]: [] }));
+        }
+      } catch { alert("일괄 추가에 실패했습니다."); }
+    } else {
+      for (const item of items) {
+        const newId = `account-${nextId++}`;
+        addChildToNode(phaseNode.id, { id: newId, label: item.name, type: "account" });
+        setTasks((p) => ({ ...p, [newId]: [] }));
+      }
+    }
+  };
+
+  const doBulkAddTasks = async (items) => {
+    const dbId = extractDbId(selectedId);
+    if (useApi && dbId) {
+      const bodies = items.map((item) => ({
+        account_id: dbId, title: item.title, status: "todo",
+        assignee: item.assignee || "미배정", due_date: item.deadline || null,
+        priority: "mid", memo: "",
+      }));
+      try {
+        const created = await api.bulkCreateTasks(bodies);
+        setTasks((p) => ({
+          ...p,
+          [selectedId]: [...(p[selectedId] || []), ...created.map((c) => ({ ...c, deadline: c.due_date }))],
+        }));
+      } catch { alert("일괄 추가에 실패했습니다."); }
+    } else {
+      const newTasks = items.map((item) => ({
+        id: nextId++, title: item.title, status: "todo",
+        assignee: item.assignee || "미배정", deadline: item.deadline || "미정",
+        priority: "mid", memo: "",
+      }));
+      setTasks((p) => ({ ...p, [selectedId]: [...(p[selectedId] || []), ...newTasks] }));
+    }
+  };
+
   const doEditTask = (task) => {
     const title = prompt("할일 제목:", task.title); if (!title || title === task.title) return;
     if (useApi) api.updateTask(task.id, { title }).catch(() => {});
@@ -733,6 +790,7 @@ export default function Engagements() {
         break;
       case "phase":
         items.push({ icon: "add", label: "계정과목 추가", action: () => doAddAccount(node) });
+        items.push({ icon: "playlist_add", label: "계정과목 일괄 추가", action: () => setBulkModal({ mode: "account", phaseNode: node }) });
         items.push({ divider: true });
         items.push({ icon: "delete", label: "Phase 삭제", danger: true, action: () => doDeletePhase(node) });
         break;
@@ -835,6 +893,7 @@ export default function Engagements() {
               viewMode={viewMode}
               onViewModeChange={setViewMode}
               onAddTask={doAddTask}
+              onBulkAddTasks={() => setBulkModal({ mode: "task" })}
               onToggleStatus={onToggleStatus}
               onTaskContextMenu={buildTaskContextMenu}
               onTaskClick={openTaskDetail}
@@ -856,6 +915,20 @@ export default function Engagements() {
           onSave={handleDetailSave}
           onDelete={handleDetailDelete}
           useApi={useApi}
+        />
+      )}
+
+      {bulkModal && (
+        <BulkAddModal
+          mode={bulkModal.mode}
+          onClose={() => setBulkModal(null)}
+          onSubmit={(items) => {
+            if (bulkModal.mode === "account" && bulkModal.phaseNode) {
+              doBulkAddAccounts(bulkModal.phaseNode, items);
+            } else if (bulkModal.mode === "task") {
+              doBulkAddTasks(items);
+            }
+          }}
         />
       )}
     </div>
