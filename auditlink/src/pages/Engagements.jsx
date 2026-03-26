@@ -4,6 +4,7 @@ import api from "../api";
 import TaskDetailPanel from "../components/TaskDetailPanel";
 import ClientSummaryPanel from "../components/ClientSummaryPanel";
 import PBCPanel from "../components/PBCPanel";
+import { usePersistedState, usePersistedScroll } from "../hooks/usePersistedState";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -376,17 +377,20 @@ export default function Engagements() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tree, setTree] = useState(fallbackTree);
   const [tasks, setTasks] = useState(fallbackTasks);
-  const [selectedId, setSelectedId] = useState(null);
-  const [selectedType, setSelectedType] = useState("account"); // "account" or "client"
-  const [expanded, setExpanded] = useState({});
   const [useApi, setUseApi] = useState(false);
   const [ctxMenu, setCtxMenu] = useState(null);
-  const [viewMode, setViewMode] = useState("kanban");
-  const [treeOpen, setTreeOpen] = useState(true);
   const [highlightTaskId, setHighlightTaskId] = useState(null);
   const [detailTask, setDetailTask] = useState(null);
   const [detailPath, setDetailPath] = useState("");
-  const [activeTab, setActiveTab] = useState("main"); // "main" or "pbc"
+
+  // ── Persisted across navigation ──
+  const [selectedId, setSelectedId] = usePersistedState("eng:selectedId", null);
+  const [selectedType, setSelectedType] = usePersistedState("eng:selectedType", "account");
+  const [expanded, setExpanded] = usePersistedState("eng:expanded", {});
+  const [viewMode, setViewMode] = usePersistedState("eng:viewMode", "kanban");
+  const [treeOpen, setTreeOpen] = usePersistedState("eng:treeOpen", true);
+  const [activeTab, setActiveTab] = usePersistedState("eng:activeTab", "main");
+  const taskScrollRef = usePersistedScroll("eng:taskScroll");
 
   // Helper: expand all ancestors of a node in the tree
   function expandPathTo(nodeId, treeData) {
@@ -447,12 +451,13 @@ export default function Engagements() {
 
           // Clear URL params
           setSearchParams({}, { replace: true });
-        } else {
+        } else if (!selectedId) {
+          // Only auto-select if nothing is persisted from a previous visit
           const first = findFirstAccount(apiTree);
           if (first) { setSelectedId(first.id); setSelectedType("account"); }
         }
       }
-    }).catch(() => { setSelectedId("hanbit-interim-ar"); setSelectedType("account"); });
+    }).catch(() => { if (!selectedId) { setSelectedId("hanbit-interim-ar"); setSelectedType("account"); } });
     // Clear reload param after loading
     if (reloadKey) setSearchParams({}, { replace: true });
   }, [reloadKey]);
@@ -807,7 +812,7 @@ export default function Engagements() {
         )}
 
         {/* Tab content */}
-        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        <div ref={taskScrollRef} className="flex-1 overflow-hidden flex flex-col min-h-0">
           {activeTab === "pbc" && selectedId ? (
             <PBCPanel
               clientId={ownerClientNodeId}

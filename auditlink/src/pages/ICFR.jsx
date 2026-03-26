@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 import { useState, useEffect, useMemo } from "react";
 import api from "../api";
+import { usePersistedState } from "../hooks/usePersistedState";
 
 const STATUS = {
   미실시: { bg: "bg-outline/10", text: "text-outline", border: "border-outline/30" },
@@ -120,8 +121,8 @@ function StatusBadge({ status }) {
 
 export default function ICFR() {
   const [data, setData] = useState(MOCK_DATA);
-  const [clientFilter, setClientFilter] = useState("전체");
-  const [statusFilter, setStatusFilter] = useState("전체");
+  const [clientFilter, setClientFilter] = usePersistedState("icfr:clientFilter", "전체");
+  const [statusFilter, setStatusFilter] = usePersistedState("icfr:statusFilter", "전체");
 
   useEffect(() => {
     api.getICFRTests().then((rows) => {
