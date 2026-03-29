@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import api from "../api";
 import PBCExcelUpload from "./PBCExcelUpload";
+import PBCExcelImport from "./PBCExcelImport";
 
 const PBC_STATUS_MAP = {
   "미요청": { bg: "bg-outline-variant/30", text: "text-on-surface-variant" },
@@ -184,6 +185,7 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
   const [loading, setLoading] = useState(true);
   const [detailItem, setDetailItem] = useState(null);
   const [excelOpen, setExcelOpen] = useState(false);
+  const [excelImportOpen, setExcelImportOpen] = useState(false);
 
   const dbClientId = clientId ? parseInt(String(clientId).replace("client-", "")) : null;
   const dbAccountId = accountId && filterByAccount ? parseInt(String(accountId).replace("account-", "")) : null;
@@ -256,6 +258,26 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
     }
   };
 
+  const handleExcelImport = async (parsedItems) => {
+    if (!useApi || !dbClientId) return;
+    const bulkItems = parsedItems.map((item) => ({
+      client_id: dbClientId,
+      account_id: dbAccountId || null,
+      name: item.name,
+      due_date: item.due_date || null,
+      status: "미요청",
+      auditor: item.auditor || "",
+      client_contact: "",
+      note: item.account_label ? `계정: ${item.account_label}` : "",
+    }));
+    try {
+      const created = await api.bulkCreatePBCItems(bulkItems);
+      setItems((prev) => [...prev, ...created.map((c) => ({ ...c, account_name: null }))]);
+    } catch {
+      alert("엑셀 가져오기에 실패했습니다.");
+    }
+  };
+
   const handleSave = (id, updates) => {
     if (useApi) api.updatePBCItem(id, updates).catch(() => {});
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
@@ -286,15 +308,15 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs text-on-surface-variant font-label">전체 {total}건 중 수령완료 {received}건</p>
           <div className="flex items-center gap-2">
-            <button onClick={() => setExcelOpen(true)}
+            <button onClick={() => setExcelImportOpen(true)}
               className="px-2.5 py-1.5 rounded-xl border border-outline-variant text-[11px] font-label font-semibold text-on-surface-variant hover:bg-surface-container transition flex items-center gap-1">
               <span className="material-symbols-outlined text-[14px]">upload_file</span>
-              엑셀 업로드
+              엑셀 가져오기
             </button>
-            <button onClick={handleBulkImport}
+            <button onClick={() => setExcelOpen(true)}
               className="px-2.5 py-1.5 rounded-xl border border-outline-variant text-[11px] font-label font-semibold text-on-surface-variant hover:bg-surface-container transition flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">file_copy</span>
-              템플릿 가져오기
+              <span className="material-symbols-outlined text-[14px]">table_chart</span>
+              PBC 추적
             </button>
             <button onClick={handleAdd}
               className="px-3 py-1.5 bg-gradient-to-r from-primary to-primary-container text-white text-xs font-label font-semibold rounded-xl hover:opacity-90 transition flex items-center gap-1">
@@ -353,9 +375,14 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
         <PBCDetailPanel item={detailItem} accounts={accounts} onClose={() => setDetailItem(null)} onSave={handleSave} onDelete={handleDelete} />
       )}
 
-      {/* Excel upload modal */}
+      {/* Excel PBC tracking modal */}
       {excelOpen && (
         <PBCExcelUpload clientId={clientId} onClose={() => setExcelOpen(false)} />
+      )}
+
+      {/* Excel → PBC import modal */}
+      {excelImportOpen && (
+        <PBCExcelImport onClose={() => setExcelImportOpen(false)} onImport={handleExcelImport} />
       )}
     </div>
   );
