@@ -436,6 +436,42 @@ class TestPBCItems:
         assert r.status_code == 201
         assert len(r.json()) == 3
 
+    def test_bulk_update(self, seed):
+        # Create items to update
+        items = [
+            {"client_id": seed["client"]["id"], "name": f"수정대상{i}", "status": "미요청"}
+            for i in range(3)
+        ]
+        created = client.post("/api/pbc-items/bulk", json=items).json()
+        ids = [c["id"] for c in created]
+
+        r = client.patch("/api/pbc-items/bulk-update", json={
+            "ids": ids, "updates": {"status": "요청완료", "auditor": "김감사"}
+        })
+        assert r.status_code == 200
+        assert r.json()["updated"] == 3
+
+        # Verify
+        item = client.get(f"/api/pbc-items/{ids[0]}").json()
+        assert item["status"] == "요청완료"
+        assert item["auditor"] == "김감사"
+
+    def test_bulk_delete(self, seed):
+        items = [
+            {"client_id": seed["client"]["id"], "name": f"삭제대상{i}", "status": "미요청"}
+            for i in range(2)
+        ]
+        created = client.post("/api/pbc-items/bulk", json=items).json()
+        ids = [c["id"] for c in created]
+
+        r = client.post("/api/pbc-items/bulk-delete", json={"ids": ids})
+        assert r.status_code == 200
+        assert r.json()["deleted"] == 2
+
+        # Verify deleted
+        r2 = client.get(f"/api/pbc-items/{ids[0]}")
+        assert r2.status_code == 404
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 10. Search API

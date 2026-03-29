@@ -89,6 +89,8 @@ const api = {
   updatePBCItem: (id, data) => request(`/api/pbc-items/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deletePBCItem: (id) => request(`/api/pbc-items/${id}`, { method: "DELETE" }),
   bulkCreatePBCItems: (items) => request("/api/pbc-items/bulk", { method: "POST", body: JSON.stringify(items) }),
+  bulkUpdatePBCItems: (ids, updates) => request("/api/pbc-items/bulk-update", { method: "PATCH", body: JSON.stringify({ ids, updates }) }),
+  bulkDeletePBCItems: (ids) => request("/api/pbc-items/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
 
   // PBC Excel Items
   getPBCExcelItems: (clientId, fileName) => {

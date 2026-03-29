@@ -934,6 +934,47 @@ def bulk_create_pbc_items(items: list[PBCCreate]):
     conn.close()
     return created
 
+class PBCBulkUpdate(BaseModel):
+    ids: list[int]
+    updates: dict
+
+@app.patch("/api/pbc-items/bulk-update")
+def bulk_update_pbc_items(body: PBCBulkUpdate):
+    """Bulk update selected PBC items."""
+    if not body.ids:
+        return {"ok": True, "updated": 0}
+    conn = _db()
+    allowed = {"status", "request_date", "due_date", "auditor", "client_contact", "note"}
+    sets, vals = [], []
+    for field, value in body.updates.items():
+        if field in allowed:
+            sets.append(f"{field}=?")
+            vals.append(value)
+    if not sets:
+        conn.close()
+        return {"ok": True, "updated": 0}
+    placeholders = ",".join("?" for _ in body.ids)
+    sql = f"UPDATE pbc_items SET {','.join(sets)} WHERE id IN ({placeholders})"
+    conn.execute(sql, vals + body.ids)
+    conn.commit()
+    conn.close()
+    return {"ok": True, "updated": len(body.ids)}
+
+class PBCBulkDelete(BaseModel):
+    ids: list[int]
+
+@app.post("/api/pbc-items/bulk-delete")
+def bulk_delete_pbc_items(body: PBCBulkDelete):
+    """Bulk delete PBC items."""
+    if not body.ids:
+        return {"ok": True, "deleted": 0}
+    conn = _db()
+    placeholders = ",".join("?" for _ in body.ids)
+    conn.execute(f"DELETE FROM pbc_items WHERE id IN ({placeholders})", body.ids)
+    conn.commit()
+    conn.close()
+    return {"ok": True, "deleted": len(body.ids)}
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PBC Excel Items

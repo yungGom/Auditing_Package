@@ -186,6 +186,8 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
   const [detailItem, setDetailItem] = useState(null);
   const [excelOpen, setExcelOpen] = useState(false);
   const [excelImportOpen, setExcelImportOpen] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkUpdates, setBulkUpdates] = useState({});
 
   const dbClientId = clientId ? parseInt(String(clientId).replace("client-", "")) : null;
   const dbAccountId = accountId && filterByAccount ? parseInt(String(accountId).replace("account-", "")) : null;
@@ -196,8 +198,38 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
     setLoading(true);
     const params = { client_id: dbClientId };
     if (dbAccountId) params.account_id = dbAccountId;
-    api.getPBCItems(params).then(setItems).catch(() => setItems([])).finally(() => setLoading(false));
+    api.getPBCItems(params).then((data) => { setItems(data); setSelected(new Set()); }).catch(() => setItems([])).finally(() => setLoading(false));
   }, [dbClientId, dbAccountId, useApi]);
+
+  // Selection helpers
+  const toggleSelect = (id) => setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const toggleAll = () => setSelected((prev) => prev.size === items.length ? new Set() : new Set(items.map((i) => i.id)));
+  const allSelected = items.length > 0 && selected.size === items.length;
+
+  // Bulk actions
+  const handleBulkApply = async () => {
+    if (!selected.size || !Object.keys(bulkUpdates).length) return;
+    const ids = [...selected];
+    if (useApi) {
+      try {
+        await api.bulkUpdatePBCItems(ids, bulkUpdates);
+      } catch { alert("일괄 수정에 실패했습니다."); return; }
+    }
+    setItems((prev) => prev.map((i) => ids.includes(i.id) ? { ...i, ...bulkUpdates } : i));
+    setSelected(new Set());
+    setBulkUpdates({});
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selected.size) return;
+    if (!confirm(`선택한 ${selected.size}건을 삭제하시겠습니까?`)) return;
+    const ids = [...selected];
+    if (useApi) {
+      try { await api.bulkDeletePBCItems(ids); } catch { alert("삭제에 실패했습니다."); return; }
+    }
+    setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
+    setSelected(new Set());
+  };
 
   // Stats
   const total = items.length;
@@ -328,11 +360,62 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
         <ProgressBar progress={progress} />
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="mb-3 p-3 bg-primary-fixed/50 border border-primary/20 rounded-xl sticky top-0 z-20 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-label font-bold text-primary shrink-0">{selected.size}건 선택됨</span>
+            <div className="w-px h-5 bg-primary/20" />
+
+            <select value={bulkUpdates.status || ""} onChange={(e) => setBulkUpdates((p) => e.target.value ? { ...p, status: e.target.value } : (() => { const { status, ...rest } = p; return rest; })())}
+              className="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest text-[11px] font-label text-on-surface focus:border-primary focus:outline-none">
+              <option value="">상태 변경</option>
+              {PBC_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+
+            <input type="date" value={bulkUpdates.request_date || ""} onChange={(e) => setBulkUpdates((p) => ({ ...p, request_date: e.target.value }))}
+              title="요청일 일괄 설정"
+              className="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest text-[11px] font-label text-on-surface focus:border-primary focus:outline-none w-28" />
+
+            <input type="date" value={bulkUpdates.due_date || ""} onChange={(e) => setBulkUpdates((p) => ({ ...p, due_date: e.target.value }))}
+              title="회신기한 일괄 설정"
+              className="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest text-[11px] font-label text-on-surface focus:border-primary focus:outline-none w-28" />
+
+            <input type="text" value={bulkUpdates.auditor || ""} onChange={(e) => setBulkUpdates((p) => ({ ...p, auditor: e.target.value }))}
+              placeholder="감사팀 담당자"
+              className="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest text-[11px] font-label text-on-surface placeholder:text-outline focus:border-primary focus:outline-none w-24" />
+
+            <input type="text" value={bulkUpdates.client_contact || ""} onChange={(e) => setBulkUpdates((p) => ({ ...p, client_contact: e.target.value }))}
+              placeholder="클라이언트 담당자"
+              className="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest text-[11px] font-label text-on-surface placeholder:text-outline focus:border-primary focus:outline-none w-28" />
+
+            <div className="ml-auto flex items-center gap-1.5">
+              <button onClick={handleBulkApply} disabled={!Object.keys(bulkUpdates).length}
+                className={`px-3 py-1 rounded-lg text-[11px] font-label font-semibold text-white transition flex items-center gap-1 ${Object.keys(bulkUpdates).length ? "bg-primary hover:opacity-90" : "bg-outline cursor-not-allowed"}`}>
+                <span className="material-symbols-outlined text-[14px]">check</span>적용
+              </button>
+              <button onClick={handleBulkDelete}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-label font-semibold text-error border border-error/30 hover:bg-error/5 transition flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px]">delete</span>삭제
+              </button>
+              <button onClick={() => { setSelected(new Set()); setBulkUpdates({}); }}
+                className="px-2 py-1 rounded-lg text-[11px] font-label text-on-surface-variant hover:bg-surface-container transition">
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="flex-1 overflow-auto rounded-xl border border-outline-variant">
         <table className="w-full text-xs font-label">
           <thead>
             <tr className="bg-surface-container-low sticky top-0 z-10">
+              <th className="text-center px-2 py-2.5 w-8">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll}
+                  className="w-3.5 h-3.5 rounded border-outline-variant text-primary focus:ring-primary cursor-pointer" />
+              </th>
               <th className="text-left px-3 py-2.5 font-semibold text-on-surface-variant">자료명</th>
               {!filterByAccount && <th className="text-left px-3 py-2.5 font-semibold text-on-surface-variant">계정과목</th>}
               <th className="text-left px-3 py-2.5 font-semibold text-on-surface-variant w-20">요청일</th>
@@ -347,24 +430,29 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
             {items.map((item) => {
               const st = PBC_STATUS_MAP[item.status] || PBC_STATUS_MAP["미요청"];
               const overdue = item.due_date && item.due_date < today && item.status !== "수령완료";
+              const isSelected = selected.has(item.id);
               return (
-                <tr key={item.id} onClick={() => setDetailItem(item)}
-                  className={`border-t border-outline-variant/50 cursor-pointer hover:bg-surface-container transition ${item.status === "수령완료" ? "bg-secondary-container/10" : ""}`}>
-                  <td className="px-3 py-2.5 font-semibold text-on-surface max-w-[200px] truncate">{item.name}</td>
-                  {!filterByAccount && <td className="px-3 py-2.5 text-on-surface-variant">{item.account_name || "-"}</td>}
-                  <td className="px-3 py-2.5 text-on-surface-variant">{item.request_date || "-"}</td>
-                  <td className={`px-3 py-2.5 ${overdue ? "text-error font-bold" : "text-on-surface-variant"}`}>{item.due_date || "-"}{overdue && <span className="text-[9px] ml-0.5">(초과)</span>}</td>
-                  <td className="px-3 py-2.5 text-center">
+                <tr key={item.id}
+                  className={`border-t border-outline-variant/50 cursor-pointer transition ${isSelected ? "bg-primary-fixed/40" : item.status === "수령완료" ? "bg-secondary-container/10" : "hover:bg-surface-container"}`}>
+                  <td className="text-center px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(item.id)}
+                      className="w-3.5 h-3.5 rounded border-outline-variant text-primary focus:ring-primary cursor-pointer" />
+                  </td>
+                  <td className="px-3 py-2.5 font-semibold text-on-surface max-w-[200px] truncate" onClick={() => setDetailItem(item)}>{item.name}</td>
+                  {!filterByAccount && <td className="px-3 py-2.5 text-on-surface-variant" onClick={() => setDetailItem(item)}>{item.account_name || "-"}</td>}
+                  <td className="px-3 py-2.5 text-on-surface-variant" onClick={() => setDetailItem(item)}>{item.request_date || "-"}</td>
+                  <td className={`px-3 py-2.5 ${overdue ? "text-error font-bold" : "text-on-surface-variant"}`} onClick={() => setDetailItem(item)}>{item.due_date || "-"}{overdue && <span className="text-[9px] ml-0.5">(초과)</span>}</td>
+                  <td className="px-3 py-2.5 text-center" onClick={() => setDetailItem(item)}>
                     <span className={`inline-flex px-2 py-0.5 rounded-xl text-[10px] font-bold ${st.bg} ${st.text}`}>{item.status}</span>
                   </td>
-                  <td className="px-3 py-2.5 text-on-surface-variant truncate">{item.auditor || "-"}</td>
-                  <td className="px-3 py-2.5 text-on-surface-variant truncate">{item.client_contact || "-"}</td>
-                  <td className="px-3 py-2.5 text-on-surface-variant truncate max-w-[150px] hidden lg:table-cell">{item.note || "-"}</td>
+                  <td className="px-3 py-2.5 text-on-surface-variant truncate" onClick={() => setDetailItem(item)}>{item.auditor || "-"}</td>
+                  <td className="px-3 py-2.5 text-on-surface-variant truncate" onClick={() => setDetailItem(item)}>{item.client_contact || "-"}</td>
+                  <td className="px-3 py-2.5 text-on-surface-variant truncate max-w-[150px] hidden lg:table-cell" onClick={() => setDetailItem(item)}>{item.note || "-"}</td>
                 </tr>
               );
             })}
             {items.length === 0 && (
-              <tr><td colSpan={filterByAccount ? 7 : 8} className="text-center py-10 text-on-surface-variant font-body">요청자료가 없습니다</td></tr>
+              <tr><td colSpan={filterByAccount ? 8 : 9} className="text-center py-10 text-on-surface-variant font-body">요청자료가 없습니다</td></tr>
             )}
           </tbody>
         </table>
