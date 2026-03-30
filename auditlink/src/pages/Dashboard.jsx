@@ -1,11 +1,19 @@
 // ---------------------------------------------------------------------------
 // Dashboard – 대시보드 메인 페이지 (실데이터 연동)
 // ---------------------------------------------------------------------------
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 
 const CLIENT_COLORS = ["bg-primary", "bg-secondary", "bg-on-tertiary-container", "bg-primary-container"];
+
+const STATUS_MAP = {
+  todo: { label: "미착수", bg: "bg-outline-variant/30", text: "text-on-surface-variant" },
+  in_progress: { label: "진행중", bg: "bg-primary-fixed", text: "text-primary" },
+  review: { label: "검토대기", bg: "bg-on-tertiary-container/10", text: "text-on-tertiary-container" },
+  done: { label: "완료", bg: "bg-secondary-container", text: "text-on-secondary-container" },
+};
+const STATUS_ORDER = ["todo", "in_progress", "review", "done"];
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -209,15 +217,119 @@ function EngagementsTable({ engagements, onViewAll, onRowClick }) {
   );
 }
 
+// --- Quick Add Modal --------------------------------------------------------
+
+function QuickAddModal({ date, clients, onClose, onCreated }) {
+  const [tree, setTree] = useState([]);
+  const [form, setForm] = useState({ title: "", client_id: "", account_id: "", assignee: "" });
+  const [accountOptions, setAccountOptions] = useState([]);
+
+  useEffect(() => {
+    api.getEngagementTree().then(setTree).catch(() => {});
+  }, []);
+
+  // Build client list from tree
+  const clientList = useMemo(() => {
+    const result = [];
+    for (const fy of tree) {
+      for (const c of (fy.children || [])) {
+        result.push({ id: c.dbId, name: c.label, node: c });
+      }
+    }
+    return result;
+  }, [tree]);
+
+  // Update account options when client changes
+  useEffect(() => {
+    if (!form.client_id) { setAccountOptions([]); return; }
+    const cl = clientList.find((c) => c.id === Number(form.client_id));
+    if (!cl) return;
+    const accs = [];
+    for (const ph of (cl.node.children || [])) {
+      for (const acc of (ph.children || [])) {
+        accs.push({ id: acc.dbId, name: `${ph.label} > ${acc.label}` });
+      }
+    }
+    setAccountOptions(accs);
+    setForm((f) => ({ ...f, account_id: accs[0]?.id ? String(accs[0].id) : "" }));
+  }, [form.client_id, clientList]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.account_id) return;
+    try {
+      const created = await api.createTask({
+        account_id: Number(form.account_id),
+        title: form.title.trim(),
+        status: "todo",
+        assignee: form.assignee.trim() || "미배정",
+        due_date: date,
+        priority: "mid",
+        memo: "",
+      });
+      onCreated({ ...created, date, task: created.title, client: clientList.find((c) => c.id === Number(form.client_id))?.name || "", node_id: `account-${form.account_id}`, account_id: Number(form.account_id) });
+      onClose();
+    } catch { alert("할일 생성에 실패했습니다."); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <form onSubmit={handleSubmit} className="relative bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-5 border-b border-outline-variant">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+              <span className="material-symbols-outlined text-primary text-lg">add_task</span>
+            </div>
+            <div>
+              <h3 className="font-headline text-sm font-bold text-on-surface">할일 빠른 추가</h3>
+              <p className="text-[11px] text-on-surface-variant font-label">마감일: {date}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-surface-container transition">
+            <span className="material-symbols-outlined text-on-surface-variant text-lg">close</span>
+          </button>
+        </div>
+        <div className="p-5 space-y-3">
+          <input type="text" required autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
+            placeholder="할일 제목 *"
+            className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface placeholder:text-outline focus:border-primary focus:outline-none transition" />
+          <select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value, account_id: "" })} required
+            className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface focus:border-primary focus:outline-none transition">
+            <option value="">클라이언트 선택 *</option>
+            {clientList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })} required
+            className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface focus:border-primary focus:outline-none transition">
+            <option value="">계정과목 선택 *</option>
+            {accountOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <input type="text" value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}
+            placeholder="담당자"
+            className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface placeholder:text-outline focus:border-primary focus:outline-none transition" />
+        </div>
+        <div className="flex items-center justify-end gap-2 p-5 border-t border-outline-variant">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-outline-variant text-xs font-label font-semibold text-on-surface-variant hover:bg-surface-container transition">취소</button>
+          <button type="submit" className="px-5 py-2 rounded-xl bg-primary text-white text-xs font-label font-semibold hover:opacity-90 transition flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-sm">add</span>추가
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // --- Calendar ---------------------------------------------------------------
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-function CalendarView({ deadlines, onItemClick }) {
+function CalendarView({ deadlines, onItemClick, onStatusChange, onQuickAdd, clients }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState(null);
+  const [viewMode, setViewMode] = useState("month"); // "month" | "week"
+  const clickTimer = useRef(null);
 
   const dateMap = useMemo(() => {
     const m = {};
@@ -229,92 +341,181 @@ function CalendarView({ deadlines, onItemClick }) {
     return m;
   }, [deadlines]);
 
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-
-  const prevMonth = () => { if (month === 0) { setYear(year - 1); setMonth(11); } else setMonth(month - 1); setSelectedDate(null); };
-  const nextMonth = () => { if (month === 11) { setYear(year + 1); setMonth(0); } else setMonth(month + 1); setSelectedDate(null); };
-
   const pad = (n) => String(n).padStart(2, "0");
-  const toKey = (d) => `${year}-${pad(month + 1)}-${pad(d)}`;
-  const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  const toDateKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+  const todayKey = toDateKey(today.getFullYear(), today.getMonth(), today.getDate());
+
+  // Month cells
+  const monthCells = useMemo(() => {
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < firstDay; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    return cells;
+  }, [year, month]);
+
+  // Week cells (current week containing selected or today)
+  const weekCells = useMemo(() => {
+    const ref = selectedDate ? new Date(selectedDate) : today;
+    const dow = ref.getDay();
+    const start = new Date(ref); start.setDate(start.getDate() - dow);
+    const cells = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start); d.setDate(start.getDate() + i);
+      cells.push({ date: d, key: toDateKey(d.getFullYear(), d.getMonth(), d.getDate()), day: d.getDate(), isOtherMonth: d.getMonth() !== month });
+    }
+    return cells;
+  }, [year, month, selectedDate]);
+
+  const nav = (dir) => {
+    if (viewMode === "week") {
+      const ref = selectedDate ? new Date(selectedDate) : today;
+      ref.setDate(ref.getDate() + dir * 7);
+      setYear(ref.getFullYear()); setMonth(ref.getMonth());
+      setSelectedDate(toDateKey(ref.getFullYear(), ref.getMonth(), ref.getDate()));
+    } else {
+      if (dir < 0) { if (month === 0) { setYear(year - 1); setMonth(11); } else setMonth(month - 1); }
+      else { if (month === 11) { setYear(year + 1); setMonth(0); } else setMonth(month + 1); }
+      setSelectedDate(null);
+    }
+  };
+
+  // Single click = select, double click = quick add
+  const handleDayClick = (key) => {
+    if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; onQuickAdd(key); return; }
+    clickTimer.current = setTimeout(() => { clickTimer.current = null; setSelectedDate(selectedDate === key ? null : key); }, 250);
+  };
+
   const selectedTasks = selectedDate ? (dateMap[selectedDate] || []) : [];
+
+  const renderDayCell = (day, key, i, isOtherMonth) => {
+    const tasks = dateMap[key];
+    const count = tasks?.length || 0;
+    const isToday = key === todayKey;
+    const isSelected = key === selectedDate;
+    const d = count > 0 ? calcDDay(key) : null;
+    let dotColor = "bg-primary";
+    if (d !== null) { if (d <= 7) dotColor = "bg-error"; else if (d <= 15) dotColor = "bg-on-tertiary-container"; }
+
+    return (
+      <button key={key} onClick={() => handleDayClick(key)}
+        className={`relative flex flex-col items-center justify-center py-1.5 rounded-lg text-xs font-label transition ${
+          isSelected ? "bg-primary text-white font-bold"
+          : isToday ? "bg-primary/10 text-primary font-bold"
+          : isOtherMonth ? "text-outline"
+          : "text-on-surface hover:bg-surface-container"
+        } ${i % 7 === 0 && !isSelected ? "text-error/70" : ""}`}>
+        {day}
+        {count > 0 && (
+          count >= 3
+            ? <span className={`absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] flex items-center justify-center px-0.5 rounded-full text-[8px] font-bold text-white ${d <= 7 ? "bg-error" : d <= 15 ? "bg-on-tertiary-container" : "bg-primary"}`}>{count}</span>
+            : <span className={`absolute bottom-0.5 w-1.5 h-1.5 rounded-full ${isSelected ? "bg-white" : dotColor}`} />
+        )}
+      </button>
+    );
+  };
 
   return (
     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
-      <div className="flex items-center justify-between mb-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
         <h3 className="font-headline text-base font-bold text-on-surface">감사 캘린더</h3>
-        <div className="flex items-center gap-2">
-          <button onClick={prevMonth} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-container transition">
-            <span className="material-symbols-outlined text-sm text-on-surface-variant">chevron_left</span>
-          </button>
-          <span className="text-sm font-label font-semibold text-on-surface min-w-[100px] text-center">{year}년 {month + 1}월</span>
-          <button onClick={nextMonth} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-container transition">
-            <span className="material-symbols-outlined text-sm text-on-surface-variant">chevron_right</span>
-          </button>
+        <div className="flex rounded-xl border border-outline-variant overflow-hidden">
+          <button onClick={() => setViewMode("month")}
+            className={`px-2 py-1 text-[10px] font-label font-semibold transition ${viewMode === "month" ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>월간</button>
+          <button onClick={() => setViewMode("week")}
+            className={`px-2 py-1 text-[10px] font-label font-semibold transition ${viewMode === "week" ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>주간</button>
         </div>
       </div>
 
+      {/* Nav */}
+      <div className="flex items-center justify-center gap-2 mb-3">
+        <button onClick={() => nav(-1)} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-container transition">
+          <span className="material-symbols-outlined text-sm text-on-surface-variant">chevron_left</span>
+        </button>
+        <span className="text-sm font-label font-semibold text-on-surface min-w-[100px] text-center">
+          {viewMode === "week" && selectedDate ? `${selectedDate.slice(5)} 주` : `${year}년 ${month + 1}월`}
+        </span>
+        <button onClick={() => nav(1)} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-container transition">
+          <span className="material-symbols-outlined text-sm text-on-surface-variant">chevron_right</span>
+        </button>
+      </div>
+
+      {/* Weekday headers */}
       <div className="grid grid-cols-7 mb-1">
         {WEEKDAYS.map((w, i) => (
           <div key={w} className={`text-center text-[11px] font-label font-semibold py-1 ${i === 0 ? "text-error" : "text-on-surface-variant"}`}>{w}</div>
         ))}
       </div>
 
-      <div className="grid grid-cols-7">
-        {cells.map((day, i) => {
-          if (day === null) return <div key={`b-${i}`} />;
-          const key = toKey(day);
-          const hasTasks = !!dateMap[key];
-          const isToday = key === todayKey;
-          const isSelected = key === selectedDate;
-          const d = hasTasks ? calcDDay(key) : null;
+      {/* Days grid */}
+      {viewMode === "month" ? (
+        <div className="grid grid-cols-7">
+          {monthCells.map((day, i) => {
+            if (day === null) return <div key={`b-${i}`} />;
+            const key = toDateKey(year, month, day);
+            return renderDayCell(day, key, i, false);
+          })}
+        </div>
+      ) : (
+        /* Week view: taller cells with task previews */
+        <div className="grid grid-cols-7 gap-0.5">
+          {weekCells.map((cell, i) => {
+            const tasks = dateMap[cell.key] || [];
+            const isToday = cell.key === todayKey;
+            const isSelected = cell.key === selectedDate;
+            return (
+              <div key={cell.key} onClick={() => handleDayClick(cell.key)}
+                className={`flex flex-col items-center rounded-lg p-1 min-h-[72px] cursor-pointer transition ${
+                  isSelected ? "bg-primary/10 ring-1 ring-primary" : isToday ? "bg-primary/5" : "hover:bg-surface-container"
+                }`}>
+                <span className={`text-xs font-label font-semibold mb-1 ${isToday ? "text-primary" : cell.isOtherMonth ? "text-outline" : "text-on-surface"}`}>{cell.day}</span>
+                {tasks.slice(0, 3).map((t) => {
+                  const d = calcDDay(t.date);
+                  return (
+                    <div key={t.id} className={`w-full px-1 py-0.5 rounded text-[8px] font-label truncate mb-0.5 ${d <= 0 ? "bg-error/10 text-error" : d <= 7 ? "bg-on-tertiary-container/10 text-on-tertiary-container" : "bg-primary-fixed text-primary"}`}>
+                      {t.task}
+                    </div>
+                  );
+                })}
+                {tasks.length > 3 && <span className="text-[8px] text-outline">+{tasks.length - 3}</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-          let dotColor = "bg-primary";
-          if (d !== null) {
-            if (d <= 7) dotColor = "bg-error";
-            else if (d <= 15) dotColor = "bg-on-tertiary-container";
-          }
+      <p className="text-[9px] text-outline font-label mt-1.5 text-center">날짜 더블클릭으로 할일 빠른 추가</p>
 
-          return (
-            <button key={key} onClick={() => setSelectedDate(isSelected ? null : key)}
-              className={`relative flex flex-col items-center justify-center py-1.5 rounded-lg text-xs font-label transition ${
-                isSelected ? "bg-primary text-white font-bold"
-                : isToday ? "bg-primary/10 text-primary font-bold"
-                : "text-on-surface hover:bg-surface-container"
-              } ${i % 7 === 0 && !isSelected ? "text-error/70" : ""}`}>
-              {day}
-              {hasTasks && <span className={`absolute bottom-0.5 w-1.5 h-1.5 rounded-full ${isSelected ? "bg-white" : dotColor}`} />}
-            </button>
-          );
-        })}
-      </div>
-
+      {/* Selected date tasks */}
       {selectedDate && (
-        <div className="mt-4 pt-4 border-t border-outline-variant">
+        <div className="mt-3 pt-3 border-t border-outline-variant">
           <p className="text-xs font-label font-semibold text-on-surface-variant mb-2">
-            {selectedDate} 마감 ({selectedTasks.length}건)
+            {selectedDate} ({selectedTasks.length}건)
           </p>
           {selectedTasks.length === 0 ? (
-            <p className="text-xs text-outline font-body">해당 날짜에 마감 할일이 없습니다</p>
+            <p className="text-xs text-outline font-body">마감 할일이 없습니다</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {selectedTasks.map((t) => {
                 const d = calcDDay(t.date);
                 const badge = dDayBadge(d);
+                const st = STATUS_MAP[t.status] || STATUS_MAP.todo;
                 return (
-                  <div key={t.id} onClick={() => onItemClick(t)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-container-low hover:bg-surface-container cursor-pointer transition">
-                    <span className={`inline-flex items-center justify-center min-w-[40px] px-1.5 py-0.5 rounded-lg text-[10px] font-label font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                  <div key={t.id} className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-surface-container-low hover:bg-surface-container transition">
+                    {/* Status badge – clickable */}
+                    <button onClick={(e) => { e.stopPropagation(); onStatusChange(t); }}
+                      className={`inline-flex px-1.5 py-0.5 rounded-lg text-[9px] font-label font-bold shrink-0 ${st.bg} ${st.text} hover:opacity-80 transition`} title="클릭하여 상태 변경">
+                      {st.label}
+                    </button>
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onItemClick(t)}>
+                      <p className={`text-[11px] font-label font-semibold truncate ${d < 0 ? "text-error" : "text-on-surface"}`}>{t.task}</p>
+                      <p className="text-[10px] text-on-surface-variant font-body">{t.client}</p>
+                    </div>
+                    <span className={`inline-flex items-center justify-center min-w-[36px] px-1 py-0.5 rounded-lg text-[9px] font-label font-bold border shrink-0 ${badge.bg} ${badge.text} ${badge.border}`}>
                       {dDayLabel(d)}
                     </span>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-label font-semibold truncate ${d < 0 ? "text-error" : "text-on-surface"}`}>{t.task}</p>
-                      <p className="text-[11px] text-on-surface-variant font-body">{t.client}</p>
-                    </div>
                   </div>
                 );
               })}
@@ -331,10 +532,10 @@ function CalendarView({ deadlines, onItemClick }) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [quickAddDate, setQuickAddDate] = useState(null);
 
-  useEffect(() => {
-    api.getDashboard().then(setData).catch(() => {});
-  }, []);
+  const reload = () => api.getDashboard().then(setData).catch(() => {});
+  useEffect(() => { reload(); }, []);
 
   const deadlines = data?.deadlines || [];
   const clients = data?.clients || [];
@@ -344,6 +545,20 @@ export default function Dashboard() {
   };
   const goToClient = (client) => {
     navigate(`/engagements?select=${client.node_id}`);
+  };
+
+  const handleStatusChange = async (task) => {
+    const idx = STATUS_ORDER.indexOf(task.status);
+    const newStatus = STATUS_ORDER[(idx + 1) % STATUS_ORDER.length];
+    try {
+      await api.updateTask(task.id, { status: newStatus });
+      reload();
+    } catch {}
+  };
+
+  const handleQuickAddCreated = (newTask) => {
+    // Reload dashboard data to reflect the new task
+    reload();
   };
 
   return (
@@ -360,8 +575,23 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
         <DeadlinesSection deadlines={deadlines} onViewAll={() => navigate("/engagements")} onItemClick={goToTask} />
         <EngagementsTable engagements={clients} onViewAll={() => navigate("/engagements")} onRowClick={goToClient} />
-        <CalendarView deadlines={deadlines} onItemClick={goToTask} />
+        <CalendarView
+          deadlines={deadlines}
+          clients={clients}
+          onItemClick={goToTask}
+          onStatusChange={handleStatusChange}
+          onQuickAdd={(date) => setQuickAddDate(date)}
+        />
       </div>
+
+      {quickAddDate && (
+        <QuickAddModal
+          date={quickAddDate}
+          clients={clients}
+          onClose={() => setQuickAddDate(null)}
+          onCreated={handleQuickAddCreated}
+        />
+      )}
     </div>
   );
 }
