@@ -518,11 +518,25 @@ class TestDashboard:
         assert "overallProgress" in data
         assert "totalTasks" in data
         assert "doneTasks" in data
+        assert "todoCount" in data
+        assert "overdueCount" in data
+        assert "reviewCount" in data
         assert "clients" in data
         assert "deadlines" in data
         assert "icfrTotal" in data
         assert isinstance(data["clients"], list)
         assert data["totalTasks"] >= 1
+        # Clients should have progress and node_id
+        if data["clients"]:
+            c = data["clients"][0]
+            assert "progress" in c
+            assert "node_id" in c
+            assert "next_deadline" in c
+        # Deadlines should have node_id
+        if data["deadlines"]:
+            dl = data["deadlines"][0]
+            assert "node_id" in dl
+            assert "account_id" in dl
 
 
 # ═══════════════════════════════════════════════════════════════════════════

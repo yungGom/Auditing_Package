@@ -1199,31 +1199,52 @@ def search(q: str = ""):
 
 @app.get("/api/dashboard")
 def dashboard():
+    from datetime import date as dt_date
     conn = _db()
-    # Engagement progress per client
+    today = dt_date.today().isoformat()
+
+    # Engagement progress per client + next deadline
     clients = rows_to_list(conn.execute("""
         SELECT c.id, c.name, c.industry,
                COUNT(t.id) AS total_tasks,
-               SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) AS done_tasks
+               SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) AS done_tasks,
+               MIN(CASE WHEN t.status != 'done' AND t.due_date IS NOT NULL THEN t.due_date END) AS next_deadline
         FROM clients c
         LEFT JOIN phases p ON p.client_id = c.id
         LEFT JOIN accounts a ON a.phase_id = p.id
         LEFT JOIN tasks t ON t.account_id = a.id
         GROUP BY c.id
     """).fetchall())
+    for c in clients:
+        c["progress"] = round(c["done_tasks"] / c["total_tasks"] * 100) if c["total_tasks"] else 0
+        c["node_id"] = f"client-{c['id']}"
 
-    # Upcoming deadlines
+    # All non-done tasks with due_date (for deadlines + calendar)
     deadlines = rows_to_list(conn.execute("""
-        SELECT t.id, t.title AS task, t.due_date AS date, t.status,
-               c.name AS client
+        SELECT t.id, t.title AS task, t.due_date AS date, t.status, t.priority,
+               c.name AS client, c.id AS client_id,
+               a.id AS account_id, a.name AS account_name
         FROM tasks t
         JOIN accounts a ON a.id = t.account_id
         JOIN phases p ON p.id = a.phase_id
         JOIN clients c ON c.id = p.client_id
         WHERE t.status != 'done' AND t.due_date IS NOT NULL
         ORDER BY t.due_date
-        LIMIT 10
     """).fetchall())
+    for dl in deadlines:
+        dl["node_id"] = f"account-{dl['account_id']}"
+
+    # Pending counts: 미착수 + 마감초과
+    todo_count = conn.execute(
+        "SELECT COUNT(*) c FROM tasks WHERE status='todo'"
+    ).fetchone()["c"]
+    overdue_count = conn.execute(
+        "SELECT COUNT(*) c FROM tasks WHERE status != 'done' AND due_date IS NOT NULL AND due_date < ?",
+        (today,)
+    ).fetchone()["c"]
+    review_count = conn.execute(
+        "SELECT COUNT(*) c FROM tasks WHERE status='review'"
+    ).fetchone()["c"]
 
     # ICFR summary
     icfr = conn.execute("""
@@ -1234,7 +1255,6 @@ def dashboard():
 
     conn.close()
 
-    # Compute overall progress
     total = sum(c["total_tasks"] for c in clients)
     done = sum(c["done_tasks"] for c in clients)
 
@@ -1242,6 +1262,9 @@ def dashboard():
         "overallProgress": round(done / total * 100) if total else 0,
         "totalTasks": total,
         "doneTasks": done,
+        "todoCount": todo_count,
+        "overdueCount": overdue_count,
+        "reviewCount": review_count,
         "clients": clients,
         "deadlines": deadlines,
         "icfrTotal": icfr["total"],
