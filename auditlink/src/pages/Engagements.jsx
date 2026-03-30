@@ -756,14 +756,36 @@ export default function Engagements() {
     }
   };
 
-  const handleDetailSave = (taskId, updates) => {
-    if (useApi) api.updateTask(taskId, updates).catch(() => {});
-    setTasks((prev) => ({
-      ...prev,
-      [selectedId]: prev[selectedId].map((t) =>
-        t.id === taskId ? { ...t, ...updates, deadline: updates.due_date } : t
-      ),
-    }));
+  const handleDetailSave = async (taskId, updates) => {
+    const normalized = { ...updates };
+    if (updates.due_date !== undefined) normalized.deadline = updates.due_date;
+    if (useApi) {
+      try {
+        const saved = await api.updateTask(taskId, updates);
+        // Use API response for authoritative data
+        setTasks((prev) => ({
+          ...prev,
+          [selectedId]: prev[selectedId].map((t) =>
+            t.id === taskId ? { ...t, ...saved, deadline: saved.due_date } : t
+          ),
+        }));
+      } catch {
+        // Fallback: use local updates
+        setTasks((prev) => ({
+          ...prev,
+          [selectedId]: prev[selectedId].map((t) =>
+            t.id === taskId ? { ...t, ...normalized } : t
+          ),
+        }));
+      }
+    } else {
+      setTasks((prev) => ({
+        ...prev,
+        [selectedId]: prev[selectedId].map((t) =>
+          t.id === taskId ? { ...t, ...normalized } : t
+        ),
+      }));
+    }
     setDetailTask(null);
   };
 

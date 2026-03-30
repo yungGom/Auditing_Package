@@ -310,9 +310,19 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
     }
   };
 
-  const handleSave = (id, updates) => {
-    if (useApi) api.updatePBCItem(id, updates).catch(() => {});
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
+  const handleSave = async (id, updates) => {
+    if (useApi) {
+      try {
+        const updated = await api.updatePBCItem(id, updates);
+        // Use API response which includes account_name from JOIN
+        setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...updated } : i)));
+      } catch {
+        // Fallback: use local updates
+        setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
+      }
+    } else {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
+    }
     setDetailItem(null);
   };
 

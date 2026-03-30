@@ -88,12 +88,15 @@ export default function Settings() {
     }).catch(() => {});
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    // Also save to API
-    api.updateSettings(settings).catch(() => {});
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await api.updateSettings(settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      alert("설정 저장에 실패했습니다. 다시 시도해주세요.");
+    }
   };
 
   // --- FY helpers ---
