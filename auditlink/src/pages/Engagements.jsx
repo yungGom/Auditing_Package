@@ -381,10 +381,11 @@ let nextId = 100;
 
 export default function Engagements() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tree, setTree] = useState(fallbackTree);
-  const [tasks, setTasks] = useState(fallbackTasks);
+  const [tree, setTree] = useState([]);
+  const [tasks, setTasks] = useState({});
   const [useApi, setUseApi] = useState(false);
   const [ctxMenu, setCtxMenu] = useState(null);
+  const [loadError, setLoadError] = useState(false);
   const [highlightTaskId, setHighlightTaskId] = useState(null);
   const [detailTask, setDetailTask] = useState(null);
   const [detailPath, setDetailPath] = useState("");
@@ -464,7 +465,7 @@ export default function Engagements() {
           if (first) { setSelectedId(first.id); setSelectedType("account"); }
         }
       }
-    }).catch(() => { if (!selectedId) { setSelectedId("hanbit-interim-ar"); setSelectedType("account"); } });
+    }).catch(() => { setLoadError(true); });
     // Clear reload param after loading
     if (reloadKey) setSearchParams({}, { replace: true });
   }, [reloadKey]);
@@ -837,7 +838,15 @@ export default function Engagements() {
   };
 
   return (
-    <div className="flex gap-3 lg:gap-5 h-[calc(100vh-7rem)]">
+    <div className="flex flex-col gap-3 lg:gap-5 h-[calc(100vh-7rem)]">
+      {loadError && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-error/10 border border-error/20 text-xs font-label text-error shrink-0">
+          <span className="material-symbols-outlined text-sm">error</span>
+          데이터를 불러오지 못했습니다. 백엔드 서버를 확인해주세요.
+          <button onClick={() => { setLoadError(false); window.location.reload(); }} className="ml-auto underline font-semibold">새로고침</button>
+        </div>
+      )}
+      <div className="flex gap-3 lg:gap-5 flex-1 min-h-0">
       {/* Tree panel - collapsible */}
       <div className={`shrink-0 bg-surface-container-lowest rounded-xl border border-outline-variant overflow-y-auto transition-all duration-200 ${
         treeOpen ? "w-64 lg:w-80 p-3" : "w-10 p-1"
@@ -953,6 +962,7 @@ export default function Engagements() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }

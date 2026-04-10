@@ -120,22 +120,24 @@ function StatusBadge({ status }) {
 // --- Main -------------------------------------------------------------------
 
 export default function ICFR() {
-  const [data, setData] = useState(MOCK_DATA);
+  const [data, setData] = useState([]);
+  const [loadError, setLoadError] = useState(false);
   const [clientFilter, setClientFilter] = usePersistedState("icfr:clientFilter", "전체");
   const [statusFilter, setStatusFilter] = usePersistedState("icfr:statusFilter", "전체");
 
-  useEffect(() => {
+  const loadData = () => {
     api.getICFRTests().then((rows) => {
-      if (rows?.length) {
-        setData(rows.map((r) => ({
-          ...r,
-          client: r.client_name,
-          control: r.control_name,
-          method: r.test_method,
-        })));
-      }
-    }).catch(() => {});
-  }, []);
+      setData((rows || []).map((r) => ({
+        ...r,
+        client: r.client_name,
+        control: r.control_name,
+        method: r.test_method,
+      })));
+      setLoadError(false);
+    }).catch(() => { setLoadError(true); });
+  };
+
+  useEffect(() => { loadData(); }, []);
 
   const allClients = useMemo(() => ["전체", ...new Set(data.map((d) => d.client))], [data]);
 
@@ -156,6 +158,13 @@ export default function ICFR() {
           ICFR 통제활동 테스트 현황을 추적하고 관리하세요
         </p>
       </div>
+
+      {loadError && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-error/10 border border-error/20 text-xs font-label text-error">
+          <span className="material-symbols-outlined text-sm">error</span>
+          ICFR 데이터를 불러오지 못했습니다. 백엔드 서버를 확인해주세요.
+        </div>
+      )}
 
       {/* 요약 바 */}
       <SummaryBar filtered={filtered} total={data.length} />

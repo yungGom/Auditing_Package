@@ -272,14 +272,15 @@ function TemplateDetail({ template, onClose }) {
 
 export default function Templates() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [templates, setTemplates] = useState(MOCK_TEMPLATES);
+  const [templates, setTemplates] = useState([]);
+  const [loadError, setLoadError] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [checklistTemplateId, setChecklistTemplateId] = useState(null);
 
   useEffect(() => {
     api.getTemplates().then((data) => {
-      if (data?.length) setTemplates(data);
-    }).catch(() => {});
+      setTemplates(data || []);
+    }).catch(() => { setLoadError(true); });
   }, []);
 
   const handleDelete = (tpl) => {
@@ -312,6 +313,13 @@ export default function Templates() {
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-error/10 border border-error/20 text-xs font-label text-error">
+          <span className="material-symbols-outlined text-sm">error</span>
+          템플릿을 불러오지 못했습니다. 백엔드 서버를 확인해주세요.
+        </div>
+      )}
 
       {/* 카드 그리드 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
