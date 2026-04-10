@@ -85,7 +85,7 @@ export default function Settings() {
         }
         setSettings((prev) => ({ ...prev, ...parsed }));
       }
-    }).catch(() => {});
+    }).catch(() => { /* localStorage fallback used */ });
   }, []);
 
   const handleSave = async () => {

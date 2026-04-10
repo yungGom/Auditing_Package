@@ -503,7 +503,7 @@ export default function Header({ onMenuToggle }) {
     api.getNotifications().then((data) => {
       setNotifData(data);
       if (data.total_count > 0) setShowStartupAlert(true);
-    }).catch(() => {});
+    }).catch(() => { /* notifications unavailable – bell shows 0 */ });
   }, []);
 
   const notifCount = notifData?.total_count || 0;
