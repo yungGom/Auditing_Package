@@ -124,6 +124,7 @@ export default function ICFR() {
   const [loadError, setLoadError] = useState(false);
   const [clientFilter, setClientFilter] = usePersistedState("icfr:clientFilter", "전체");
   const [statusFilter, setStatusFilter] = usePersistedState("icfr:statusFilter", "전체");
+  const [editItem, setEditItem] = useState(null); // null or item object for edit modal
 
   const loadData = () => {
     api.getICFRTests().then((rows) => {
@@ -138,6 +139,37 @@ export default function ICFR() {
   };
 
   useEffect(() => { loadData(); }, []);
+
+  const handleAdd = () => {
+    setEditItem({ id: null, client_name: "", process: "", control_name: "", test_method: "검사", status: "미실시", assignee: "", note: "" });
+  };
+
+  const handleSave = async (item) => {
+    const body = {
+      client_name: item.client_name, process: item.process,
+      control_name: item.control_name, test_method: item.test_method,
+      status: item.status, assignee: item.assignee, note: item.note,
+    };
+    try {
+      if (item.id) {
+        const updated = await api.updateICFRTest(item.id, body);
+        setData((prev) => prev.map((d) => d.id === item.id ? { ...d, ...updated, client: updated.client_name, control: updated.control_name, method: updated.test_method } : d));
+      } else {
+        const created = await api.createICFRTest(body);
+        setData((prev) => [...prev, { ...created, client: created.client_name, control: created.control_name, method: created.test_method }]);
+      }
+    } catch { alert("저장에 실패했습니다."); }
+    setEditItem(null);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("이 ICFR 테스트를 삭제하시겠습니까?")) return;
+    try {
+      await api.deleteICFRTest(id);
+      setData((prev) => prev.filter((d) => d.id !== id));
+    } catch { alert("삭제에 실패했습니다."); }
+    setEditItem(null);
+  };
 
   const allClients = useMemo(() => ["전체", ...new Set(data.map((d) => d.client))], [data]);
 
@@ -187,8 +219,12 @@ export default function ICFR() {
             value={statusFilter}
             onChange={setStatusFilter}
           />
-          <div className="ml-auto text-xs font-label text-on-surface-variant self-end pb-2">
-            {filtered.length}건 표시 중
+          <div className="ml-auto flex items-center gap-3 self-end pb-2">
+            <span className="text-xs font-label text-on-surface-variant">{filtered.length}건 표시 중</span>
+            <button onClick={handleAdd}
+              className="px-3 py-1.5 bg-primary text-white text-xs font-label font-semibold rounded-xl hover:opacity-90 transition flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px]">add</span>추가
+            </button>
           </div>
         </div>
 
@@ -218,7 +254,8 @@ export default function ICFR() {
                 filtered.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-b border-outline-variant/50 last:border-b-0 hover:bg-surface-container-low transition"
+                    onClick={() => setEditItem({ ...row, client_name: row.client, control_name: row.control, test_method: row.method })}
+                    className="border-b border-outline-variant/50 last:border-b-0 hover:bg-surface-container-low transition cursor-pointer"
                   >
                     <td className="px-5 py-3.5">
                       <span className="text-sm font-label font-semibold text-on-surface">{row.client}</span>
@@ -251,6 +288,110 @@ export default function ICFR() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Edit/Add Modal */}
+      {editItem && (
+        <ICFREditModal item={editItem} onClose={() => setEditItem(null)} onSave={handleSave} onDelete={handleDelete} />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ICFR Edit Modal
+// ---------------------------------------------------------------------------
+
+const ALL_METHODS = ["질문", "관찰", "검사", "재수행"];
+const ALL_ICFR_STATUSES = ["미실시", "진행중", "완료", "이슈발견"];
+
+function ICFREditModal({ item, onClose, onSave, onDelete }) {
+  const [form, setForm] = useState({ ...item });
+  const update = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const isNew = !item.id;
+
+  useEffect(() => {
+    const h = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-5 border-b border-outline-variant">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+              <span className="material-symbols-outlined text-primary text-lg">fact_check</span>
+            </div>
+            <h3 className="font-headline text-sm font-bold text-on-surface">{isNew ? "ICFR 테스트 추가" : "ICFR 테스트 수정"}</h3>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-surface-container transition">
+            <span className="material-symbols-outlined text-on-surface-variant text-lg">close</span>
+          </button>
+        </div>
+
+        <div className="p-5 space-y-3">
+          <label className="block">
+            <span className="text-xs font-label font-semibold text-on-surface-variant mb-1 block">클라이언트명 *</span>
+            <input type="text" value={form.client_name} onChange={(e) => update("client_name", e.target.value)} required
+              className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface focus:border-primary focus:outline-none transition" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-label font-semibold text-on-surface-variant mb-1 block">프로세스</span>
+              <input type="text" value={form.process} onChange={(e) => update("process", e.target.value)} placeholder="매출/매입/재고/자금/급여"
+                className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface placeholder:text-outline focus:border-primary focus:outline-none transition" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-label font-semibold text-on-surface-variant mb-1 block">테스트 방법</span>
+              <select value={form.test_method} onChange={(e) => update("test_method", e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface focus:border-primary focus:outline-none transition">
+                {ALL_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-xs font-label font-semibold text-on-surface-variant mb-1 block">통제활동명 *</span>
+            <input type="text" value={form.control_name} onChange={(e) => update("control_name", e.target.value)} required
+              className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface focus:border-primary focus:outline-none transition" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-label font-semibold text-on-surface-variant mb-1 block">상태</span>
+              <select value={form.status} onChange={(e) => update("status", e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface focus:border-primary focus:outline-none transition">
+                {ALL_ICFR_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-label font-semibold text-on-surface-variant mb-1 block">담당자</span>
+              <input type="text" value={form.assignee} onChange={(e) => update("assignee", e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface focus:border-primary focus:outline-none transition" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-xs font-label font-semibold text-on-surface-variant mb-1 block">비고</span>
+            <textarea value={form.note} onChange={(e) => update("note", e.target.value)} rows={2}
+              className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface focus:border-primary focus:outline-none transition resize-none" />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-between p-5 border-t border-outline-variant">
+          {!isNew ? (
+            <button onClick={() => onDelete(item.id)} className="px-3 py-2 rounded-xl text-xs font-label font-semibold text-error hover:bg-error/5 transition flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">delete</span>삭제
+            </button>
+          ) : <div />}
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl border border-outline-variant text-xs font-label font-semibold text-on-surface-variant hover:bg-surface-container transition">취소</button>
+            <button onClick={() => onSave(form)} disabled={!form.client_name || !form.control_name}
+              className={`px-5 py-2 rounded-xl text-xs font-label font-semibold text-white transition flex items-center gap-1 ${form.client_name && form.control_name ? "bg-primary hover:opacity-90" : "bg-outline cursor-not-allowed"}`}>
+              <span className="material-symbols-outlined text-sm">{isNew ? "add" : "save"}</span>{isNew ? "추가" : "저장"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
