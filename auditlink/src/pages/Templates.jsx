@@ -2,6 +2,7 @@
 // Templates – 감사 템플릿 관리 페이지
 // ---------------------------------------------------------------------------
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api";
 import ExcelChecklist from "../components/ExcelChecklist";
 
@@ -183,7 +184,7 @@ function TemplateCard({ template, onSelect, onDelete, onChecklist }) {
   );
 }
 
-function TemplateDetail({ template, onClose }) {
+function TemplateDetail({ template, onClose, onApply }) {
   const colors = INDUSTRY_COLORS[template.industry] || INDUSTRY_COLORS["제조업"];
   const totalTasks = template.accounts.reduce((sum, acc) => sum + acc.tasks.length, 0);
 
@@ -258,7 +259,8 @@ function TemplateDetail({ template, onClose }) {
           >
             닫기
           </button>
-          <button className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition flex items-center gap-2">
+          <button onClick={() => { onApply(template); onClose(); }}
+            className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition flex items-center gap-2">
             <span className="material-symbols-outlined text-base">play_arrow</span>
             이 템플릿 적용
           </button>
@@ -271,6 +273,7 @@ function TemplateDetail({ template, onClose }) {
 // --- Main -------------------------------------------------------------------
 
 export default function Templates() {
+  const navigate = useNavigate();
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [loadError, setLoadError] = useState(false);
@@ -287,6 +290,12 @@ export default function Templates() {
     if (!confirm(`"${tpl.name}" 템플릿을 삭제하시겠습니까?`)) return;
     api.deleteTemplate(tpl.id).catch(() => {});
     setTemplates((prev) => prev.filter((t) => t.id !== tpl.id));
+  };
+
+  const handleApply = (tpl) => {
+    // Navigate to engagements with template info so user can pick a client to apply to
+    alert(`"${tpl.name}" 템플릿을 적용하려면 감사업무 페이지에서 클라이언트를 선택 후 요청자료 탭의 "엑셀 가져오기"를 사용하세요.\n\n또는 감사업무 트리에서 Phase 우클릭 → "계정과목 일괄 추가"로 이 템플릿의 계정과목을 추가할 수 있습니다.`);
+    navigate("/engagements");
   };
 
   return (
@@ -307,7 +316,17 @@ export default function Templates() {
             <span className="material-symbols-outlined text-lg">upload_file</span>
             템플릿 가져오기
           </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition shadow-sm">
+          <button
+            onClick={() => {
+              const name = prompt("새 템플릿 이름:");
+              if (!name) return;
+              const industry = prompt("업종 (예: 제조업, IT서비스):") || "";
+              api.createTemplate({ name, industry, accounts_json: "[]", updated_at: new Date().toISOString().slice(0, 10) })
+                .then((created) => { setTemplates((prev) => [...prev, { ...created, accounts: [] }]); })
+                .catch(() => alert("템플릿 생성에 실패했습니다."));
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-label font-semibold hover:bg-primary-container hover:text-white transition shadow-sm"
+          >
             <span className="material-symbols-outlined text-lg">add</span>
             새 템플릿
           </button>
@@ -334,6 +353,7 @@ export default function Templates() {
         <TemplateDetail
           template={selectedTemplate}
           onClose={() => setSelectedTemplate(null)}
+          onApply={handleApply}
         />
       )}
 

@@ -284,44 +284,75 @@ export default function Settings() {
         {/* ── 데이터 관리 ─────────────────────────────── */}
         <SectionCard icon="storage" title="데이터 관리" description="로컬 데이터 백업 및 복원">
           <div className="space-y-3">
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-outline-variant hover:bg-surface-container-low transition group">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch((import.meta.env.VITE_API_URL || "http://localhost:8000") + "/api/settings");
+                  // Download the full DB state as JSON backup
+                  const settingsData = await res.json();
+                  const backup = { settings: settingsData, exportedAt: new Date().toISOString() };
+                  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href = url; a.download = `auditlink_backup_${new Date().toISOString().slice(0, 10)}.json`; a.click();
+                  URL.revokeObjectURL(url);
+                } catch { alert("백업에 실패했습니다."); }
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-outline-variant hover:bg-surface-container-low transition group">
               <div className="w-9 h-9 rounded-xl bg-secondary/10 flex items-center justify-center">
                 <span className="material-symbols-outlined text-secondary text-lg">download</span>
               </div>
               <div className="text-left">
-                <p className="text-sm font-label font-semibold text-on-surface group-hover:text-primary transition">
-                  데이터 백업
-                </p>
-                <p className="text-xs text-on-surface-variant font-body">
-                  SQLite 데이터베이스 파일을 내보냅니다
-                </p>
+                <p className="text-sm font-label font-semibold text-on-surface group-hover:text-primary transition">설정 백업</p>
+                <p className="text-xs text-on-surface-variant font-body">현재 설정을 JSON 파일로 내보냅니다</p>
               </div>
               <span className="material-symbols-outlined text-on-surface-variant ml-auto">chevron_right</span>
             </button>
 
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-outline-variant hover:bg-surface-container-low transition group">
+            <button
+              onClick={() => {
+                const input = document.createElement("input"); input.type = "file"; input.accept = ".json";
+                input.onchange = async (e) => {
+                  const file = e.target.files?.[0]; if (!file) return;
+                  try {
+                    const text = await file.text();
+                    const backup = JSON.parse(text);
+                    if (backup.settings) {
+                      await api.updateSettings(backup.settings);
+                      const parsed = { ...settings };
+                      for (const [k, v] of Object.entries(backup.settings)) { try { parsed[k] = JSON.parse(v); } catch { parsed[k] = v; } }
+                      setSettings((prev) => ({ ...prev, ...parsed }));
+                      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, ...parsed }));
+                      alert("설정이 복원되었습니다.");
+                    } else { alert("올바른 백업 파일이 아닙니다."); }
+                  } catch { alert("복원에 실패했습니다."); }
+                };
+                input.click();
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-outline-variant hover:bg-surface-container-low transition group">
               <div className="w-9 h-9 rounded-xl bg-on-tertiary-container/10 flex items-center justify-center">
                 <span className="material-symbols-outlined text-on-tertiary-container text-lg">upload</span>
               </div>
               <div className="text-left">
-                <p className="text-sm font-label font-semibold text-on-surface group-hover:text-primary transition">
-                  데이터 복원
-                </p>
-                <p className="text-xs text-on-surface-variant font-body">
-                  백업 파일에서 데이터를 복원합니다
-                </p>
+                <p className="text-sm font-label font-semibold text-on-surface group-hover:text-primary transition">설정 복원</p>
+                <p className="text-xs text-on-surface-variant font-body">백업 파일에서 설정을 복원합니다</p>
               </div>
               <span className="material-symbols-outlined text-on-surface-variant ml-auto">chevron_right</span>
             </button>
 
             <div className="mt-4 px-4 py-3 rounded-xl bg-error/5 border border-error/20">
-              <button className="w-full flex items-center gap-3 group">
+              <button
+                onClick={async () => {
+                  if (!confirm("정말로 모든 설정을 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) return;
+                  localStorage.removeItem(STORAGE_KEY);
+                  setSettings({ ...DEFAULT_SETTINGS });
+                  try { await api.updateSettings(DEFAULT_SETTINGS); } catch {}
+                  alert("설정이 초기화되었습니다.");
+                }}
+                className="w-full flex items-center gap-3 group">
                 <span className="material-symbols-outlined text-error text-lg">warning</span>
                 <div className="text-left">
-                  <p className="text-sm font-label font-semibold text-error">데이터 초기화</p>
-                  <p className="text-xs text-on-surface-variant font-body">
-                    모든 데이터를 삭제하고 초기 상태로 되돌립니다
-                  </p>
+                  <p className="text-sm font-label font-semibold text-error">설정 초기화</p>
+                  <p className="text-xs text-on-surface-variant font-body">모든 설정을 기본값으로 되돌립니다</p>
                 </div>
               </button>
             </div>
