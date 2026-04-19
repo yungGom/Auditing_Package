@@ -25,7 +25,7 @@ export default function Sidebar({ open, onClose }) {
         {/* Logo + FY */}
         <div className="px-5 py-6 border-b border-outline-variant">
           <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-primary text-[28px]">
+            <span className="material-symbols-outlined text-primary text-[28px]" style={{ fontVariationSettings: '"FILL" 1, "wght" 500' }}>
               verified
             </span>
             <span className="font-headline text-xl font-bold text-primary tracking-tight">

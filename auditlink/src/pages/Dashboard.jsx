@@ -459,27 +459,38 @@ function CalendarView({ deadlines, onItemClick, onStatusChange, onQuickAdd, clie
           })}
         </div>
       ) : (
-        /* Week view: taller cells with task previews */
-        <div className="grid grid-cols-7 gap-0.5">
+        /* Week view: vertical list, one row per day — readable for narrow panel */
+        <div className="space-y-1.5">
           {weekCells.map((cell, i) => {
             const tasks = dateMap[cell.key] || [];
             const isToday = cell.key === todayKey;
             const isSelected = cell.key === selectedDate;
+            const wd = WEEKDAYS[cell.date.getDay()];
             return (
               <div key={cell.key} onClick={() => handleDayClick(cell.key)}
-                className={`flex flex-col items-center rounded-lg p-1 min-h-[72px] cursor-pointer transition ${
+                className={`flex gap-2 rounded-lg px-2 py-1.5 cursor-pointer transition ${
                   isSelected ? "bg-primary/10 ring-1 ring-primary" : isToday ? "bg-primary/5" : "hover:bg-surface-container"
                 }`}>
-                <span className={`text-xs font-label font-semibold mb-1 ${isToday ? "text-primary" : cell.isOtherMonth ? "text-outline" : "text-on-surface"}`}>{cell.day}</span>
-                {tasks.slice(0, 3).map((t) => {
-                  const d = calcDDay(t.date);
-                  return (
-                    <div key={t.id} className={`w-full px-1 py-0.5 rounded text-[8px] font-label truncate mb-0.5 ${d <= 0 ? "bg-error/10 text-error" : d <= 7 ? "bg-on-tertiary-container/10 text-on-tertiary-container" : "bg-primary-fixed text-primary"}`}>
-                      {t.task}
-                    </div>
-                  );
-                })}
-                {tasks.length > 3 && <span className="text-[8px] text-outline">+{tasks.length - 3}</span>}
+                <div className="shrink-0 w-10 text-center">
+                  <div className={`text-[10px] font-label font-semibold ${i === 0 ? "text-error" : "text-on-surface-variant"}`}>{wd}</div>
+                  <div className={`text-sm font-label font-bold ${isToday ? "text-primary" : cell.isOtherMonth ? "text-outline" : i === 0 ? "text-error/80" : "text-on-surface"}`}>{cell.day}</div>
+                </div>
+                <div className="flex-1 min-w-0 flex flex-col gap-1 py-0.5">
+                  {tasks.length === 0 ? (
+                    <span className="text-[10px] text-outline/60 font-label italic pt-1">—</span>
+                  ) : tasks.map((t) => {
+                    const d = calcDDay(t.date);
+                    const cls = d <= 0 ? "bg-error/10 text-error border-error/30"
+                      : t.status === "in_progress" ? "bg-primary-fixed text-primary border-primary/20"
+                      : "bg-surface-container text-on-surface-variant border-outline-variant";
+                    return (
+                      <div key={t.id} className={`text-[10px] font-label px-1.5 py-1 rounded border truncate ${cls}`}>
+                        <span className="font-semibold">{t.task}</span>
+                        <span className="opacity-70"> · {t.client}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
           })}
