@@ -500,12 +500,19 @@ export default function Header({ onMenuToggle }) {
   const [showStartupAlert, setShowStartupAlert] = useState(false);
   const notifWrapperRef = useRef(null);
 
-  // Load notifications on mount
+  // Load notifications on mount + refresh on window focus
   useEffect(() => {
-    api.getNotifications().then((data) => {
+    const load = () => api.getNotifications().then((data) => {
       setNotifData(data);
-      if (data.total_count > 0) setShowStartupAlert(true);
-    }).catch(() => { /* notifications unavailable – bell shows 0 */ });
+      if (data.total_count > 0 && !sessionStorage.getItem("startup-alert-shown")) {
+        setShowStartupAlert(true);
+        sessionStorage.setItem("startup-alert-shown", "1");
+      }
+    }).catch(() => {});
+    load();
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   const notifCount = notifData?.total_count || 0;
@@ -594,7 +601,7 @@ export default function Header({ onMenuToggle }) {
       }
     };
     document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    return () => { document.removeEventListener("keydown", handler); if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, []);
 
   // Click outside to close
@@ -664,7 +671,8 @@ export default function Header({ onMenuToggle }) {
             )}
           </div>
 
-          <button className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container transition hidden sm:flex">
+          <button onClick={() => alert("AuditLink v0.1.0\n회계감사 일정관리 데스크톱 앱\n\n단축키:\n• Ctrl+K: 검색\n• ESC: 모달/패널 닫기")}
+            className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container transition hidden sm:flex" title="도움말">
             <span className="material-symbols-outlined text-[20px]">help</span>
           </button>
           <button onClick={() => setModalOpen(true)}

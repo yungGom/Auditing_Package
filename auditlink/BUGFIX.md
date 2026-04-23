@@ -56,7 +56,7 @@
 
 ## Medium (계획적으로 수정)
 
-### M-1. 낙관적 업데이트 (Optimistic Update) 실패 시 롤백 없음
+### ✅ M-1. 낙관적 업데이트 (Optimistic Update) 실패 시 롤백 없음 — 수정 완료
 
 API 호출이 실패해도 로컬 state가 이미 변경된 상태로 남음:
 
@@ -75,7 +75,7 @@ API 호출이 실패해도 로컬 state가 이미 변경된 상태로 남음:
 **영향**: 오프라인/네트워크 불안정 환경에서 UI와 서버 데이터 불일치 가능
 **해결 방안**: API 실패 시 이전 state로 롤백하거나 에러 토스트 표시
 
-### M-2. 검색 디바운스 타이머 메모리 누수 가능성
+### ✅ M-2. 검색 디바운스 타이머 메모리 누수 가능성 — 수정 완료
 
 `Header.jsx`에서 컴포넌트 언마운트 시 `debounceRef.current` 타이머가 정리되지 않음:
 
@@ -86,7 +86,7 @@ debounceRef.current = setTimeout(() => {...}, 300);
 
 **해결 방안**: useEffect cleanup에서 `clearTimeout(debounceRef.current)` 추가
 
-### M-3. 캘린더 빠른 추가 모달에서 클라이언트/계정 없을 때 처리 미흡
+### ✅ M-3. 캘린더 빠른 추가 모달에서 클라이언트/계정 없을 때 처리 미흡 — 수정 완료
 
 `Dashboard.jsx` `QuickAddModal`: 클라이언트가 없거나 계정과목이 없는 경우 드롭다운이 비어있지만 안내 메시지 없음
 
@@ -94,13 +94,13 @@ debounceRef.current = setTimeout(() => {...}, 300);
 
 ## Low (개선 권장)
 
-### L-1. 도움말 버튼 미구현
+### ✅ L-1. 도움말 버튼 미구현 — 수정 완료
 
 `Header.jsx`: 도움말(help) 아이콘 버튼에 onClick 핸들러 없음. 클릭해도 아무 동작 없음.
 
-### L-2. 설정 변경 시 사이드바 FY 표시가 갱신되지 않음
+### ✅ L-2. 설정 변경 시 사이드바 FY 표시가 갱신되지 않음 — 수정 완료
 
-`Sidebar.jsx` L24: FY 표시가 `FY 2025`로 하드코딩되어 있음. 설정에서 활성 FY를 변경해도 사이드바에 반영 안 됨.
+SettingsContext로 동적 FY 표시 구현 완료.
 
 ### L-3. PBC 엑셀 추적에서 개별 저장 에러 무시
 
@@ -110,7 +110,7 @@ debounceRef.current = setTimeout(() => {...}, 300);
 
 `ExcelChecklist.jsx`: `api.upsertChecklist(...).catch(() => {})` — 저장 실패 시 사용자 피드백 없음.
 
-### L-5. 알림 데이터 주기적 갱신 없음
+### ✅ L-5. 알림 데이터 주기적 갱신 없음 — 수정 완료
 
 `Header.jsx`: 알림 데이터를 최초 마운트 시 1회만 로딩. 앱 사용 중 새 마감이 지나도 갱신되지 않음. 주기적 폴링 또는 포커스 시 새로고침 필요.
 

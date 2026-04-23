@@ -326,8 +326,11 @@ export default function PBCPanel({ clientId, accountId, filterByAccount, useApi,
     setDetailItem(null);
   };
 
-  const handleDelete = (id) => {
-    if (useApi) api.deletePBCItem(id).catch(() => {});
+  const handleDelete = async (id) => {
+    if (useApi) {
+      try { await api.deletePBCItem(id); }
+      catch { alert("삭제에 실패했습니다."); return; }
+    }
     setItems((prev) => prev.filter((i) => i.id !== id));
     setDetailItem(null);
   };

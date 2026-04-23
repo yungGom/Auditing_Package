@@ -596,15 +596,21 @@ export default function Engagements() {
     } else { addChildToNode(fyNode.id, { id: `client-${nextId++}`, label: name, type: "client", children: [] }); }
   };
 
-  const doRenameClient = (node) => {
+  const doRenameClient = async (node) => {
     const name = prompt("클라이언트 이름 변경:", node.label); if (!name || name === node.label) return;
-    if (useApi && node.dbId) api.updateClient(node.dbId, { name }).catch(() => {});
     renameNode(node.id, name);
+    if (useApi && node.dbId) {
+      try { await api.updateClient(node.dbId, { name }); }
+      catch { renameNode(node.id, node.label); alert("이름 변경에 실패했습니다."); }
+    }
   };
 
-  const doDeleteClient = (node) => {
+  const doDeleteClient = async (node) => {
     if (!confirm(`"${node.label}" 클라이언트를 삭제하시겠습니까?\n하위 모든 감사업무가 삭제됩니다.`)) return;
-    if (useApi && node.dbId) api.deleteClient(node.dbId).catch(() => {});
+    if (useApi && node.dbId) {
+      try { await api.deleteClient(node.dbId); }
+      catch { alert("삭제에 실패했습니다."); return; }
+    }
     removeNode(node.id); setSelectedId(null); setSelectedType("account");
   };
 
@@ -616,9 +622,12 @@ export default function Engagements() {
     } else { addChildToNode(clientNode.id, { id: `phase-${nextId++}`, label: name, type: "phase", children: [] }); }
   };
 
-  const doDeletePhase = (node) => {
+  const doDeletePhase = async (node) => {
     if (!confirm(`"${node.label}" Phase를 삭제하시겠습니까?`)) return;
-    if (useApi && node.dbId) api.deletePhase(node.dbId).catch(() => {});
+    if (useApi && node.dbId) {
+      try { await api.deletePhase(node.dbId); }
+      catch { alert("삭제에 실패했습니다."); return; }
+    }
     removeNode(node.id); setSelectedId(null); setSelectedType("account");
   };
 
@@ -630,9 +639,12 @@ export default function Engagements() {
     } else { const id = `account-${nextId++}`; addChildToNode(phaseNode.id, { id, label: name, type: "account" }); setTasks((p) => ({ ...p, [id]: [] })); setSelectedId(id); setSelectedType("account"); }
   };
 
-  const doDeleteAccount = (node) => {
+  const doDeleteAccount = async (node) => {
     if (!confirm(`"${node.label}" 계정과목을 삭제하시겠습니까?`)) return;
-    if (useApi && node.dbId) api.deleteAccount(node.dbId).catch(() => {});
+    if (useApi && node.dbId) {
+      try { await api.deleteAccount(node.dbId); }
+      catch { alert("삭제에 실패했습니다."); return; }
+    }
     removeNode(node.id); setTasks((p) => { const c = { ...p }; delete c[node.id]; return c; });
     if (selectedId === node.id) { setSelectedId(null); setSelectedType("account"); }
   };
@@ -701,21 +713,31 @@ export default function Engagements() {
     }
   };
 
-  const doEditTask = (task) => {
+  const doEditTask = async (task) => {
     const title = prompt("할일 제목:", task.title); if (!title || title === task.title) return;
-    if (useApi) api.updateTask(task.id, { title }).catch(() => {});
     setTasks((p) => ({ ...p, [selectedId]: p[selectedId].map((t) => (t.id === task.id ? { ...t, title } : t)) }));
+    if (useApi) {
+      try { await api.updateTask(task.id, { title }); }
+      catch { setTasks((p) => ({ ...p, [selectedId]: p[selectedId].map((t) => (t.id === task.id ? { ...t, title: task.title } : t)) })); alert("수정에 실패했습니다."); }
+    }
   };
 
-  const doDeleteTask = (task) => {
+  const doDeleteTask = async (task) => {
     if (!confirm(`"${task.title}" 할일을 삭제하시겠습니까?`)) return;
-    if (useApi) api.deleteTask(task.id).catch(() => {});
+    if (useApi) {
+      try { await api.deleteTask(task.id); }
+      catch { alert("삭제에 실패했습니다."); return; }
+    }
     setTasks((p) => ({ ...p, [selectedId]: p[selectedId].filter((t) => t.id !== task.id) }));
   };
 
-  const doChangeTaskStatus = (task, newStatus) => {
-    if (useApi) api.updateTask(task.id, { status: newStatus }).catch(() => {});
+  const doChangeTaskStatus = async (task, newStatus) => {
+    const oldStatus = task.status;
     setTasks((p) => ({ ...p, [selectedId]: p[selectedId].map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)) }));
+    if (useApi) {
+      try { await api.updateTask(task.id, { status: newStatus }); }
+      catch { setTasks((p) => ({ ...p, [selectedId]: p[selectedId].map((t) => (t.id === task.id ? { ...t, status: oldStatus } : t)) })); alert("상태 변경에 실패했습니다."); }
+    }
   };
 
   const onToggleStatus = (taskId) => {

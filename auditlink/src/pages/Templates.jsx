@@ -286,10 +286,12 @@ export default function Templates() {
     }).catch(() => { setLoadError(true); });
   }, []);
 
-  const handleDelete = (tpl) => {
+  const handleDelete = async (tpl) => {
     if (!confirm(`"${tpl.name}" 템플릿을 삭제하시겠습니까?`)) return;
-    api.deleteTemplate(tpl.id).catch(() => {});
-    setTemplates((prev) => prev.filter((t) => t.id !== tpl.id));
+    try {
+      await api.deleteTemplate(tpl.id);
+      setTemplates((prev) => prev.filter((t) => t.id !== tpl.id));
+    } catch { alert("삭제에 실패했습니다."); }
   };
 
   const handleApply = (tpl) => {

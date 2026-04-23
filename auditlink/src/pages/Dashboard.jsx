@@ -294,16 +294,32 @@ function QuickAddModal({ date, clients, onClose, onCreated }) {
           <input type="text" required autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
             placeholder="할일 제목 *"
             className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface placeholder:text-outline focus:border-primary focus:outline-none transition" />
-          <select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value, account_id: "" })} required
-            className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface focus:border-primary focus:outline-none transition">
-            <option value="">클라이언트 선택 *</option>
-            {clientList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })} required
-            className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface focus:border-primary focus:outline-none transition">
-            <option value="">계정과목 선택 *</option>
-            {accountOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+          {clientList.length === 0 ? (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-on-tertiary-container/30 bg-on-tertiary-container/5 text-xs font-label text-on-tertiary-container">
+              <span className="material-symbols-outlined text-[14px]">info</span>
+              감사업무 페이지에서 먼저 클라이언트를 추가하세요
+            </div>
+          ) : (
+            <>
+              <select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value, account_id: "" })} required
+                className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface focus:border-primary focus:outline-none transition">
+                <option value="">클라이언트 선택 *</option>
+                {clientList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {form.client_id && accountOptions.length === 0 ? (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-on-tertiary-container/30 bg-on-tertiary-container/5 text-xs font-label text-on-tertiary-container">
+                  <span className="material-symbols-outlined text-[14px]">info</span>
+                  이 클라이언트에 계정과목이 없습니다
+                </div>
+              ) : (
+                <select value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })} required
+                  className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface focus:border-primary focus:outline-none transition">
+                  <option value="">계정과목 선택 *</option>
+                  {accountOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              )}
+            </>
+          )}
           <input type="text" value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}
             placeholder="담당자"
             className="w-full px-3 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-body text-on-surface placeholder:text-outline focus:border-primary focus:outline-none transition" />
