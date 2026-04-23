@@ -977,6 +977,127 @@ def bulk_delete_pbc_items(body: PBCBulkDelete):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Interviews
+# ═══════════════════════════════════════════════════════════════════════════
+
+class InterviewCreate(BaseModel):
+    client_id: int
+    account_id: Optional[int] = None
+    date: str = ""
+    interviewee: str = ""
+    position: str = ""
+    location: str = ""
+    attendees: str = ""
+    topic: str = ""
+    status: str = "진행중"
+    memo: str = ""
+
+class InterviewUpdate(BaseModel):
+    account_id: Optional[int] = None
+    date: Optional[str] = None
+    interviewee: Optional[str] = None
+    position: Optional[str] = None
+    location: Optional[str] = None
+    attendees: Optional[str] = None
+    topic: Optional[str] = None
+    status: Optional[str] = None
+    memo: Optional[str] = None
+
+@app.get("/api/interviews")
+def list_interviews(client_id: Optional[int] = None, account_id: Optional[int] = None):
+    conn = _db()
+    sql = "SELECT * FROM interviews WHERE 1=1"
+    params = []
+    if client_id:
+        sql += " AND client_id=?"; params.append(client_id)
+    if account_id:
+        sql += " AND account_id=?"; params.append(account_id)
+    sql += " ORDER BY date DESC, id DESC"
+    rows = conn.execute(sql, params).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["question_count"] = conn.execute(
+            "SELECT COUNT(*) c FROM interview_questions WHERE interview_id=?", (d["id"],)
+        ).fetchone()["c"]
+        result.append(d)
+    conn.close()
+    return result
+
+@app.get("/api/interviews/{interview_id}")
+def get_interview(interview_id: int):
+    conn = _db()
+    row = conn.execute("SELECT * FROM interviews WHERE id=?", (interview_id,)).fetchone()
+    if not row:
+        conn.close(); raise HTTPException(404)
+    d = dict(row)
+    d["questions"] = rows_to_list(conn.execute(
+        "SELECT * FROM interview_questions WHERE interview_id=? ORDER BY order_num", (interview_id,)
+    ).fetchall())
+    conn.close()
+    return d
+
+@app.post("/api/interviews", status_code=201)
+def create_interview(body: InterviewCreate):
+    conn = _db()
+    conn.execute(
+        "INSERT INTO interviews (client_id, account_id, date, interviewee, position, location, attendees, topic, status, memo) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (body.client_id, body.account_id, body.date, body.interviewee, body.position, body.location, body.attendees, body.topic, body.status, body.memo),
+    )
+    rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit(); conn.close()
+    return {"id": rid, **body.model_dump()}
+
+@app.put("/api/interviews/{interview_id}")
+def update_interview(interview_id: int, body: InterviewUpdate):
+    conn = _db()
+    sets, vals = [], []
+    for field in ["account_id", "date", "interviewee", "position", "location", "attendees", "topic", "status", "memo"]:
+        v = getattr(body, field)
+        if v is not None:
+            sets.append(f"{field}=?"); vals.append(v)
+    if sets:
+        vals.append(interview_id)
+        conn.execute(f"UPDATE interviews SET {','.join(sets)} WHERE id=?", vals)
+        conn.commit()
+    row = conn.execute("SELECT * FROM interviews WHERE id=?", (interview_id,)).fetchone()
+    conn.close()
+    if not row: raise HTTPException(404)
+    return row_to_dict(row)
+
+@app.delete("/api/interviews/{interview_id}")
+def delete_interview(interview_id: int):
+    conn = _db()
+    conn.execute("DELETE FROM interviews WHERE id=?", (interview_id,))
+    conn.commit(); conn.close()
+    return {"ok": True}
+
+# Interview Questions
+
+class QuestionCreate(BaseModel):
+    interview_id: int
+    order_num: int = 0
+    question: str = ""
+    answer: str = ""
+    answerer: str = ""
+    needs_followup: bool = False
+    followup_note: str = ""
+
+@app.put("/api/interview-questions/sync")
+def sync_interview_questions(interview_id: int, questions: list[QuestionCreate]):
+    """Replace all questions for an interview (full sync)."""
+    conn = _db()
+    conn.execute("DELETE FROM interview_questions WHERE interview_id=?", (interview_id,))
+    for q in questions:
+        conn.execute(
+            "INSERT INTO interview_questions (interview_id, order_num, question, answer, answerer, needs_followup, followup_note) VALUES (?,?,?,?,?,?,?)",
+            (interview_id, q.order_num, q.question, q.answer, q.answerer, int(q.needs_followup), q.followup_note),
+        )
+    conn.commit(); conn.close()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # PBC Excel Items
 # ═══════════════════════════════════════════════════════════════════════════
 

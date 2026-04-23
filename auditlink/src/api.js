@@ -92,6 +92,19 @@ const api = {
   bulkUpdatePBCItems: (ids, updates) => request("/api/pbc-items/bulk-update", { method: "PATCH", body: JSON.stringify({ ids, updates }) }),
   bulkDeletePBCItems: (ids) => request("/api/pbc-items/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
 
+  // Interviews
+  getInterviews: (params) => {
+    const sp = new URLSearchParams();
+    if (params?.client_id) sp.set("client_id", params.client_id);
+    if (params?.account_id) sp.set("account_id", params.account_id);
+    return request(`/api/interviews?${sp}`);
+  },
+  getInterview: (id) => request(`/api/interviews/${id}`),
+  createInterview: (data) => request("/api/interviews", { method: "POST", body: JSON.stringify(data) }),
+  updateInterview: (id, data) => request(`/api/interviews/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteInterview: (id) => request(`/api/interviews/${id}`, { method: "DELETE" }),
+  syncInterviewQuestions: (interviewId, questions) => request(`/api/interview-questions/sync?interview_id=${interviewId}`, { method: "PUT", body: JSON.stringify(questions) }),
+
   // PBC Excel Items
   getPBCExcelItems: (clientId, fileName) => {
     const sp = new URLSearchParams({ client_id: clientId });

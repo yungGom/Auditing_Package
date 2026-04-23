@@ -621,7 +621,82 @@ class TestTemplateChecklists:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 15. PBC Excel Items
+# 15. Interviews
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestInterviews:
+    def test_create_and_list(self, seed):
+        r = client.post("/api/interviews", json={
+            "client_id": seed["client"]["id"], "date": "2025-04-10",
+            "interviewee": "김재무", "position": "재무팀장",
+            "topic": "매출채권 확인", "status": "진행중"
+        })
+        assert r.status_code == 201
+        iid = r.json()["id"]
+
+        r2 = client.get(f"/api/interviews?client_id={seed['client']['id']}")
+        assert r2.status_code == 200
+        assert any(i["id"] == iid for i in r2.json())
+
+    def test_get_with_questions(self, seed):
+        created = client.post("/api/interviews", json={
+            "client_id": seed["client"]["id"], "date": "2025-04-11",
+            "interviewee": "박회계", "topic": "재고실사"
+        }).json()
+        iid = created["id"]
+
+        # Sync questions
+        qs = [
+            {"interview_id": iid, "order_num": 0, "question": "실사 일정은?", "answer": "4월 15일", "answerer": "박회계"},
+            {"interview_id": iid, "order_num": 1, "question": "외부 창고도 포함?", "answer": "포함", "answerer": "박회계", "needs_followup": True, "followup_note": "창고 목록 수령 필요"},
+        ]
+        r = client.put(f"/api/interview-questions/sync?interview_id={iid}", json=qs)
+        assert r.status_code == 200
+
+        # Get with questions
+        r2 = client.get(f"/api/interviews/{iid}")
+        assert r2.status_code == 200
+        data = r2.json()
+        assert len(data["questions"]) == 2
+        assert data["questions"][1]["needs_followup"] == 1
+
+    def test_update(self, seed):
+        created = client.post("/api/interviews", json={
+            "client_id": seed["client"]["id"], "date": "2025-04-12",
+            "interviewee": "이감사", "status": "진행중"
+        }).json()
+        r = client.put(f"/api/interviews/{created['id']}", json={"status": "완료", "memo": "특이사항 없음"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "완료"
+
+    def test_delete(self, seed):
+        created = client.post("/api/interviews", json={
+            "client_id": seed["client"]["id"], "date": "2025-04-13",
+            "interviewee": "삭제용"
+        }).json()
+        r = client.delete(f"/api/interviews/{created['id']}")
+        assert r.status_code == 200
+
+    def test_question_sync_replaces(self, seed):
+        created = client.post("/api/interviews", json={
+            "client_id": seed["client"]["id"], "date": "2025-04-14",
+            "interviewee": "동기화테스트"
+        }).json()
+        iid = created["id"]
+        # First sync: 3 questions
+        client.put(f"/api/interview-questions/sync?interview_id={iid}", json=[
+            {"interview_id": iid, "order_num": i, "question": f"Q{i}"} for i in range(3)
+        ])
+        # Second sync: 1 question (should replace)
+        client.put(f"/api/interview-questions/sync?interview_id={iid}", json=[
+            {"interview_id": iid, "order_num": 0, "question": "Only one"}
+        ])
+        data = client.get(f"/api/interviews/{iid}").json()
+        assert len(data["questions"]) == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 16. PBC Excel Items
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestPBCExcelItems:

@@ -116,6 +116,31 @@ CREATE TABLE IF NOT EXISTS pbc_excel_items (
     completion_status   TEXT    NOT NULL DEFAULT '',
     note                TEXT    NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS interviews (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id   INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    account_id  INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+    date        TEXT    NOT NULL DEFAULT '',
+    interviewee TEXT    NOT NULL DEFAULT '',
+    position    TEXT    NOT NULL DEFAULT '',
+    location    TEXT    NOT NULL DEFAULT '',
+    attendees   TEXT    NOT NULL DEFAULT '',
+    topic       TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT '진행중',
+    memo        TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS interview_questions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id    INTEGER NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+    order_num       INTEGER NOT NULL DEFAULT 0,
+    question        TEXT    NOT NULL DEFAULT '',
+    answer          TEXT    NOT NULL DEFAULT '',
+    answerer        TEXT    NOT NULL DEFAULT '',
+    needs_followup  INTEGER NOT NULL DEFAULT 0,
+    followup_note   TEXT    NOT NULL DEFAULT ''
+);
 """
 
 

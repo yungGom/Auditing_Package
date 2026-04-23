@@ -4,6 +4,7 @@ import api from "../api";
 import TaskDetailPanel from "../components/TaskDetailPanel";
 import ClientSummaryPanel from "../components/ClientSummaryPanel";
 import PBCPanel from "../components/PBCPanel";
+import InterviewPanel from "../components/InterviewPanel";
 import BulkAddModal from "../components/BulkAddModal";
 import { usePersistedState, usePersistedScroll } from "../hooks/usePersistedState";
 
@@ -919,12 +920,26 @@ export default function Engagements() {
                 요청자료
               </span>
             </button>
+            <button onClick={() => setActiveTab("interview")}
+              className={`px-3 py-1.5 rounded-t-xl text-xs font-label font-semibold transition ${activeTab === "interview" ? "text-primary border-b-2 border-primary" : "text-on-surface-variant hover:text-on-surface"}`}>
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[16px]">record_voice_over</span>
+                인터뷰
+              </span>
+            </button>
           </div>
         )}
 
         {/* Tab content */}
         <div ref={taskScrollRef} className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {activeTab === "pbc" && selectedId ? (
+          {activeTab === "interview" && selectedId ? (
+            <InterviewPanel
+              clientId={ownerClientNodeId}
+              accountId={selectedId}
+              filterByAccount={selectedType === "account"}
+              useApi={useApi}
+            />
+          ) : activeTab === "pbc" && selectedId ? (
             <PBCPanel
               clientId={ownerClientNodeId}
               accountId={selectedId}
