@@ -155,12 +155,68 @@ def get_connection() -> sqlite3.Connection:
 def init_db():
     conn = get_connection()
     conn.executescript(SCHEMA)
-    # Migrate: add file_path, updated_at columns if missing
+
+    # ── Migrations for existing databases ──
+    existing = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+
+    # tasks: add file_path, updated_at columns
     cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
     if "file_path" not in cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN file_path TEXT NOT NULL DEFAULT ''")
     if "updated_at" not in cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN updated_at TEXT")
+
+    # Ensure newer tables exist (for DBs created before these were added)
+    if "task_history" not in existing:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS task_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                old_status TEXT NOT NULL, new_status TEXT NOT NULL, changed_at TEXT NOT NULL);
+        """)
+    if "pbc_items" not in existing:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS pbc_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL, name TEXT NOT NULL,
+                request_date TEXT, due_date TEXT, status TEXT NOT NULL DEFAULT '미요청',
+                auditor TEXT NOT NULL DEFAULT '', client_contact TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '');
+        """)
+    if "template_checklists" not in existing:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS template_checklists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER NOT NULL,
+                sheet_name TEXT NOT NULL DEFAULT '', row_index INTEGER NOT NULL,
+                is_completed INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '');
+        """)
+    if "pbc_excel_items" not in existing:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS pbc_excel_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER NOT NULL,
+                file_name TEXT NOT NULL DEFAULT '', sheet_name TEXT NOT NULL DEFAULT '',
+                row_index INTEGER NOT NULL, is_received INTEGER NOT NULL DEFAULT 0,
+                received_date TEXT, completion_status TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '');
+        """)
+    if "interviews" not in existing:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS interviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+                date TEXT NOT NULL DEFAULT '', interviewee TEXT NOT NULL DEFAULT '',
+                position TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '',
+                attendees TEXT NOT NULL DEFAULT '', topic TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT '진행중', memo TEXT NOT NULL DEFAULT '');
+        """)
+    if "interview_questions" not in existing:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS interview_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, interview_id INTEGER NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+                order_num INTEGER NOT NULL DEFAULT 0, question TEXT NOT NULL DEFAULT '',
+                answer TEXT NOT NULL DEFAULT '', answerer TEXT NOT NULL DEFAULT '',
+                needs_followup INTEGER NOT NULL DEFAULT 0, followup_note TEXT NOT NULL DEFAULT '');
+        """)
+
     # Seed only when fiscal_years is empty
     row = conn.execute("SELECT COUNT(*) c FROM fiscal_years").fetchone()
     if row["c"] == 0:
