@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 import { useState, useEffect, useCallback } from "react";
 import api from "../api";
+import { useSettings } from "../contexts/SettingsContext";
 
 const STORAGE_KEY = "auditlink_settings";
 
@@ -66,6 +67,7 @@ function InputField({ label, value, onChange, placeholder, type = "text" }) {
 // --- Main -------------------------------------------------------------------
 
 export default function Settings() {
+  const { updateSettings: updateGlobal } = useSettings();
   const [settings, setSettings] = useState(load);
   const [saved, setSaved] = useState(false);
   const [newFY, setNewFY] = useState("");
@@ -92,6 +94,21 @@ export default function Settings() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     try {
       await api.updateSettings(settings);
+      // Sync activeFY with fiscal_years table
+      try {
+        const fys = await api.getFiscalYears();
+        const target = fys.find((f) => f.name === settings.activeFY);
+        if (target && !target.is_active) {
+          await api.updateFiscalYear(target.id, { is_active: true });
+        }
+      } catch {}
+      // Push to global context so Sidebar/Header update immediately
+      updateGlobal({
+        activeFY: settings.activeFY,
+        userName: settings.userName,
+        userTitle: settings.userTitle,
+        userFirm: settings.userFirm,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {

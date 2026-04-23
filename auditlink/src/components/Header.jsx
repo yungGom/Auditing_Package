@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
+import { useSettings } from "../contexts/SettingsContext";
 
 // ---------------------------------------------------------------------------
 // Status badge map (for task results)
@@ -479,6 +480,7 @@ function NewEngagementModal({ open, onClose }) {
 
 export default function Header({ onMenuToggle }) {
   const navigate = useNavigate();
+  const { settings } = useSettings();
   const [modalOpen, setModalOpen] = useState(false);
 
   // Search state
@@ -670,8 +672,10 @@ export default function Header({ onMenuToggle }) {
             <span className="material-symbols-outlined text-[18px]">add</span>
             <span className="hidden sm:inline">새 감사업무</span>
           </button>
-          <div className="ml-1 sm:ml-2 w-8 h-8 rounded-full bg-primary-container flex items-center justify-center">
-            <span className="text-xs font-label font-bold text-white">감</span>
+          <div className="ml-1 sm:ml-2 w-8 h-8 rounded-full bg-primary-container flex items-center justify-center" title={settings.userName || "사용자"}>
+            <span className="text-xs font-label font-bold text-white">
+              {(settings.userName || "감")[0]}
+            </span>
           </div>
         </div>
       </header>

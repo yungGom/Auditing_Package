@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { useSettings } from "../contexts/SettingsContext";
 
 const NAV_ITEMS = [
   { to: "/", icon: "dashboard", label: "대시보드" },
@@ -9,9 +10,11 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar({ open, onClose }) {
+  const { settings } = useSettings();
+  const activeFY = settings.activeFY || "FY2025";
+
   return (
     <>
-      {/* Mobile overlay */}
       {open && (
         <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onClose} />
       )}
@@ -22,7 +25,6 @@ export default function Sidebar({ open, onClose }) {
           ${open ? "translate-x-0" : "-translate-x-full"}
           lg:translate-x-0 lg:z-30`}
       >
-        {/* Logo + FY */}
         <div className="px-5 py-6 border-b border-outline-variant">
           <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-primary text-[28px]" style={{ fontVariationSettings: '"FILL" 1, "wght" 500' }}>
@@ -33,7 +35,7 @@ export default function Sidebar({ open, onClose }) {
             </span>
           </div>
           <div className="mt-3 px-3 py-1.5 bg-primary-fixed rounded-xl text-xs font-label font-semibold text-primary inline-block">
-            FY 2025
+            {activeFY}
           </div>
         </div>
 
