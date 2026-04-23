@@ -426,6 +426,22 @@ def bulk_create_accounts(items: list[AccountCreate]):
     conn.close()
     return created
 
+class AccountReorder(BaseModel):
+    phase_id: int
+    ordered_ids: list[int]
+
+@app.patch("/api/accounts/reorder")
+def reorder_accounts(body: AccountReorder):
+    conn = _db()
+    for idx, acc_id in enumerate(body.ordered_ids):
+        conn.execute(
+            "UPDATE accounts SET sort_order=? WHERE id=? AND phase_id=?",
+            (idx, acc_id, body.phase_id),
+        )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Tasks

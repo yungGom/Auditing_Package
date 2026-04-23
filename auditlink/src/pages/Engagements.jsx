@@ -125,32 +125,47 @@ function ContextMenu({ x, y, items, onClose }) {
 // Tree
 // ---------------------------------------------------------------------------
 
-function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMenu }) {
+function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMenu, onAccountDragStart, onAccountDragOver, onAccountDrop, dragOverId }) {
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = expanded[node.id] !== false;
   const isSelected = selectedId === node.id;
   const isSelectable = node.type === "account" || node.type === "client";
+  const isAccount = node.type === "account";
+
+  const dragProps = isAccount ? {
+    draggable: true,
+    onDragStart: (e) => { e.dataTransfer.effectAllowed = "move"; onAccountDragStart?.(node); },
+    onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); onAccountDragOver?.(node); },
+    onDrop: (e) => { e.preventDefault(); e.stopPropagation(); onAccountDrop?.(node); },
+  } : {
+    onDragOver: (e) => { if (node.type === "phase") { e.preventDefault(); } },
+  };
 
   return (
     <div>
       <div
+        {...dragProps}
         className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-xl cursor-pointer text-sm font-label transition-all ${
           isSelected && isSelectable ? "bg-surface-container-lowest shadow-sm text-primary font-semibold" : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
-        }`}
+        } ${dragOverId === node.id && isAccount ? "border-t-2 border-primary" : ""}`}
         style={{ paddingLeft: `${(node.depth || 0) * 16 + 8}px` }}
         onClick={() => { if (hasChildren) onToggle(node.id); if (isSelectable) onSelect(node.id, node.type); }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, node); }}
       >
+        {isAccount && (
+          <span className="material-symbols-outlined text-[14px] text-outline opacity-0 group-hover:opacity-100 transition cursor-grab shrink-0">drag_indicator</span>
+        )}
         {hasChildren ? (
           <span className={`material-symbols-outlined text-[16px] text-outline transition-transform ${isExpanded ? "rotate-90" : ""}`}>chevron_right</span>
-        ) : <span className="w-4" />}
+        ) : !isAccount ? <span className="w-4" /> : null}
         <span className="material-symbols-outlined text-[16px]">{TYPE_ICONS[node.type]}</span>
         <span className="flex-1 truncate">{node.label}</span>
       </div>
       {hasChildren && isExpanded && (
         <div>
           {node.children.map((child) => (
-            <TreeNode key={child.id} node={{ ...child, depth: (node.depth || 0) + 1 }} selectedId={selectedId} onSelect={onSelect} expanded={expanded} onToggle={onToggle} onContextMenu={onContextMenu} />
+            <TreeNode key={child.id} node={{ ...child, depth: (node.depth || 0) + 1 }} selectedId={selectedId} onSelect={onSelect} expanded={expanded} onToggle={onToggle} onContextMenu={onContextMenu}
+              onAccountDragStart={onAccountDragStart} onAccountDragOver={onAccountDragOver} onAccountDrop={onAccountDrop} dragOverId={dragOverId} />
           ))}
         </div>
       )}
@@ -399,7 +414,9 @@ export default function Engagements() {
   const [treeOpen, setTreeOpen] = usePersistedState("eng:treeOpen", true);
   const [activeTab, setActiveTab] = usePersistedState("eng:activeTab", "main");
   const taskScrollRef = usePersistedScroll("eng:taskScroll");
-  const [bulkModal, setBulkModal] = useState(null); // null | { mode: "account"|"task", phaseNode? }
+  const [bulkModal, setBulkModal] = useState(null);
+  const [dragAccount, setDragAccount] = useState(null); // node being dragged
+  const [dragOverId, setDragOverId] = useState(null); // node id being hovered
 
   // Helper: expand all ancestors of a node in the tree
   function expandPathTo(nodeId, treeData) {
@@ -516,6 +533,76 @@ export default function Engagements() {
   const ownerClient = selectedId ? findClientForNode(tree, selectedId, null) : null;
   const ownerClientNodeId = ownerClient ? ownerClient.id : selectedId;
   const clientAccounts = ownerClient?.children ? collectAccounts(ownerClient.children) : [];
+
+  // ── Account drag-reorder within same Phase ──
+
+  const findParentPhase = (accountId) => {
+    for (const fy of tree) {
+      for (const cl of (fy.children || [])) {
+        for (const ph of (cl.children || [])) {
+          if ((ph.children || []).some((a) => a.id === accountId)) return ph;
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleAccountDragStart = (node) => setDragAccount(node);
+  const handleAccountDragOver = (node) => {
+    if (!dragAccount || dragAccount.id === node.id || node.type !== "account") return;
+    const srcPhase = findParentPhase(dragAccount.id);
+    const dstPhase = findParentPhase(node.id);
+    if (!srcPhase || !dstPhase || srcPhase.id !== dstPhase.id) return;
+    setDragOverId(node.id);
+  };
+  const handleAccountDrop = (targetNode) => {
+    if (!dragAccount || dragAccount.id === targetNode.id || targetNode.type !== "account") { setDragAccount(null); setDragOverId(null); return; }
+    const phase = findParentPhase(dragAccount.id);
+    const targetPhase = findParentPhase(targetNode.id);
+    if (!phase || !targetPhase || phase.id !== targetPhase.id) { setDragAccount(null); setDragOverId(null); return; }
+
+    // Reorder children in tree state
+    updateTree((nodes) => {
+      const walk = (list) => list.map((n) => {
+        if (n.id === phase.id && n.children) {
+          const children = [...n.children];
+          const fromIdx = children.findIndex((c) => c.id === dragAccount.id);
+          const toIdx = children.findIndex((c) => c.id === targetNode.id);
+          if (fromIdx >= 0 && toIdx >= 0) {
+            const [moved] = children.splice(fromIdx, 1);
+            children.splice(toIdx, 0, moved);
+          }
+          return { ...n, children };
+        }
+        if (n.children) return { ...n, children: walk(n.children) };
+        return n;
+      });
+      return walk(nodes);
+    });
+
+    // Persist to backend
+    if (useApi && phase.dbId) {
+      const phaseInTree = findParentPhase(targetNode.id);
+      if (phaseInTree) {
+        // We need to get the updated order after the state update above runs
+        // Use the reordered list we just built
+        const srcChildren = [...(phase.children || [])];
+        const fromIdx = srcChildren.findIndex((c) => c.id === dragAccount.id);
+        const toIdx = srcChildren.findIndex((c) => c.id === targetNode.id);
+        if (fromIdx >= 0 && toIdx >= 0) {
+          const [moved] = srcChildren.splice(fromIdx, 1);
+          srcChildren.splice(toIdx, 0, moved);
+        }
+        const orderedIds = srcChildren.map((c) => c.dbId).filter(Boolean);
+        if (orderedIds.length) {
+          api.reorderAccounts(phase.dbId, orderedIds).catch(() => {});
+        }
+      }
+    }
+
+    setDragAccount(null);
+    setDragOverId(null);
+  };
 
   // Load tasks when an account is selected
   useEffect(() => {
@@ -889,9 +976,12 @@ export default function Engagements() {
                 </button>
               </div>
             </div>
+            <div onDragEnd={() => { setDragAccount(null); setDragOverId(null); }}>
             {tree.map((node) => (
-              <TreeNode key={node.id} node={{ ...node, depth: 0 }} selectedId={selectedId} onSelect={handleTreeSelect} expanded={expanded} onToggle={onToggle} onContextMenu={buildTreeContextMenu} />
+              <TreeNode key={node.id} node={{ ...node, depth: 0 }} selectedId={selectedId} onSelect={handleTreeSelect} expanded={expanded} onToggle={onToggle} onContextMenu={buildTreeContextMenu}
+                onAccountDragStart={handleAccountDragStart} onAccountDragOver={handleAccountDragOver} onAccountDrop={handleAccountDrop} dragOverId={dragOverId} />
             ))}
+            </div>
           </>
         ) : (
           <button onClick={() => setTreeOpen(true)}

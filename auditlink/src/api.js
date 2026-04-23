@@ -37,6 +37,7 @@ const api = {
   getAccounts: (phaseId) => request(`/api/accounts${phaseId ? `?phase_id=${phaseId}` : ""}`),
   createAccount: (data) => request("/api/accounts", { method: "POST", body: JSON.stringify(data) }),
   bulkCreateAccounts: (items) => request("/api/accounts/bulk", { method: "POST", body: JSON.stringify(items) }),
+  reorderAccounts: (phaseId, orderedIds) => request("/api/accounts/reorder", { method: "PATCH", body: JSON.stringify({ phase_id: phaseId, ordered_ids: orderedIds }) }),
   deleteAccount: (id) => request(`/api/accounts/${id}`, { method: "DELETE" }),
 
   // Tasks

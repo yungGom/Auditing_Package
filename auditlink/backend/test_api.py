@@ -217,6 +217,21 @@ class TestAccounts:
         assert len(data) == 4
         assert data[0]["name"] == "일괄계정0"
 
+    def test_reorder(self, seed):
+        pid = seed["phase"]["id"]
+        # Create 3 accounts
+        ids = []
+        for i in range(3):
+            r = client.post("/api/accounts", json={"phase_id": pid, "name": f"순서{i}", "sort_order": i})
+            ids.append(r.json()["id"])
+        # Reverse order
+        r = client.patch("/api/accounts/reorder", json={"phase_id": pid, "ordered_ids": list(reversed(ids))})
+        assert r.status_code == 200
+        # Verify order
+        accs = client.get(f"/api/accounts?phase_id={pid}").json()
+        reordered = [a for a in accs if a["id"] in ids]
+        assert reordered[0]["id"] == ids[2]  # was last, now first
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 5. Tasks CRUD + Status History
