@@ -33,9 +33,16 @@ const api = {
   createPhase: (data) => request("/api/phases", { method: "POST", body: JSON.stringify(data) }),
   deletePhase: (id) => request(`/api/phases/${id}`, { method: "DELETE" }),
 
+  // Account Groups
+  getAccountGroups: (phaseId) => request(`/api/account-groups${phaseId ? `?phase_id=${phaseId}` : ""}`),
+  createAccountGroup: (data) => request("/api/account-groups", { method: "POST", body: JSON.stringify(data) }),
+  updateAccountGroup: (id, data) => request(`/api/account-groups/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteAccountGroup: (id) => request(`/api/account-groups/${id}`, { method: "DELETE" }),
+
   // Accounts
   getAccounts: (phaseId) => request(`/api/accounts${phaseId ? `?phase_id=${phaseId}` : ""}`),
   createAccount: (data) => request("/api/accounts", { method: "POST", body: JSON.stringify(data) }),
+  updateAccount: (id, data) => request(`/api/accounts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   bulkCreateAccounts: (items) => request("/api/accounts/bulk", { method: "POST", body: JSON.stringify(items) }),
   reorderAccounts: (phaseId, orderedIds) => request("/api/accounts/reorder", { method: "PATCH", body: JSON.stringify({ phase_id: phaseId, ordered_ids: orderedIds }) }),
   deleteAccount: (id) => request(`/api/accounts/${id}`, { method: "DELETE" }),

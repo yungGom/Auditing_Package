@@ -27,7 +27,7 @@ const PRIORITY_MAP = {
 
 const STATUS_ORDER = ["todo", "in_progress", "review", "done"];
 
-const TYPE_ICONS = { fy: "calendar_today", client: "business", phase: "folder", account: "account_balance" };
+const TYPE_ICONS = { fy: "calendar_today", client: "business", phase: "folder", group: "folder_open", account: "account_balance" };
 
 // ---------------------------------------------------------------------------
 // Fallback Mock Data
@@ -130,6 +130,7 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
   const isExpanded = expanded[node.id] !== false;
   const isSelected = selectedId === node.id;
   const isSelectable = node.type === "account" || node.type === "client";
+  const isGroup = node.type === "group";
   const isAccount = node.type === "account";
 
   const dragProps = isAccount ? {
@@ -149,7 +150,7 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
           isSelected && isSelectable ? "bg-surface-container-lowest shadow-sm text-primary font-semibold" : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
         } ${dragOverId === node.id && isAccount ? "border-t-2 border-primary" : ""}`}
         style={{ paddingLeft: `${(node.depth || 0) * 16 + 8}px` }}
-        onClick={() => { if (hasChildren) onToggle(node.id); if (isSelectable) onSelect(node.id, node.type); }}
+        onClick={() => { if (hasChildren || isGroup) onToggle(node.id); if (isSelectable) onSelect(node.id, node.type); }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, node); }}
       >
         {isAccount && (
@@ -440,6 +441,12 @@ export default function Engagements() {
         setTree(apiTree);
         setUseApi(true);
 
+        // Auto-expand active FY
+        const activeFY = apiTree.find((fy) => fy.isActive);
+        if (activeFY) {
+          setExpanded((prev) => ({ ...prev, [activeFY.id]: true }));
+        }
+
         // Handle URL params for search navigation
         const selectNode = searchParams.get("select");
         const highlightId = searchParams.get("highlight");
@@ -719,6 +726,68 @@ export default function Engagements() {
     removeNode(node.id); setSelectedId(null); setSelectedType("account");
   };
 
+  // ── Group CRUD ──
+
+  const doAddGroup = (phaseNode) => {
+    const name = prompt("새 업무그룹 이름 (예: 자산, 부채, 손익):"); if (!name) return;
+    if (useApi && phaseNode.dbId) {
+      api.createAccountGroup({ phase_id: phaseNode.dbId, name, sort_order: (phaseNode.children?.length || 0) })
+        .then((c) => { addChildToNode(phaseNode.id, { id: `group-${c.id}`, label: name, type: "group", dbId: c.id, children: [] }); });
+    } else {
+      addChildToNode(phaseNode.id, { id: `group-${nextId++}`, label: name, type: "group", children: [] });
+    }
+  };
+
+  const doRenameGroup = async (node) => {
+    const name = prompt("업무그룹 이름 변경:", node.label); if (!name || name === node.label) return;
+    renameNode(node.id, name);
+    if (useApi && node.dbId) {
+      try { await api.updateAccountGroup(node.dbId, { name }); }
+      catch { renameNode(node.id, node.label); alert("이름 변경에 실패했습니다."); }
+    }
+  };
+
+  const doDeleteGroup = async (node) => {
+    if (!confirm(`"${node.label}" 업무그룹을 삭제하시겠습니까?\n그룹 내 계정과목은 Phase 바로 아래로 이동됩니다.`)) return;
+    if (useApi && node.dbId) {
+      try { await api.deleteAccountGroup(node.dbId); }
+      catch { alert("삭제에 실패했습니다."); return; }
+    }
+    // Move children out of the group to the parent phase before removing
+    const parentPhase = findParentPhase(node.children?.[0]?.id) || findNodeById(tree, node.id);
+    // Actually we just remove the group node — accounts with group_id will have it set to null by ON DELETE SET NULL
+    removeNode(node.id);
+  };
+
+  const doAddAccountToGroup = (groupNode) => {
+    const name = prompt("새 계정과목 이름:"); if (!name) return;
+    // Find the phase that owns this group
+    let phaseDbId = null;
+    for (const fy of tree) {
+      for (const cl of (fy.children || [])) {
+        for (const ph of (cl.children || [])) {
+          if ((ph.children || []).some((c) => c.id === groupNode.id)) { phaseDbId = ph.dbId; break; }
+        }
+      }
+    }
+    if (useApi && phaseDbId && groupNode.dbId) {
+      api.createAccount({ phase_id: phaseDbId, name, sort_order: (groupNode.children?.length || 0) })
+        .then((c) => {
+          // Set group_id on the new account
+          api.updateAccount(c.id, { group_id: groupNode.dbId }).catch(() => {});
+          const newId = `account-${c.id}`;
+          addChildToNode(groupNode.id, { id: newId, label: name, type: "account", dbId: c.id });
+          setTasks((p) => ({ ...p, [newId]: [] }));
+          setSelectedId(newId); setSelectedType("account");
+        });
+    } else {
+      const newId = `account-${nextId++}`;
+      addChildToNode(groupNode.id, { id: newId, label: name, type: "account" });
+      setTasks((p) => ({ ...p, [newId]: [] }));
+      setSelectedId(newId); setSelectedType("account");
+    }
+  };
+
   const doAddAccount = (phaseNode) => {
     const name = prompt("새 계정과목 이름:"); if (!name) return;
     if (useApi && phaseNode.dbId) {
@@ -922,10 +991,17 @@ export default function Engagements() {
         items.push({ icon: "delete", label: "클라이언트 삭제", danger: true, action: () => doDeleteClient(node) });
         break;
       case "phase":
+        items.push({ icon: "create_new_folder", label: "업무그룹 추가", action: () => doAddGroup(node) });
         items.push({ icon: "add", label: "계정과목 추가", action: () => doAddAccount(node) });
         items.push({ icon: "playlist_add", label: "계정과목 일괄 추가", action: () => setBulkModal({ mode: "account", phaseNode: node }) });
         items.push({ divider: true });
         items.push({ icon: "delete", label: "Phase 삭제", danger: true, action: () => doDeletePhase(node) });
+        break;
+      case "group":
+        items.push({ icon: "add", label: "계정과목 추가", action: () => doAddAccountToGroup(node) });
+        items.push({ icon: "edit", label: "이름 변경", action: () => doRenameGroup(node) });
+        items.push({ divider: true });
+        items.push({ icon: "delete", label: "업무그룹 삭제", danger: true, action: () => doDeleteGroup(node) });
         break;
       case "account":
         items.push({ icon: "add_task", label: "할일 추가", action: () => { setSelectedId(node.id); setSelectedType("account"); setTimeout(() => doAddTask(node.id), 100); } });

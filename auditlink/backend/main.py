@@ -365,6 +365,7 @@ class AccountCreate(BaseModel):
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
     sort_order: Optional[int] = None
+    group_id: Optional[int] = None
 
 @app.get("/api/accounts")
 def list_accounts(phase_id: Optional[int] = None):
@@ -389,10 +390,10 @@ def create_account(body: AccountCreate):
 def update_account(account_id: int, body: AccountUpdate):
     conn = _db()
     sets, vals = [], []
-    if body.name is not None:
-        sets.append("name=?"); vals.append(body.name)
-    if body.sort_order is not None:
-        sets.append("sort_order=?"); vals.append(body.sort_order)
+    for field in ["name", "sort_order", "group_id"]:
+        v = getattr(body, field)
+        if v is not None:
+            sets.append(f"{field}=?"); vals.append(v)
     if sets:
         vals.append(account_id)
         conn.execute(f"UPDATE accounts SET {','.join(sets)} WHERE id=?", vals)
@@ -440,6 +441,60 @@ def reorder_accounts(body: AccountReorder):
         )
     conn.commit()
     conn.close()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Account Groups
+# ═══════════════════════════════════════════════════════════════════════════
+
+class GroupCreate(BaseModel):
+    phase_id: int
+    name: str
+    sort_order: int = 0
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = None
+    sort_order: Optional[int] = None
+
+@app.get("/api/account-groups")
+def list_account_groups(phase_id: Optional[int] = None):
+    conn = _db()
+    if phase_id:
+        rows = conn.execute("SELECT * FROM account_groups WHERE phase_id=? ORDER BY sort_order", (phase_id,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM account_groups ORDER BY sort_order").fetchall()
+    conn.close()
+    return rows_to_list(rows)
+
+@app.post("/api/account-groups", status_code=201)
+def create_account_group(body: GroupCreate):
+    conn = _db()
+    conn.execute("INSERT INTO account_groups (phase_id, name, sort_order) VALUES (?,?,?)", (body.phase_id, body.name, body.sort_order))
+    rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit(); conn.close()
+    return {"id": rid, **body.model_dump()}
+
+@app.put("/api/account-groups/{group_id}")
+def update_account_group(group_id: int, body: GroupUpdate):
+    conn = _db()
+    sets, vals = [], []
+    if body.name is not None: sets.append("name=?"); vals.append(body.name)
+    if body.sort_order is not None: sets.append("sort_order=?"); vals.append(body.sort_order)
+    if sets:
+        vals.append(group_id)
+        conn.execute(f"UPDATE account_groups SET {','.join(sets)} WHERE id=?", vals)
+        conn.commit()
+    row = conn.execute("SELECT * FROM account_groups WHERE id=?", (group_id,)).fetchone()
+    conn.close()
+    if not row: raise HTTPException(404)
+    return row_to_dict(row)
+
+@app.delete("/api/account-groups/{group_id}")
+def delete_account_group(group_id: int):
+    conn = _db()
+    conn.execute("DELETE FROM account_groups WHERE id=?", (group_id,))
+    conn.commit(); conn.close()
     return {"ok": True}
 
 
@@ -1415,12 +1470,14 @@ def dashboard():
 
 @app.get("/api/engagement-tree")
 def engagement_tree():
-    """Return the full FY → Client → Phase → Account tree."""
+    """Return FY → Client → Phase → Group? → Account tree.
+    All FYs included; active FY marked with isActive=true."""
     conn = _db()
     fys = rows_to_list(conn.execute("SELECT * FROM fiscal_years ORDER BY id").fetchall())
     tree = []
     for fy in fys:
-        fy_node = {"id": f"fy-{fy['id']}", "label": fy["name"], "type": "fy", "dbId": fy["id"], "children": []}
+        fy_node = {"id": f"fy-{fy['id']}", "label": fy["name"], "type": "fy", "dbId": fy["id"],
+                   "isActive": bool(fy["is_active"]), "children": []}
         clients_rows = conn.execute("SELECT * FROM clients WHERE fy_id=? ORDER BY id", (fy["id"],)).fetchall()
         for c in clients_rows:
             c = dict(c)
@@ -1429,10 +1486,27 @@ def engagement_tree():
             for p in phases_rows:
                 p = dict(p)
                 p_node = {"id": f"phase-{p['id']}", "label": p["name"], "type": "phase", "dbId": p["id"], "children": []}
+
+                # Load groups for this phase
+                groups = conn.execute("SELECT * FROM account_groups WHERE phase_id=? ORDER BY sort_order", (p["id"],)).fetchall()
+                group_map = {}
+                for g in groups:
+                    g = dict(g)
+                    g_node = {"id": f"group-{g['id']}", "label": g["name"], "type": "group", "dbId": g["id"], "children": []}
+                    group_map[g["id"]] = g_node
+                    p_node["children"].append(g_node)
+
+                # Load accounts — attach to group if group_id set, otherwise to phase directly
                 accs = conn.execute("SELECT * FROM accounts WHERE phase_id=? ORDER BY sort_order", (p["id"],)).fetchall()
                 for a in accs:
                     a = dict(a)
-                    p_node["children"].append({"id": f"account-{a['id']}", "label": a["name"], "type": "account", "dbId": a["id"]})
+                    a_node = {"id": f"account-{a['id']}", "label": a["name"], "type": "account", "dbId": a["id"]}
+                    gid = a.get("group_id")
+                    if gid and gid in group_map:
+                        group_map[gid]["children"].append(a_node)
+                    else:
+                        p_node["children"].append(a_node)
+
                 c_node["children"].append(p_node)
             fy_node["children"].append(c_node)
         tree.append(fy_node)

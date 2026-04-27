@@ -30,9 +30,17 @@ CREATE TABLE IF NOT EXISTS phases (
     sort_order  INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS account_groups (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    phase_id    INTEGER NOT NULL REFERENCES phases(id) ON DELETE CASCADE,
+    name        TEXT    NOT NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     phase_id    INTEGER NOT NULL REFERENCES phases(id) ON DELETE CASCADE,
+    group_id    INTEGER REFERENCES account_groups(id) ON DELETE SET NULL,
     name        TEXT    NOT NULL,
     sort_order  INTEGER NOT NULL DEFAULT 0
 );
@@ -167,6 +175,19 @@ def init_db():
         conn.execute("ALTER TABLE tasks ADD COLUMN file_path TEXT NOT NULL DEFAULT ''")
     if "updated_at" not in cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN updated_at TEXT")
+
+    # account_groups table (must be created before group_id FK)
+    if "account_groups" not in existing:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS account_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, phase_id INTEGER NOT NULL REFERENCES phases(id) ON DELETE CASCADE,
+                name TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0)
+        """)
+
+    # accounts: add group_id column
+    acc_cols = {r[1] for r in conn.execute("PRAGMA table_info(accounts)").fetchall()}
+    if "group_id" not in acc_cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN group_id INTEGER REFERENCES account_groups(id) ON DELETE SET NULL")
 
     # Ensure newer tables exist (for DBs created before these were added)
     if "task_history" not in existing:

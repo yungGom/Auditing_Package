@@ -234,6 +234,68 @@ class TestAccounts:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 4b. Account Groups CRUD
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestAccountGroups:
+    def test_create_and_list(self, seed):
+        r = client.post("/api/account-groups", json={
+            "phase_id": seed["phase"]["id"], "name": "자산", "sort_order": 0
+        })
+        assert r.status_code == 201
+        gid = r.json()["id"]
+
+        r2 = client.get(f"/api/account-groups?phase_id={seed['phase']['id']}")
+        assert r2.status_code == 200
+        assert any(g["id"] == gid for g in r2.json())
+
+    def test_update(self, seed):
+        created = client.post("/api/account-groups", json={
+            "phase_id": seed["phase"]["id"], "name": "수정전"
+        }).json()
+        r = client.put(f"/api/account-groups/{created['id']}", json={"name": "부채"})
+        assert r.status_code == 200
+        assert r.json()["name"] == "부채"
+
+    def test_delete(self, seed):
+        created = client.post("/api/account-groups", json={
+            "phase_id": seed["phase"]["id"], "name": "삭제용"
+        }).json()
+        r = client.delete(f"/api/account-groups/{created['id']}")
+        assert r.status_code == 200
+
+    def test_accounts_in_group_show_in_tree(self, seed):
+        # Create group
+        grp = client.post("/api/account-groups", json={
+            "phase_id": seed["phase"]["id"], "name": "손익"
+        }).json()
+        # Create account with group_id
+        acc = client.post("/api/accounts", json={
+            "phase_id": seed["phase"]["id"], "name": "매출"
+        }).json()
+        client.put(f"/api/accounts/{acc['id']}", json={"group_id": grp["id"]})
+
+        # Check tree has group with account inside
+        tree = client.get("/api/engagement-tree").json()
+        found = False
+        for fy in tree:
+            for cl in fy.get("children", []):
+                for ph in cl.get("children", []):
+                    for child in ph.get("children", []):
+                        if child["type"] == "group" and child["dbId"] == grp["id"]:
+                            acc_ids = [a["dbId"] for a in child.get("children", [])]
+                            if acc["id"] in acc_ids:
+                                found = True
+        assert found, "Account should appear inside its group in the tree"
+
+    def test_tree_has_active_fy_flag(self):
+        tree = client.get("/api/engagement-tree").json()
+        assert len(tree) >= 1
+        active_count = sum(1 for fy in tree if fy.get("isActive"))
+        assert active_count >= 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 5. Tasks CRUD + Status History
 # ═══════════════════════════════════════════════════════════════════════════
 
