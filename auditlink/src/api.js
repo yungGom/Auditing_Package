@@ -38,6 +38,8 @@ const api = {
   createAccountGroup: (data) => request("/api/account-groups", { method: "POST", body: JSON.stringify(data) }),
   updateAccountGroup: (id, data) => request(`/api/account-groups/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteAccountGroup: (id) => request(`/api/account-groups/${id}`, { method: "DELETE" }),
+  reorderAccountGroups: (phaseId, orderedIds) => request("/api/account-groups/reorder", { method: "PATCH", body: JSON.stringify({ phase_id: phaseId, ordered_ids: orderedIds }) }),
+  moveAccountToGroup: (accountId, groupId) => request(`/api/accounts/${accountId}/move-to-group${groupId !== null ? `?group_id=${groupId}` : ""}`, { method: "PATCH" }),
 
   // Accounts
   getAccounts: (phaseId) => request(`/api/accounts${phaseId ? `?phase_id=${phaseId}` : ""}`),

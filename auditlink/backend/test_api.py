@@ -294,6 +294,45 @@ class TestAccountGroups:
         active_count = sum(1 for fy in tree if fy.get("isActive"))
         assert active_count >= 1
 
+    def test_reorder_groups(self, seed):
+        pid = seed["phase"]["id"]
+        g1 = client.post("/api/account-groups", json={"phase_id": pid, "name": "A", "sort_order": 0}).json()
+        g2 = client.post("/api/account-groups", json={"phase_id": pid, "name": "B", "sort_order": 1}).json()
+        # Reverse
+        r = client.patch("/api/account-groups/reorder", json={"phase_id": pid, "ordered_ids": [g2["id"], g1["id"]]})
+        assert r.status_code == 200
+        groups = client.get(f"/api/account-groups?phase_id={pid}").json()
+        ordered = [g for g in groups if g["id"] in [g1["id"], g2["id"]]]
+        assert ordered[0]["id"] == g2["id"]
+
+    def test_move_account_to_group(self, seed):
+        pid = seed["phase"]["id"]
+        grp = client.post("/api/account-groups", json={"phase_id": pid, "name": "이동테스트"}).json()
+        acc = client.post("/api/accounts", json={"phase_id": pid, "name": "이동계정"}).json()
+        # Move into group
+        r = client.patch(f"/api/accounts/{acc['id']}/move-to-group?group_id={grp['id']}")
+        assert r.status_code == 200
+        # Verify
+        tree = client.get("/api/engagement-tree").json()
+        found = False
+        for fy in tree:
+            for cl in fy.get("children", []):
+                for ph in cl.get("children", []):
+                    for child in ph.get("children", []):
+                        if child.get("type") == "group" and child.get("dbId") == grp["id"]:
+                            if any(a["dbId"] == acc["id"] for a in child.get("children", [])):
+                                found = True
+        assert found
+
+    def test_move_account_out_of_group(self, seed):
+        pid = seed["phase"]["id"]
+        grp = client.post("/api/account-groups", json={"phase_id": pid, "name": "해제테스트"}).json()
+        acc = client.post("/api/accounts", json={"phase_id": pid, "name": "해제계정"}).json()
+        client.patch(f"/api/accounts/{acc['id']}/move-to-group?group_id={grp['id']}")
+        # Move out (no group)
+        r = client.patch(f"/api/accounts/{acc['id']}/move-to-group")
+        assert r.status_code == 200
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 5. Tasks CRUD + Status History

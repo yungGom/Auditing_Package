@@ -497,6 +497,26 @@ def delete_account_group(group_id: int):
     conn.commit(); conn.close()
     return {"ok": True}
 
+class GroupReorder(BaseModel):
+    phase_id: int
+    ordered_ids: list[int]
+
+@app.patch("/api/account-groups/reorder")
+def reorder_account_groups(body: GroupReorder):
+    conn = _db()
+    for idx, gid in enumerate(body.ordered_ids):
+        conn.execute("UPDATE account_groups SET sort_order=? WHERE id=? AND phase_id=?", (idx, gid, body.phase_id))
+    conn.commit(); conn.close()
+    return {"ok": True}
+
+@app.patch("/api/accounts/{account_id}/move-to-group")
+def move_account_to_group(account_id: int, group_id: Optional[int] = None):
+    """Move an account into a group (or out of a group if group_id is null)."""
+    conn = _db()
+    conn.execute("UPDATE accounts SET group_id=? WHERE id=?", (group_id, account_id))
+    conn.commit(); conn.close()
+    return {"ok": True}
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Tasks

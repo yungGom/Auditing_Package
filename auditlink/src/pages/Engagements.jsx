@@ -133,14 +133,18 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
   const isGroup = node.type === "group";
   const isAccount = node.type === "account";
 
-  const dragProps = isAccount ? {
+  const isDraggable = isAccount || isGroup;
+  const dragProps = isDraggable ? {
     draggable: true,
-    onDragStart: (e) => { e.dataTransfer.effectAllowed = "move"; onAccountDragStart?.(node); },
+    onDragStart: (e) => { e.dataTransfer.effectAllowed = "move"; e.stopPropagation(); onAccountDragStart?.(node); },
     onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); onAccountDragOver?.(node); },
     onDrop: (e) => { e.preventDefault(); e.stopPropagation(); onAccountDrop?.(node); },
   } : {
-    onDragOver: (e) => { if (node.type === "phase") { e.preventDefault(); } },
+    onDragOver: (e) => { if (node.type === "phase" || node.type === "group") { e.preventDefault(); } },
+    onDrop: (e) => { if (node.type === "group") { e.preventDefault(); e.stopPropagation(); onAccountDrop?.(node); } },
   };
+
+  const showDropHint = dragOverId === node.id && (isAccount || isGroup);
 
   return (
     <div>
@@ -148,12 +152,12 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
         {...dragProps}
         className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-xl cursor-pointer text-sm font-label transition-all ${
           isSelected && isSelectable ? "bg-surface-container-lowest shadow-sm text-primary font-semibold" : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
-        } ${dragOverId === node.id && isAccount ? "border-t-2 border-primary" : ""}`}
+        } ${showDropHint ? (isGroup ? "ring-2 ring-primary bg-primary/5" : "border-t-2 border-primary") : ""}`}
         style={{ paddingLeft: `${(node.depth || 0) * 16 + 8}px` }}
         onClick={() => { if (hasChildren || isGroup) onToggle(node.id); if (isSelectable) onSelect(node.id, node.type); }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, node); }}
       >
-        {isAccount && (
+        {isDraggable && (
           <span className="material-symbols-outlined text-[14px] text-outline opacity-0 group-hover:opacity-100 transition cursor-grab shrink-0">drag_indicator</span>
         )}
         {hasChildren ? (
@@ -555,54 +559,134 @@ export default function Engagements() {
   };
 
   const handleAccountDragStart = (node) => setDragAccount(node);
+
   const handleAccountDragOver = (node) => {
-    if (!dragAccount || dragAccount.id === node.id || node.type !== "account") return;
-    const srcPhase = findParentPhase(dragAccount.id);
-    const dstPhase = findParentPhase(node.id);
-    if (!srcPhase || !dstPhase || srcPhase.id !== dstPhase.id) return;
-    setDragOverId(node.id);
+    if (!dragAccount || dragAccount.id === node.id) return;
+    // Allow: account→account (reorder), account→group (move into), group→group (reorder)
+    const dragIsAccount = dragAccount.type === "account";
+    const dragIsGroup = dragAccount.type === "group";
+    if (node.type === "account" || node.type === "group") {
+      setDragOverId(node.id);
+    }
   };
+
+  // Helper: find parent container (phase or group) of a node
+  const findParentContainer = (nodeId) => {
+    function walk(nodes, parent) {
+      for (const n of nodes) {
+        if (n.id === nodeId) return parent;
+        if (n.children) { const found = walk(n.children, n); if (found) return found; }
+      }
+      return null;
+    }
+    return walk(tree, null);
+  };
+
   const handleAccountDrop = (targetNode) => {
-    if (!dragAccount || dragAccount.id === targetNode.id || targetNode.type !== "account") { setDragAccount(null); setDragOverId(null); return; }
-    const phase = findParentPhase(dragAccount.id);
-    const targetPhase = findParentPhase(targetNode.id);
-    if (!phase || !targetPhase || phase.id !== targetPhase.id) { setDragAccount(null); setDragOverId(null); return; }
+    if (!dragAccount || dragAccount.id === targetNode.id) { setDragAccount(null); setDragOverId(null); return; }
 
-    // Reorder children in tree state
-    updateTree((nodes) => {
-      const walk = (list) => list.map((n) => {
-        if (n.id === phase.id && n.children) {
-          const children = [...n.children];
-          const fromIdx = children.findIndex((c) => c.id === dragAccount.id);
-          const toIdx = children.findIndex((c) => c.id === targetNode.id);
-          if (fromIdx >= 0 && toIdx >= 0) {
-            const [moved] = children.splice(fromIdx, 1);
-            children.splice(toIdx, 0, moved);
+    const dragIsAccount = dragAccount.type === "account";
+    const dragIsGroup = dragAccount.type === "group";
+
+    // Case 1: Account dropped ON a group → move into that group
+    if (dragIsAccount && targetNode.type === "group") {
+      // Remove from current parent, add to target group
+      updateTree((nodes) => {
+        const walk = (list) => list.map((n) => {
+          if (n.children) {
+            let children = n.children.filter((c) => c.id !== dragAccount.id);
+            if (n.id === targetNode.id) children = [...children, dragAccount];
+            return { ...n, children: walk(children) };
           }
-          return { ...n, children };
-        }
-        if (n.children) return { ...n, children: walk(n.children) };
-        return n;
+          return n;
+        });
+        return walk(nodes);
       });
-      return walk(nodes);
-    });
+      if (useApi && dragAccount.dbId && targetNode.dbId) {
+        api.moveAccountToGroup(dragAccount.dbId, targetNode.dbId).catch(() => {});
+      }
+      setDragAccount(null); setDragOverId(null); return;
+    }
 
-    // Persist to backend
-    if (useApi && phase.dbId) {
-      const phaseInTree = findParentPhase(targetNode.id);
-      if (phaseInTree) {
-        // We need to get the updated order after the state update above runs
-        // Use the reordered list we just built
-        const srcChildren = [...(phase.children || [])];
-        const fromIdx = srcChildren.findIndex((c) => c.id === dragAccount.id);
-        const toIdx = srcChildren.findIndex((c) => c.id === targetNode.id);
-        if (fromIdx >= 0 && toIdx >= 0) {
-          const [moved] = srcChildren.splice(fromIdx, 1);
-          srcChildren.splice(toIdx, 0, moved);
+    // Case 2: Account reorder within same container (phase or group)
+    if (dragIsAccount && targetNode.type === "account") {
+      const srcContainer = findParentContainer(dragAccount.id);
+      const dstContainer = findParentContainer(targetNode.id);
+
+      if (srcContainer && dstContainer && srcContainer.id === dstContainer.id) {
+        // Same container → reorder
+        updateTree((nodes) => {
+          const walk = (list) => list.map((n) => {
+            if (n.id === srcContainer.id && n.children) {
+              const children = [...n.children];
+              const fromIdx = children.findIndex((c) => c.id === dragAccount.id);
+              const toIdx = children.findIndex((c) => c.id === targetNode.id);
+              if (fromIdx >= 0 && toIdx >= 0) { const [m] = children.splice(fromIdx, 1); children.splice(toIdx, 0, m); }
+              return { ...n, children };
+            }
+            if (n.children) return { ...n, children: walk(n.children) };
+            return n;
+          });
+          return walk(nodes);
+        });
+        // Persist account order
+        if (useApi && srcContainer.type === "phase" && srcContainer.dbId) {
+          const ordered = [...(srcContainer.children || [])].filter((c) => c.type === "account");
+          const fromIdx = ordered.findIndex((c) => c.id === dragAccount.id);
+          const toIdx = ordered.findIndex((c) => c.id === targetNode.id);
+          if (fromIdx >= 0 && toIdx >= 0) { const [m] = ordered.splice(fromIdx, 1); ordered.splice(toIdx, 0, m); }
+          api.reorderAccounts(srcContainer.dbId, ordered.map((c) => c.dbId).filter(Boolean)).catch(() => {});
         }
-        const orderedIds = srcChildren.map((c) => c.dbId).filter(Boolean);
-        if (orderedIds.length) {
-          api.reorderAccounts(phase.dbId, orderedIds).catch(() => {});
+      } else if (srcContainer && dstContainer && srcContainer.id !== dstContainer.id) {
+        // Different container → move account to target's container
+        const targetGroup = dstContainer.type === "group" ? dstContainer : null;
+        updateTree((nodes) => {
+          const walk = (list) => list.map((n) => {
+            let children = n.children ? [...n.children] : undefined;
+            if (children) {
+              children = children.filter((c) => c.id !== dragAccount.id);
+              if (n.id === dstContainer.id) {
+                const toIdx = children.findIndex((c) => c.id === targetNode.id);
+                children.splice(toIdx >= 0 ? toIdx : children.length, 0, dragAccount);
+              }
+              return { ...n, children: walk(children) };
+            }
+            return n;
+          });
+          return walk(nodes);
+        });
+        if (useApi && dragAccount.dbId) {
+          api.moveAccountToGroup(dragAccount.dbId, targetGroup?.dbId || null).catch(() => {});
+        }
+      }
+      setDragAccount(null); setDragOverId(null); return;
+    }
+
+    // Case 3: Group reorder within same phase
+    if (dragIsGroup && targetNode.type === "group") {
+      const srcPhase = findParentContainer(dragAccount.id);
+      const dstPhase = findParentContainer(targetNode.id);
+      if (srcPhase && dstPhase && srcPhase.id === dstPhase.id) {
+        updateTree((nodes) => {
+          const walk = (list) => list.map((n) => {
+            if (n.id === srcPhase.id && n.children) {
+              const children = [...n.children];
+              const fromIdx = children.findIndex((c) => c.id === dragAccount.id);
+              const toIdx = children.findIndex((c) => c.id === targetNode.id);
+              if (fromIdx >= 0 && toIdx >= 0) { const [m] = children.splice(fromIdx, 1); children.splice(toIdx, 0, m); }
+              return { ...n, children };
+            }
+            if (n.children) return { ...n, children: walk(n.children) };
+            return n;
+          });
+          return walk(nodes);
+        });
+        if (useApi && srcPhase.dbId) {
+          const groups = [...(srcPhase.children || [])].filter((c) => c.type === "group");
+          const fromIdx = groups.findIndex((c) => c.id === dragAccount.id);
+          const toIdx = groups.findIndex((c) => c.id === targetNode.id);
+          if (fromIdx >= 0 && toIdx >= 0) { const [m] = groups.splice(fromIdx, 1); groups.splice(toIdx, 0, m); }
+          api.reorderAccountGroups(srcPhase.dbId, groups.map((c) => c.dbId).filter(Boolean)).catch(() => {});
         }
       }
     }
