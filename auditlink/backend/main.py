@@ -255,6 +255,44 @@ def get_client_summary(client_id: int):
         "assignees": assignees,
     }
 
+@app.get("/api/clients/{client_id}/overview")
+def get_client_overview(client_id: int):
+    """Combined overview: summary + PBC items + interviews."""
+    from datetime import date as dt_date
+    conn = _db()
+    client = conn.execute("""
+        SELECT c.*, fy.name AS fy_name FROM clients c JOIN fiscal_years fy ON fy.id = c.fy_id WHERE c.id = ?
+    """, (client_id,)).fetchone()
+    if not client:
+        conn.close(); raise HTTPException(404)
+    client = dict(client)
+    today = dt_date.today().isoformat()
+
+    # PBC items
+    pbc_items = rows_to_list(conn.execute("""
+        SELECT p.*, a.name AS account_name FROM pbc_items p LEFT JOIN accounts a ON a.id = p.account_id
+        WHERE p.client_id = ? ORDER BY p.id
+    """, (client_id,)).fetchall())
+    pbc_received = sum(1 for p in pbc_items if p["status"] == "수령완료")
+    pbc_supplement = sum(1 for p in pbc_items if p["status"] == "보완요청")
+    pbc_overdue = sum(1 for p in pbc_items if p["due_date"] and p["due_date"] < today and p["status"] != "수령완료")
+
+    # Interviews with question counts + followup counts
+    interviews = rows_to_list(conn.execute("SELECT * FROM interviews WHERE client_id=? ORDER BY date DESC", (client_id,)).fetchall())
+    for iv in interviews:
+        qs = conn.execute("SELECT COUNT(*) c, SUM(CASE WHEN needs_followup=1 THEN 1 ELSE 0 END) fu FROM interview_questions WHERE interview_id=?", (iv["id"],)).fetchone()
+        iv["question_count"] = qs["c"]
+        iv["followup_count"] = qs["fu"] or 0
+    iv_completed = sum(1 for iv in interviews if iv["status"] == "완료")
+    iv_followup = sum(1 for iv in interviews if iv["followup_count"] > 0)
+
+    conn.close()
+    return {
+        "client": {"id": client["id"], "name": client["name"], "industry": client["industry"], "report_date": client["report_date"], "fy_name": client["fy_name"]},
+        "pbc": {"items": pbc_items, "total": len(pbc_items), "received": pbc_received, "supplement": pbc_supplement, "overdue": pbc_overdue},
+        "interviews": {"items": interviews, "total": len(interviews), "completed": iv_completed, "followup_needed": iv_followup},
+    }
+
 @app.post("/api/clients", status_code=201)
 def create_client(body: ClientCreate):
     conn = _db()

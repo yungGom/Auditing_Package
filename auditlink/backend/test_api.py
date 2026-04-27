@@ -145,6 +145,19 @@ class TestClients:
         assert "assignees" in data
         assert "progress" in data
 
+    def test_overview(self, seed):
+        r = client.get(f"/api/clients/{seed['client']['id']}/overview")
+        assert r.status_code == 200
+        data = r.json()
+        assert "client" in data
+        assert "pbc" in data
+        assert "interviews" in data
+        assert "total" in data["pbc"]
+        assert "received" in data["pbc"]
+        assert "overdue" in data["pbc"]
+        assert "total" in data["interviews"]
+        assert "followup_needed" in data["interviews"]
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 3. Phases CRUD
