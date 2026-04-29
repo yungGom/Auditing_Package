@@ -12,7 +12,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS fiscal_years (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL UNIQUE,
-    is_active   INTEGER NOT NULL DEFAULT 0
+    is_active   INTEGER NOT NULL DEFAULT 0,
+    sort_order  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS clients (
@@ -20,7 +21,8 @@ CREATE TABLE IF NOT EXISTS clients (
     fy_id       INTEGER NOT NULL REFERENCES fiscal_years(id) ON DELETE CASCADE,
     name        TEXT    NOT NULL,
     industry    TEXT    NOT NULL DEFAULT '',
-    report_date TEXT
+    report_date TEXT,
+    sort_order  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS phases (
@@ -168,6 +170,16 @@ def init_db():
     existing = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
     ).fetchall()}
+
+    # fiscal_years: add sort_order
+    fy_cols = {r[1] for r in conn.execute("PRAGMA table_info(fiscal_years)").fetchall()}
+    if "sort_order" not in fy_cols:
+        conn.execute("ALTER TABLE fiscal_years ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+
+    # clients: add sort_order
+    cl_cols = {r[1] for r in conn.execute("PRAGMA table_info(clients)").fetchall()}
+    if "sort_order" not in cl_cols:
+        conn.execute("ALTER TABLE clients ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
 
     # tasks: add file_path, updated_at columns
     cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}

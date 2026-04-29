@@ -138,6 +138,17 @@ def delete_fiscal_year(fy_id: int):
     conn.close()
     return {"ok": True}
 
+class FYReorder(BaseModel):
+    ordered_ids: list[int]
+
+@app.patch("/api/fiscal-years/reorder")
+def reorder_fiscal_years(body: FYReorder):
+    conn = _db()
+    for idx, fy_id in enumerate(body.ordered_ids):
+        conn.execute("UPDATE fiscal_years SET sort_order=? WHERE id=?", (idx, fy_id))
+    conn.commit(); conn.close()
+    return {"ok": True}
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Clients
@@ -329,6 +340,18 @@ def delete_client(client_id: int):
     conn.execute("DELETE FROM clients WHERE id=?", (client_id,))
     conn.commit()
     conn.close()
+    return {"ok": True}
+
+class ClientReorder(BaseModel):
+    fy_id: int
+    ordered_ids: list[int]
+
+@app.patch("/api/clients/reorder")
+def reorder_clients(body: ClientReorder):
+    conn = _db()
+    for idx, cid in enumerate(body.ordered_ids):
+        conn.execute("UPDATE clients SET sort_order=? WHERE id=? AND fy_id=?", (idx, cid, body.fy_id))
+    conn.commit(); conn.close()
     return {"ok": True}
 
 
@@ -1531,12 +1554,12 @@ def engagement_tree():
     """Return FY → Client → Phase → Group? → Account tree.
     All FYs included; active FY marked with isActive=true."""
     conn = _db()
-    fys = rows_to_list(conn.execute("SELECT * FROM fiscal_years ORDER BY id").fetchall())
+    fys = rows_to_list(conn.execute("SELECT * FROM fiscal_years ORDER BY sort_order, id").fetchall())
     tree = []
     for fy in fys:
         fy_node = {"id": f"fy-{fy['id']}", "label": fy["name"], "type": "fy", "dbId": fy["id"],
                    "isActive": bool(fy["is_active"]), "children": []}
-        clients_rows = conn.execute("SELECT * FROM clients WHERE fy_id=? ORDER BY id", (fy["id"],)).fetchall()
+        clients_rows = conn.execute("SELECT * FROM clients WHERE fy_id=? ORDER BY sort_order, id", (fy["id"],)).fetchall()
         for c in clients_rows:
             c = dict(c)
             c_node = {"id": f"client-{c['id']}", "label": c["name"], "type": "client", "dbId": c["id"], "children": []}

@@ -20,6 +20,7 @@ const api = {
   createFiscalYear: (data) => request("/api/fiscal-years", { method: "POST", body: JSON.stringify(data) }),
   updateFiscalYear: (id, data) => request(`/api/fiscal-years/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteFiscalYear: (id) => request(`/api/fiscal-years/${id}`, { method: "DELETE" }),
+  reorderFiscalYears: (orderedIds) => request("/api/fiscal-years/reorder", { method: "PATCH", body: JSON.stringify({ ordered_ids: orderedIds }) }),
 
   // Clients
   getClients: (fyId) => request(`/api/clients${fyId ? `?fy_id=${fyId}` : ""}`),
@@ -28,6 +29,7 @@ const api = {
   createClient: (data) => request("/api/clients", { method: "POST", body: JSON.stringify(data) }),
   updateClient: (id, data) => request(`/api/clients/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteClient: (id) => request(`/api/clients/${id}`, { method: "DELETE" }),
+  reorderClients: (fyId, orderedIds) => request("/api/clients/reorder", { method: "PATCH", body: JSON.stringify({ fy_id: fyId, ordered_ids: orderedIds }) }),
 
   // Phases
   getPhases: (clientId) => request(`/api/phases${clientId ? `?client_id=${clientId}` : ""}`),

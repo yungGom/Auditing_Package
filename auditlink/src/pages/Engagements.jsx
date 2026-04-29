@@ -132,27 +132,23 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
   const isSelectable = node.type === "account" || node.type === "client";
   const isGroup = node.type === "group";
   const isAccount = node.type === "account";
+  const isFY = node.type === "fy";
+  const isClient = node.type === "client";
+  const isDraggable = node.type !== "phase"; // everything except phase is draggable
 
-  const isDraggable = isAccount || isGroup;
-  const dragProps = isDraggable ? {
-    draggable: true,
-    onDragStart: (e) => { e.dataTransfer.effectAllowed = "move"; e.stopPropagation(); onAccountDragStart?.(node); },
-    onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); onAccountDragOver?.(node); },
-    onDrop: (e) => { e.preventDefault(); e.stopPropagation(); onAccountDrop?.(node); },
-  } : {
-    onDragOver: (e) => { if (node.type === "phase" || node.type === "group") { e.preventDefault(); } },
-    onDrop: (e) => { if (node.type === "group") { e.preventDefault(); e.stopPropagation(); onAccountDrop?.(node); } },
-  };
-
-  const showDropHint = dragOverId === node.id && (isAccount || isGroup);
+  const showDropHint = dragOverId === node.id;
+  const dropIsMove = isGroup && showDropHint; // account dropped ON group = move
 
   return (
     <div>
       <div
-        {...dragProps}
+        draggable={isDraggable}
+        onDragStart={(e) => { if (!isDraggable) return; e.dataTransfer.effectAllowed = "move"; e.stopPropagation(); onAccountDragStart?.(node); }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); onAccountDragOver?.(node); }}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onAccountDrop?.(node); }}
         className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-xl cursor-pointer text-sm font-label transition-all ${
           isSelected && isSelectable ? "bg-surface-container-lowest shadow-sm text-primary font-semibold" : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
-        } ${showDropHint ? (isGroup ? "ring-2 ring-primary bg-primary/5" : "border-t-2 border-primary") : ""}`}
+        } ${showDropHint ? (dropIsMove ? "ring-2 ring-primary bg-primary/5" : "border-t-2 border-primary") : ""}`}
         style={{ paddingLeft: `${(node.depth || 0) * 16 + 8}px` }}
         onClick={() => { if (hasChildren || isGroup) onToggle(node.id); if (isSelectable) onSelect(node.id, node.type); }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, node); }}
@@ -160,15 +156,18 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
         {isDraggable && (
           <span className="material-symbols-outlined text-[14px] text-outline opacity-0 group-hover:opacity-100 transition cursor-grab shrink-0">drag_indicator</span>
         )}
-        {hasChildren ? (
+        {(hasChildren || isGroup) ? (
           <span className={`material-symbols-outlined text-[16px] text-outline transition-transform ${isExpanded ? "rotate-90" : ""}`}>chevron_right</span>
         ) : !isAccount ? <span className="w-4" /> : null}
         <span className="material-symbols-outlined text-[16px]">{TYPE_ICONS[node.type]}</span>
         <span className="flex-1 truncate">{node.label}</span>
+        {isFY && node.isActive && (
+          <span className="px-1.5 py-0.5 rounded-lg bg-primary/10 text-primary text-[9px] font-label font-bold shrink-0">활성</span>
+        )}
       </div>
-      {hasChildren && isExpanded && (
+      {(hasChildren || isGroup) && isExpanded && (
         <div>
-          {node.children.map((child) => (
+          {(node.children || []).map((child) => (
             <TreeNode key={child.id} node={{ ...child, depth: (node.depth || 0) + 1 }} selectedId={selectedId} onSelect={onSelect} expanded={expanded} onToggle={onToggle} onContextMenu={onContextMenu}
               onAccountDragStart={onAccountDragStart} onAccountDragOver={onAccountDragOver} onAccountDrop={onAccountDrop} dragOverId={dragOverId} />
           ))}
@@ -562,10 +561,8 @@ export default function Engagements() {
 
   const handleAccountDragOver = (node) => {
     if (!dragAccount || dragAccount.id === node.id) return;
-    // Allow: account→account (reorder), account→group (move into), group→group (reorder)
-    const dragIsAccount = dragAccount.type === "account";
-    const dragIsGroup = dragAccount.type === "group";
-    if (node.type === "account" || node.type === "group") {
+    // Same-type reorder, or account→group move
+    if (node.type === dragAccount.type || (dragAccount.type === "account" && node.type === "group")) {
       setDragOverId(node.id);
     }
   };
@@ -687,6 +684,53 @@ export default function Engagements() {
           const toIdx = groups.findIndex((c) => c.id === targetNode.id);
           if (fromIdx >= 0 && toIdx >= 0) { const [m] = groups.splice(fromIdx, 1); groups.splice(toIdx, 0, m); }
           api.reorderAccountGroups(srcPhase.dbId, groups.map((c) => c.dbId).filter(Boolean)).catch(() => {});
+        }
+      }
+    }
+
+    // Case 4: FY reorder (FY→FY)
+    if (dragAccount.type === "fy" && targetNode.type === "fy") {
+      updateTree((nodes) => {
+        const list = [...nodes];
+        const fromIdx = list.findIndex((n) => n.id === dragAccount.id);
+        const toIdx = list.findIndex((n) => n.id === targetNode.id);
+        if (fromIdx >= 0 && toIdx >= 0) { const [m] = list.splice(fromIdx, 1); list.splice(toIdx, 0, m); }
+        return list;
+      });
+      if (useApi) {
+        const ordered = [...tree];
+        const fromIdx = ordered.findIndex((n) => n.id === dragAccount.id);
+        const toIdx = ordered.findIndex((n) => n.id === targetNode.id);
+        if (fromIdx >= 0 && toIdx >= 0) { const [m] = ordered.splice(fromIdx, 1); ordered.splice(toIdx, 0, m); }
+        api.reorderFiscalYears(ordered.map((n) => n.dbId).filter(Boolean)).catch(() => {});
+      }
+    }
+
+    // Case 5: Client reorder (client→client in same FY)
+    if (dragAccount.type === "client" && targetNode.type === "client") {
+      const srcFY = findParentContainer(dragAccount.id);
+      const dstFY = findParentContainer(targetNode.id);
+      if (srcFY && dstFY && srcFY.id === dstFY.id) {
+        updateTree((nodes) => {
+          const walk = (list) => list.map((n) => {
+            if (n.id === srcFY.id && n.children) {
+              const children = [...n.children];
+              const fromIdx = children.findIndex((c) => c.id === dragAccount.id);
+              const toIdx = children.findIndex((c) => c.id === targetNode.id);
+              if (fromIdx >= 0 && toIdx >= 0) { const [m] = children.splice(fromIdx, 1); children.splice(toIdx, 0, m); }
+              return { ...n, children };
+            }
+            if (n.children) return { ...n, children: walk(n.children) };
+            return n;
+          });
+          return walk(nodes);
+        });
+        if (useApi && srcFY.dbId) {
+          const clients = [...(srcFY.children || [])].filter((c) => c.type === "client");
+          const fromIdx = clients.findIndex((c) => c.id === dragAccount.id);
+          const toIdx = clients.findIndex((c) => c.id === targetNode.id);
+          if (fromIdx >= 0 && toIdx >= 0) { const [m] = clients.splice(fromIdx, 1); clients.splice(toIdx, 0, m); }
+          api.reorderClients(srcFY.dbId, clients.map((c) => c.dbId).filter(Boolean)).catch(() => {});
         }
       }
     }

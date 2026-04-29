@@ -93,6 +93,12 @@ class TestFiscalYears:
         created = client.post("/api/fiscal-years", json={"name": "FY_DEL"}).json()
         r = client.delete(f"/api/fiscal-years/{created['id']}")
         assert r.status_code == 200
+
+    def test_reorder(self):
+        f1 = client.post("/api/fiscal-years", json={"name": "FY_R1"}).json()
+        f2 = client.post("/api/fiscal-years", json={"name": "FY_R2"}).json()
+        r = client.patch("/api/fiscal-years/reorder", json={"ordered_ids": [f2["id"], f1["id"]]})
+        assert r.status_code == 200
         assert r.json()["ok"] is True
 
 
@@ -157,6 +163,13 @@ class TestClients:
         assert "overdue" in data["pbc"]
         assert "total" in data["interviews"]
         assert "followup_needed" in data["interviews"]
+
+    def test_reorder_clients(self, seed):
+        fy_id = seed["fy"]["id"]
+        c1 = client.post("/api/clients", json={"fy_id": fy_id, "name": "순서A"}).json()
+        c2 = client.post("/api/clients", json={"fy_id": fy_id, "name": "순서B"}).json()
+        r = client.patch("/api/clients/reorder", json={"fy_id": fy_id, "ordered_ids": [c2["id"], c1["id"]]})
+        assert r.status_code == 200
 
 
 # ═══════════════════════════════════════════════════════════════════════════
