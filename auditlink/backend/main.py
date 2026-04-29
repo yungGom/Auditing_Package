@@ -99,11 +99,15 @@ def list_fiscal_years():
 
 @app.post("/api/fiscal-years", status_code=201)
 def create_fiscal_year(body: FYCreate):
+    import sqlite3 as _sqlite3
     conn = _db()
     try:
         conn.execute("INSERT INTO fiscal_years (name, is_active) VALUES (?,?)", (body.name, int(body.is_active)))
         rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.commit()
+    except _sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(409, detail="이미 존재하는 회계연도입니다")
     finally:
         conn.close()
     return {"id": rid, "name": body.name, "is_active": int(body.is_active)}

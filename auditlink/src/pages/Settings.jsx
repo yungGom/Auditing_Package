@@ -117,15 +117,37 @@ export default function Settings() {
   };
 
   // --- FY helpers ---
-  const addFY = () => {
+  const addFY = async () => {
     const fy = newFY.trim();
-    if (!fy || settings.fiscalYears.includes(fy)) return;
+    if (!fy) return;
+    if (settings.fiscalYears.includes(fy)) {
+      alert("이미 존재하는 회계연도입니다.");
+      return;
+    }
+    // Create in DB first
+    try {
+      await api.createFiscalYear({ name: fy, is_active: false });
+    } catch (err) {
+      const msg = String(err);
+      if (msg.includes("409") || msg.includes("UNIQUE")) {
+        alert("이미 존재하는 회계연도입니다.");
+      } else {
+        alert("회계연도 추가에 실패했습니다.");
+      }
+      return;
+    }
     update("fiscalYears", [...settings.fiscalYears, fy]);
     setNewFY("");
   };
 
-  const removeFY = (fy) => {
+  const removeFY = async (fy) => {
     if (settings.fiscalYears.length <= 1) return;
+    // Find FY in DB and delete
+    try {
+      const fys = await api.getFiscalYears();
+      const target = fys.find((f) => f.name === fy);
+      if (target) await api.deleteFiscalYear(target.id);
+    } catch {}
     const next = settings.fiscalYears.filter((f) => f !== fy);
     update("fiscalYears", next);
     if (settings.activeFY === fy) update("activeFY", next[0]);
