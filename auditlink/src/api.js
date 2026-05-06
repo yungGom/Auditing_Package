@@ -31,6 +31,7 @@ const api = {
   deleteClient: (id) => request(`/api/clients/${id}`, { method: "DELETE" }),
   reorderClients: (fyId, orderedIds) => request("/api/clients/reorder", { method: "PATCH", body: JSON.stringify({ fy_id: fyId, ordered_ids: orderedIds }) }),
   moveClientToFY: (clientId, fyId) => request(`/api/clients/${clientId}/move-fy?fy_id=${fyId}`, { method: "PATCH" }),
+  copyClientToFY: (clientId, fyId) => request(`/api/clients/${clientId}/copy-to-fy?fy_id=${fyId}`, { method: "POST" }),
 
   // Phases
   getPhases: (clientId) => request(`/api/phases${clientId ? `?client_id=${clientId}` : ""}`),

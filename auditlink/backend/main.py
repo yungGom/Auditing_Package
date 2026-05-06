@@ -366,6 +366,53 @@ def move_client_to_fy(client_id: int, fy_id: int):
     conn.commit(); conn.close()
     return {"ok": True}
 
+@app.post("/api/clients/{client_id}/copy-to-fy")
+def copy_client_to_fy(client_id: int, fy_id: int):
+    """Deep-copy a client (phases → groups → accounts → tasks) into another FY."""
+    conn = _db()
+    src = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+    if not src:
+        conn.close(); raise HTTPException(404)
+    src = dict(src)
+    # Copy client
+    conn.execute("INSERT INTO clients (fy_id, name, industry, report_date, sort_order) VALUES (?,?,?,?,?)",
+                 (fy_id, src["name"], src["industry"], src["report_date"], src.get("sort_order", 0)))
+    new_client_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    phases = conn.execute("SELECT * FROM phases WHERE client_id=? ORDER BY sort_order", (client_id,)).fetchall()
+    for p in phases:
+        p = dict(p)
+        conn.execute("INSERT INTO phases (client_id, name, sort_order) VALUES (?,?,?)", (new_client_id, p["name"], p["sort_order"]))
+        new_phase_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Copy groups
+        group_map = {}
+        groups = conn.execute("SELECT * FROM account_groups WHERE phase_id=? ORDER BY sort_order", (p["id"],)).fetchall()
+        for g in groups:
+            g = dict(g)
+            conn.execute("INSERT INTO account_groups (phase_id, name, sort_order) VALUES (?,?,?)", (new_phase_id, g["name"], g["sort_order"]))
+            group_map[g["id"]] = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Copy accounts
+        accounts = conn.execute("SELECT * FROM accounts WHERE phase_id=? ORDER BY sort_order", (p["id"],)).fetchall()
+        for a in accounts:
+            a = dict(a)
+            new_group_id = group_map.get(a.get("group_id")) if a.get("group_id") else None
+            conn.execute("INSERT INTO accounts (phase_id, group_id, name, sort_order) VALUES (?,?,?,?)",
+                         (new_phase_id, new_group_id, a["name"], a["sort_order"]))
+            new_acc_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+            # Copy tasks (reset status to todo)
+            tasks = conn.execute("SELECT * FROM tasks WHERE account_id=?", (a["id"],)).fetchall()
+            for t in tasks:
+                t = dict(t)
+                conn.execute("INSERT INTO tasks (account_id, title, status, assignee, due_date, priority, memo, file_path) VALUES (?,?,?,?,?,?,?,?)",
+                             (new_acc_id, t["title"], "todo", t["assignee"], None, t["priority"], t["memo"], t.get("file_path", "")))
+
+    conn.commit()
+    conn.close()
+    return {"ok": True, "new_client_id": new_client_id}
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Phases

@@ -137,7 +137,7 @@ function TreeNode({ node, selectedId, onSelect, expanded, onToggle, onContextMen
   const isDraggable = node.type !== "phase"; // everything except phase is draggable
 
   const showDropHint = dragOverId === node.id;
-  const dropIsMove = isGroup && showDropHint; // account dropped ON group = move
+  const dropIsMove = (isGroup || isFY) && showDropHint; // account→group or client→FY = move into
 
   return (
     <div>
@@ -561,8 +561,10 @@ export default function Engagements() {
 
   const handleAccountDragOver = (node) => {
     if (!dragAccount || dragAccount.id === node.id) return;
-    // Same-type reorder, or account→group move
-    if (node.type === dragAccount.type || (dragAccount.type === "account" && node.type === "group")) {
+    // Same-type reorder, account→group move, or client→FY move
+    if (node.type === dragAccount.type
+      || (dragAccount.type === "account" && node.type === "group")
+      || (dragAccount.type === "client" && node.type === "fy")) {
       setDragOverId(node.id);
     }
   };
@@ -706,7 +708,30 @@ export default function Engagements() {
       }
     }
 
-    // Case 5: Client reorder (client→client in same FY)
+    // Case 5a: Client dropped ON a different FY → move to that FY
+    if (dragAccount.type === "client" && targetNode.type === "fy") {
+      const srcFY = findParentContainer(dragAccount.id);
+      if (srcFY && srcFY.id !== targetNode.id) {
+        if (useApi && dragAccount.dbId && targetNode.dbId) {
+          api.moveClientToFY(dragAccount.dbId, targetNode.dbId).catch(() => {});
+        }
+        updateTree((nodes) => {
+          let moved = null;
+          const cleaned = nodes.map((n) => {
+            if (n.children) {
+              const idx = n.children.findIndex((c) => c.id === dragAccount.id);
+              if (idx >= 0) { const children = [...n.children]; [moved] = children.splice(idx, 1); return { ...n, children }; }
+            }
+            return n;
+          });
+          if (moved) return cleaned.map((n) => n.id === targetNode.id ? { ...n, children: [...(n.children || []), moved] } : n);
+          return cleaned;
+        });
+      }
+      setDragAccount(null); setDragOverId(null); return;
+    }
+
+    // Case 5b: Client reorder (client→client in same FY)
     if (dragAccount.type === "client" && targetNode.type === "client") {
       const srcFY = findParentContainer(dragAccount.id);
       const dstFY = findParentContainer(targetNode.id);
@@ -864,6 +889,18 @@ export default function Engagements() {
       }
       return result;
     });
+  };
+
+  const doCopyClientToFY = async (clientNode, targetFY) => {
+    if (!confirm(`"${clientNode.label}"을(를) ${targetFY.label}로 복사하시겠습니까?\n(Phase, 계정과목, 할일이 모두 복사되며 할일 상태는 미착수로 초기화됩니다)`)) return;
+    if (useApi && clientNode.dbId && targetFY.dbId) {
+      try {
+        await api.copyClientToFY(clientNode.dbId, targetFY.dbId);
+        // Reload tree to get the new copy with correct IDs
+        const apiTree = await api.getEngagementTree();
+        if (apiTree?.length) setTree(apiTree);
+      } catch { alert("복사에 실패했습니다."); }
+    }
   };
 
   const doAddPhase = (clientNode) => {
@@ -1144,13 +1181,21 @@ export default function Engagements() {
       case "client":
         items.push({ icon: "edit", label: "이름 변경", action: () => doRenameClient(node) });
         items.push({ icon: "create_new_folder", label: "Phase 추가", action: () => doAddPhase(node) });
-        // Move to another FY
+        // Move / Copy to another FY
         { const otherFYs = tree.filter((fy) => fy.children && !fy.children.some((c) => c.id === node.id));
           if (otherFYs.length > 0) {
             items.push({ divider: true });
             for (const fy of otherFYs) {
               items.push({ icon: "drive_file_move", label: `${fy.label}로 이동`, action: () => doMoveClientToFY(node, fy) });
             }
+            for (const fy of otherFYs) {
+              items.push({ icon: "content_copy", label: `${fy.label}로 복사`, action: () => doCopyClientToFY(node, fy) });
+            }
+          }
+          // Copy to same FY (duplicate)
+          const currentFY = findParentContainer(node.id);
+          if (currentFY) {
+            items.push({ icon: "content_copy", label: `현재 FY에 복사`, action: () => doCopyClientToFY(node, currentFY) });
           }
         }
         items.push({ divider: true });
