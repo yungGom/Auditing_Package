@@ -358,6 +358,14 @@ def reorder_clients(body: ClientReorder):
     conn.commit(); conn.close()
     return {"ok": True}
 
+@app.patch("/api/clients/{client_id}/move-fy")
+def move_client_to_fy(client_id: int, fy_id: int):
+    """Move a client to a different fiscal year."""
+    conn = _db()
+    conn.execute("UPDATE clients SET fy_id=? WHERE id=?", (fy_id, client_id))
+    conn.commit(); conn.close()
+    return {"ok": True}
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Phases

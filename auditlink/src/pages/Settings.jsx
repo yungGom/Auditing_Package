@@ -94,15 +94,21 @@ export default function Settings() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     try {
       await api.updateSettings(settings);
-      // Sync activeFY with fiscal_years table
+      // Sync activeFY with fiscal_years table — deactivate all, then activate target
       try {
         const fys = await api.getFiscalYears();
+        // Deactivate current active FYs
+        for (const f of fys) {
+          if (f.is_active && f.name !== settings.activeFY) {
+            await api.updateFiscalYear(f.id, { is_active: false });
+          }
+        }
+        // Activate target
         const target = fys.find((f) => f.name === settings.activeFY);
         if (target && !target.is_active) {
           await api.updateFiscalYear(target.id, { is_active: true });
         }
       } catch {}
-      // Push to global context so Sidebar/Header update immediately
       updateGlobal({
         activeFY: settings.activeFY,
         userName: settings.userName,
@@ -190,7 +196,20 @@ export default function Settings() {
             </span>
             <select
               value={settings.activeFY}
-              onChange={(e) => update("activeFY", e.target.value)}
+              onChange={async (e) => {
+                const newFy = e.target.value;
+                update("activeFY", newFy);
+                // Immediately sync to DB
+                try {
+                  const fys = await api.getFiscalYears();
+                  for (const f of fys) {
+                    if (f.is_active && f.name !== newFy) await api.updateFiscalYear(f.id, { is_active: false });
+                  }
+                  const target = fys.find((f) => f.name === newFy);
+                  if (target) await api.updateFiscalYear(target.id, { is_active: true });
+                } catch {}
+                updateGlobal({ activeFY: newFy });
+              }}
               className="appearance-none w-full pl-3 pr-8 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm font-label text-on-surface cursor-pointer focus:border-primary focus:outline-none transition"
             >
               {settings.fiscalYears.map((fy) => (

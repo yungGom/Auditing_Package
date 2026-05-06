@@ -837,6 +837,35 @@ export default function Engagements() {
     removeNode(node.id); setSelectedId(null); setSelectedType("account");
   };
 
+  const doMoveClientToFY = async (clientNode, targetFY) => {
+    if (!confirm(`"${clientNode.label}"을(를) ${targetFY.label}로 이동하시겠습니까?`)) return;
+    if (useApi && clientNode.dbId && targetFY.dbId) {
+      try { await api.moveClientToFY(clientNode.dbId, targetFY.dbId); }
+      catch { alert("이동에 실패했습니다."); return; }
+    }
+    // Move node in tree: remove from current parent, add to target FY
+    updateTree((nodes) => {
+      let movedNode = null;
+      const walk = (list) => list.map((n) => {
+        if (n.children) {
+          const idx = n.children.findIndex((c) => c.id === clientNode.id);
+          if (idx >= 0) {
+            const children = [...n.children];
+            [movedNode] = children.splice(idx, 1);
+            return { ...n, children };
+          }
+          return { ...n, children: walk(n.children) };
+        }
+        return n;
+      });
+      let result = walk(nodes);
+      if (movedNode) {
+        result = result.map((n) => n.id === targetFY.id ? { ...n, children: [...(n.children || []), movedNode] } : n);
+      }
+      return result;
+    });
+  };
+
   const doAddPhase = (clientNode) => {
     const name = prompt("새 Phase 이름:"); if (!name) return;
     if (useApi && clientNode.dbId) {
@@ -1115,6 +1144,15 @@ export default function Engagements() {
       case "client":
         items.push({ icon: "edit", label: "이름 변경", action: () => doRenameClient(node) });
         items.push({ icon: "create_new_folder", label: "Phase 추가", action: () => doAddPhase(node) });
+        // Move to another FY
+        { const otherFYs = tree.filter((fy) => fy.children && !fy.children.some((c) => c.id === node.id));
+          if (otherFYs.length > 0) {
+            items.push({ divider: true });
+            for (const fy of otherFYs) {
+              items.push({ icon: "drive_file_move", label: `${fy.label}로 이동`, action: () => doMoveClientToFY(node, fy) });
+            }
+          }
+        }
         items.push({ divider: true });
         items.push({ icon: "delete", label: "클라이언트 삭제", danger: true, action: () => doDeleteClient(node) });
         break;
