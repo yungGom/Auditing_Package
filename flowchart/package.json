@@ -1,0 +1,55 @@
+{
+  "name": "icfr-flowchart",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "ICFR (Internal Control over Financial Reporting) flowchart auto-generator. Browser-only, no external API calls.",
+  "author": "ICFR Flowchart Generator",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "electron": "electron .",
+    "electron:build": "npm run build && electron-builder --win portable"
+  },
+  "dependencies": {
+    "pptxgenjs": "^3.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "reactflow": "^11.11.4",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.icfr.flowchart",
+    "productName": "ICFR Flowchart Generator",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "public/favicon.ico"
+    },
+    "portable": {
+      "artifactName": "ICFR-Flowchart-Generator-portable.exe"
+    },
+    "compression": "normal"
+  }
+}

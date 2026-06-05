@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    @apply font-sans text-slate-900 antialiased;
+    /* 폰트 스택은 src/design.ts → tailwind.config.ts 의 fontFamily.sans 에서 정의 */
+  }
+}
