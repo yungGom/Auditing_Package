@@ -11,24 +11,11 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import fi_detector as D
 from report_builder import build_workbook, sort_candidates
+from mapping_utils import GUESS, guess_col, detect_header_row
 
 st.set_page_config(page_title="조회 모집단 완전성", page_icon="📨", layout="wide")
 st.title("📨 조회 모집단 완전성 검토 — 금융기관 스크리닝")
 st.caption("분개장·명세서에서 조회 대상을 자동 추출 · 온라인 조회 가능 여부 판정 · 전기 조회처 자동 병합")
-
-GUESS = {
-    "vendor": ["거래처", "거래처명", "상대처", "거래상대", "업체", "업체명", "계정상대"],
-    "account": ["계정과목", "계정", "계정명", "과목"],
-    "memo": ["적요", "비고", "메모", "내역", "거래내역", "summary"],
-    "amount": ["금액", "차변", "대변", "차변금액", "대변금액", "발생액", "잔액"],
-}
-
-def guess_col(cols, keys):
-    for k in keys:
-        for c in cols:
-            if k in str(c):
-                return c
-    return "(없음)"
 
 def guess_kind(fname):
     n = str(fname)
@@ -77,8 +64,22 @@ row_counter = 1
 for f in files:
     kind = guess_kind(f.name)
     with st.expander(f"📄 {f.name}  ·  추정: {kind}", expanded=True):
-        hrow = st.number_input(f"[{f.name}] 헤더 행 번호 (0=첫 행)", 0, 20, 0, key=f"h_{f.name}")
-        df = read_excel_safe(f, hrow)
+        raw_bytes = f.getvalue()
+        # H1: 상단을 스캔해 헤더 행을 자동 추정 → number_input 기본값으로 제공
+        default_hrow = 0
+        try:
+            probe = pd.read_excel(io.BytesIO(raw_bytes), header=None, nrows=21,
+                                  dtype=str).fillna("")
+            default_hrow = detect_header_row(probe.values.tolist())
+        except Exception:
+            default_hrow = 0
+        hrow = st.number_input(
+            f"[{f.name}] 헤더 행 번호 (0=첫 행)", 0, 20, int(default_hrow),
+            key=f"h_{f.name}",
+            help="상단 행을 스캔해 자동 추정한 값입니다. 머리글이 여러 줄이면 직접 조정하세요.")
+        if default_hrow > 0:
+            st.caption(f"🔎 헤더 행 자동 추정: {default_hrow}행 (0=첫 행). 틀리면 위에서 조정하세요.")
+        df = read_excel_safe(io.BytesIO(raw_bytes), hrow)
         if df is None or df.empty:
             continue
         cols = list(df.columns)
