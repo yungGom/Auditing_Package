@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import fi_detector as D
 from report_builder import build_workbook, sort_candidates
 from mapping_utils import GUESS, guess_col, detect_header_row
+from profile_store import match_mapping, save_profile, default_path as profile_path
 
 st.set_page_config(page_title="조회 모집단 완전성", page_icon="📨", layout="wide")
 st.title("📨 조회 모집단 완전성 검토 — 금융기관 스크리닝")
@@ -84,15 +85,37 @@ for f in files:
             continue
         cols = list(df.columns)
         opts = ["(없음)"] + cols
-        def idx(keys):
+        # H3: 같은 양식(헤더 시그니처) 파일이면 저장된 매핑/ERP 프리셋 자동 적용
+        prof, psource, sig = match_mapping(cols)
+        if psource == "user":
+            st.success("📌 저장된 매핑을 자동 적용했습니다. 맞는지 확인만 하세요.")
+        elif psource == "preset":
+            st.info(f"🧩 ERP 프리셋 추정 적용: {prof.get('label','')}. 확인 후 저장하면 다음부터 우선 적용됩니다.")
+
+        def idx(field, keys):
+            # 저장된/프리셋 매핑이 있으면 우선, 없으면 동의어 추정
+            if prof and prof.get(field) in opts:
+                return opts.index(prof[field])
             g = guess_col(cols, keys)
             return opts.index(g) if g in opts else 0
         c1, c2, c3, c4 = st.columns(4)
-        cv = c1.selectbox("거래처명 *", opts, index=idx(GUESS["vendor"]), key=f"v_{f.name}")
-        ca = c2.selectbox("계정과목", opts, index=idx(GUESS["account"]), key=f"a_{f.name}")
-        cm = c3.selectbox("적요", opts, index=idx(GUESS["memo"]), key=f"m_{f.name}")
-        camt = c4.selectbox("금액", opts, index=idx(GUESS["amount"]), key=f"amt_{f.name}")
+        cv = c1.selectbox("거래처명 *", opts, index=idx("vendor", GUESS["vendor"]), key=f"v_{f.name}")
+        ca = c2.selectbox("계정과목", opts, index=idx("account", GUESS["account"]), key=f"a_{f.name}")
+        cm = c3.selectbox("적요", opts, index=idx("memo", GUESS["memo"]), key=f"m_{f.name}")
+        camt = c4.selectbox("금액", opts, index=idx("amount", GUESS["amount"]), key=f"amt_{f.name}")
         st.dataframe(df.head(5), use_container_width=True, height=180)
+
+        # H3: 현재 매핑을 양식 시그니처로 저장 (컬럼명 메타데이터만 — 데이터 저장 안 함)
+        if st.button("💾 이 컬럼 매핑 저장/갱신", key=f"save_{f.name}",
+                     help="같은 양식(동일 헤더 구성) 파일을 다음에 올리면 매핑이 자동 적용됩니다."):
+            try:
+                save_profile(sig, {
+                    "header_row": int(hrow), "vendor": cv, "account": ca,
+                    "memo": cm, "amount": camt, "headers": cols, "label": kind,
+                })
+                st.success(f"매핑을 저장했습니다. 같은 양식 파일은 자동 적용됩니다. (저장 위치: {profile_path()})")
+            except Exception as e:
+                st.error(f"매핑 저장 실패: {e}")
 
         for _, r in df.iterrows():
             def g(col):
