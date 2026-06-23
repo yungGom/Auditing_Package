@@ -172,6 +172,137 @@ def scan(records):
     return hits
 
 
+# ─────────────────────────────────────────────────────────────
+# PATCH 8: 분개장 검토 스텝 (계정 슬라이서 + 드릴다운 + 일괄동작)
+#   자동 탐지는 1차 추천(체크 기본값)으로만 쓰고 최종 판단은 사람이 한다.
+# ─────────────────────────────────────────────────────────────
+def _detect_row(r):
+    """
+    한 행의 거래처 채택 + 탐지 분류(검토 드릴다운용).
+    반환 dict:
+      vendor/vendor_col, basis/category/form/matched(집계용),
+      auto(자동추천=체크 기본 ON), tag('자동추천'|'적요확인필요'|'비금융추정'),
+      highlight(적요 확인 필요 강조)
+    """
+    cand_vals = list(r.get("vendor_candidates") or [])
+    cand_cols = list(r.get("vendor_cand_cols") or [])
+    if len(cand_cols) != len(cand_vals):
+        cand_cols = [None] * len(cand_vals)
+    v_single = r.get("vendor") or ""
+    if v_single and v_single not in cand_vals:
+        cand_vals.append(v_single)
+        cand_cols.append(r.get("vendor_col") or "vendor")
+    pairs = list(zip(cand_cols, cand_vals))
+    first_vendor, first_col = "", None
+    for c, v in pairs:
+        if v and str(v).strip():
+            first_vendor, first_col = str(v).strip(), c
+            break
+
+    account = (r.get("account") or "").strip()
+    memo = r.get("memo") or ""
+    acct_hit = FI_ACCOUNT_FLAT.get(account)
+
+    picked = _pick_vendor(pairs)
+    if picked:  # 레이어1: 거래처(관리항목 포함) 사전/접미어 매칭 → 자동추천
+        vendor, vcol, dh = picked
+        return dict(vendor=vendor, vendor_col=vcol, basis="사전매칭", category=dh[0],
+                    form=CONFIRM_FORM.get(dh[0], "기타(검토필요)"), matched=dh[1],
+                    auto=True, tag="자동추천", highlight=False)
+    if acct_hit:  # 레이어2: 금융 계정 → 자동추천(거래처 미상이면 강조)
+        return dict(vendor=first_vendor, vendor_col=first_col, basis="계정추적",
+                    category=acct_hit, form=None, matched=account,
+                    auto=True, tag="자동추천", highlight=(first_vendor == ""))
+    memo_bank = _match_dict(memo)
+    memo_kw = next((h for h in MEMO_HINTS if h in memo), None)
+    if memo_bank and memo_bank[0] != "기타(접미어)":  # 적요에 진짜 기관명 → 사람이 확인
+        return dict(vendor=memo_bank[1], vendor_col="적요", basis="적요매칭",
+                    category=memo_bank[0], form=CONFIRM_FORM.get(memo_bank[0], "기타(검토필요)"),
+                    matched=memo_bank[1], auto=False, tag="적요확인필요", highlight=True)
+    if memo_kw or memo_bank:  # 약한 단서(키워드/접미어) → 사람이 확인
+        return dict(vendor=first_vendor or (memo_bank[1] if memo_bank else ""),
+                    vendor_col=("적요" if not first_vendor else first_col),
+                    basis="적요키워드", category="추정",
+                    form=("기타(검토필요)" if memo_bank else None),
+                    matched=(memo_kw or (memo_bank[1] if memo_bank else "")),
+                    auto=False, tag="적요확인필요", highlight=True)
+    return dict(vendor=first_vendor, vendor_col=first_col, basis=None, category=None,
+                form=None, matched="", auto=False, tag="비금융추정", highlight=False)
+
+
+def account_summary(records):
+    """분개장 계정과목 distinct 목록 + 건수 + 금융계정 여부(기본 체크용).
+       정렬: 금융계정 먼저, 그 다음 건수 많은 순."""
+    counts = {}
+    for r in records:
+        a = (r.get("account") or "").strip()
+        if not a:
+            continue
+        counts[a] = counts.get(a, 0) + 1
+    out = [{"account": a, "count": n, "is_fi": a in FI_ACCOUNT_FLAT}
+           for a, n in counts.items()]
+    out.sort(key=lambda x: (not x["is_fi"], -x["count"], x["account"]))
+    return out
+
+
+def review_journal(records, selected_accounts=None):
+    """
+    분개장 행을 검토용으로 분류(드릴다운/일괄동작용).
+    selected_accounts(set) 가 주어지면 해당 계정 행만 반환.
+    각 행: row_no/date/account/memo/amount/vendor_display/vendor_col/
+           auto_include/highlight/tag/_detect/_rec/raw/raw_cols
+    """
+    out = []
+    for r in records:
+        account = (r.get("account") or "").strip()
+        if selected_accounts is not None and account not in selected_accounts:
+            continue
+        d = _detect_row(r)
+        out.append({
+            "row_no": r.get("row_no"), "source": r.get("source"), "kind": r.get("kind"),
+            "date": r.get("date") or "", "account": account,
+            "memo": r.get("memo") or "", "amount": r.get("amount") or 0,
+            "vendor_display": d["vendor"] or "(공란)", "vendor_col": d["vendor_col"],
+            "auto_include": d["auto"], "highlight": d["highlight"], "tag": d["tag"],
+            "_detect": d, "_rec": r,
+            "raw": r.get("raw"), "raw_cols": r.get("raw_cols"),
+        })
+    return out
+
+
+def hits_from_included(review_rows, include_map=None):
+    """
+    포함 확정된 검토행 → scan 형식 hits 생성 (aggregate 입력용).
+    include 결정: include_map(row_no→bool) 우선, 없으면 각 행 auto_include.
+    포함된 행이 비탐지(basis None)면 '수기포함'으로 후보화.
+    _hits 추적용으로 review_account/included_via 기록.
+    """
+    hits = []
+    for rr in review_rows:
+        if include_map is not None:
+            inc = include_map.get(rr["row_no"], rr["auto_include"])
+        else:
+            inc = rr["auto_include"]
+        if not inc:
+            continue
+        d = rr["_detect"]
+        vendor = d["vendor"] or ""
+        rec = dict(rr.get("_rec") or {})
+        rec.update({
+            "vendor": vendor,
+            "norm_vendor": _norm(vendor) or "(거래처미상)",
+            "basis": d["basis"] or "수기포함",
+            "category": d["category"] if d["category"] is not None else "수기",
+            "form": d["form"],
+            "matched": d["matched"] or vendor or "수기",
+            "vendor_col": d["vendor_col"],
+            "review_account": rr["account"],
+            "included_via": rr["tag"],
+        })
+        hits.append(rec)
+    return hits
+
+
 def aggregate(hits):
     """레이어3: 정규화 기관 단위로 집계. 조회 대상 마스터 생성."""
     agg = {}

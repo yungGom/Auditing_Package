@@ -178,8 +178,67 @@ for f in files:
             })
             row_counter += 1
 
-# ── 2-b) 전기 조회처 입력 ──
-st.markdown("### 3️⃣ 전기 발송 조회처 입력 (선택)")
+# ── 3) 분개장 검토 (계정 선택 → 드릴다운 → 일괄동작) ──
+journal_records = [r for r in records if r.get("kind") == "분개장"]
+other_records = [r for r in records if r.get("kind") != "분개장"]
+
+st.markdown("### 3️⃣ 분개장 검토 — 관련 계정 선택 후 거래 확인")
+sel_accounts = []
+if not journal_records:
+    st.caption("분개장으로 인식된 파일이 없습니다. (명세서만 올린 경우 이 단계는 건너뜁니다)")
+else:
+    summary = D.account_summary(journal_records)
+    all_accts = [s["account"] for s in summary]
+    fi_default = [s["account"] for s in summary if s["is_fi"]]
+    cnt = {s["account"]: s["count"] for s in summary}
+    st.caption("자동 탐지는 1차 추천(체크 기본값)일 뿐입니다. 계정을 좁힌 뒤 거래처·적요를 직접 확인해 포함을 확정하세요.")
+    sel_accounts = st.multiselect(
+        "검토할 계정과목 (🏦 금융 관련 계정은 기본 선택)",
+        all_accts, default=fi_default, key="rev_accounts",
+        format_func=lambda a: f"{'🏦 ' if a in D.FI_ACCOUNT_FLAT else ''}{a} ({cnt.get(a, 0)}건)")
+
+    review_rows_all = D.review_journal(journal_records, selected_accounts=set(sel_accounts))
+    for acct in sel_accounts:
+        rows = [rr for rr in review_rows_all if rr["account"] == acct]
+        if not rows:
+            continue
+        mapkey = f"incmap::{acct}"
+        n_auto = sum(1 for rr in rows if rr["auto_include"])
+        n_check = sum(1 for rr in rows if rr["tag"] == "적요확인필요")
+        head = f"{'🏦 ' if acct in D.FI_ACCOUNT_FLAT else ''}{acct} — {len(rows)}건"
+        with st.expander(f"📂 {head}  ·  자동추천 {n_auto} · 적요확인 {n_check}", expanded=False):
+            b1, b2, _ = st.columns([1, 1, 3])
+            if b1.button("이 계정 전체 포함", key=f"incall::{acct}"):
+                st.session_state[mapkey] = {rr["row_no"]: True for rr in rows}
+                st.session_state.pop(f"ed::{acct}", None)
+                st.rerun()
+            if b2.button("이 계정 전체 제외", key=f"excall::{acct}"):
+                st.session_state[mapkey] = {rr["row_no"]: False for rr in rows}
+                st.session_state.pop(f"ed::{acct}", None)
+                st.rerun()
+            cur = st.session_state.get(mapkey, {rr["row_no"]: rr["auto_include"] for rr in rows})
+            data = [{
+                "포함": bool(cur.get(rr["row_no"], rr["auto_include"])),
+                "검토": ("🟡 적요확인필요" if rr["tag"] == "적요확인필요"
+                       else ("✅ 자동추천" if rr["auto_include"] else "—")),
+                "일자": rr["date"], "거래처": rr["vendor_display"],
+                "적요": rr["memo"], "금액": rr["amount"], "row_no": rr["row_no"],
+            } for rr in rows]
+            edited = st.data_editor(
+                pd.DataFrame(data), key=f"ed::{acct}", hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "포함": st.column_config.CheckboxColumn("포함", default=False),
+                    "금액": st.column_config.NumberColumn("금액", format="%d"),
+                    "row_no": None,
+                },
+                disabled=["검토", "일자", "거래처", "적요", "금액"])
+            st.session_state[mapkey] = {int(r["row_no"]): bool(r["포함"])
+                                        for _, r in edited.iterrows()}
+            st.caption("🟡 = 거래처 공란/비금융인데 적요에 단서가 있는 행 — 적요를 읽고 직접 포함을 결정하세요.")
+
+# ── 4) 전기 조회처 입력 ──
+st.markdown("### 4️⃣ 전기 발송 조회처 입력 (선택)")
 st.caption("전기에 발송한 조회처는 일단 포함 가정합니다. 기관명만 입력하면 명칭이 조금 달라도(KEB하나은행=하나은행 등) 자동 분류·병합됩니다.")
 pc1, pc2 = st.columns([3, 2])
 with pc1:
@@ -200,16 +259,24 @@ if prior_df is not None and prior_col:
 
 scan_memo = st.checkbox("적요(메모) 필드에서도 기관명 탐지 (사채 주관사 등 / 오탐 증가 가능)", value=False)
 
-# ── 4) 탐지 ──
+# ── 5) 탐지 ──
 if st.button("🔎 금융기관 탐지 실행", type="primary"):
     if not records:
         st.warning("읽힌 데이터가 없습니다. 컬럼 매핑을 확인해주세요.")
         st.stop()
+    # 분개장: 검토 단계에서 포함 확정된 행만 후보화 (사람이 최종 판단)
+    include_map = {}
+    for acct in sel_accounts:
+        include_map.update(st.session_state.get(f"incmap::{acct}", {}))
+    jreview = D.review_journal(journal_records, selected_accounts=set(sel_accounts))
+    jhits = D.hits_from_included(jreview, include_map=include_map)
+    # 명세서 등 비분개장: 기존 자동 탐지
     if scan_memo:
-        for rec in records:
-            if not rec["vendor"] and rec["memo"] and D._match_dict(rec["memo"]):
+        for rec in other_records:
+            if not rec.get("vendor") and rec.get("memo") and D._match_dict(rec["memo"]):
                 rec["vendor"] = rec["memo"]
-    hits = D.scan(records)
+    ohits = D.scan(other_records)
+    hits = jhits + ohits
     cands = D.aggregate(hits)
     cands, added = D.merge_prior(cands, prior_names)
     hit_rows = {h["row_no"] for h in hits}
