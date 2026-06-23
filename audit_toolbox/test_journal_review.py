@@ -110,6 +110,43 @@ def test_selected_accounts_filter():
     assert len(rev) == 1 and rev[0]["account"] == "보통예금"
 
 
+# ── PATCH 9: 시트명 → 추정계정/금융여부 ──
+def test_guess_sheet_classification():
+    assert D.guess_sheet("예금명세서") == {"account": "보통예금", "is_fi": True}
+    assert D.guess_sheet("차입금명세서") == {"account": "단기차입금", "is_fi": True}
+    g = D.guess_sheet("유가증권명세서")
+    assert g["is_fi"] is True and g["account"] == ""
+    assert D.guess_sheet("매출처원장")["is_fi"] is False
+    assert D.guess_sheet("재고자산명세")["is_fi"] is False
+
+
+# ── PATCH 9 게이트: 거래처 없는 유가증권 시트 — 적요 기반 검토 ──
+def test_statement_securities_memo_based():
+    rec = jrec(1, "", ["", ""], ["관리항목1", "관리항목2"], memo="삼성증권 매수")
+    rec.update({"source": "명세서.xlsx ▸ 유가증권명세서", "kind": "명세서",
+                "sheet": "유가증권명세서"})
+    rev = D.review_journal([rec])
+    row = rev[0]
+    assert row["tag"] == "적요확인필요"
+    assert row["vendor_display"] == "삼성증권"
+    cands = D.aggregate(D.hits_from_included(rev, include_map={1: True}))
+    c = next(c for c in cands if c["기관(정규화)"] == "삼성증권")
+    assert c["조회서양식"] == "증권사"
+
+
+# ── PATCH 9 게이트: 시트 출처(파일 ▸ 시트)가 _hits 에 보존 ──
+def test_hits_preserve_sheet_source():
+    rec = jrec(1, "보통예금", ["신한은행"], ["거래처"])
+    rec.update({"source": "통합명세서.xlsx ▸ 예금명세서", "kind": "명세서",
+                "sheet": "예금명세서"})
+    rev = D.review_journal([rec])
+    hits = D.hits_from_included(rev)  # 자동추천 ON
+    assert hits[0]["source"] == "통합명세서.xlsx ▸ 예금명세서"
+    cands = D.aggregate(hits)
+    c = next(c for c in cands if c["기관(정규화)"] == "신한은행")
+    assert c["_hits"][0]["source"] == "통합명세서.xlsx ▸ 예금명세서"
+
+
 if __name__ == "__main__":
     import traceback
     tests = [(n, f) for n, f in sorted(globals().items())
