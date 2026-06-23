@@ -90,19 +90,59 @@ def _match_dict(name):
     return None
 
 
+def _pick_vendor(pairs):
+    """
+    거래처 후보 (컬럼, 값) 목록에서 채택할 거래처를 고른다.
+    우선순위: 사전매칭(실제 기관 사전) > 접미어매칭. 둘 다 없으면 None.
+    반환: (값, 컬럼, _match_dict결과) or None
+    """
+    suffix_fallback = None
+    for col, val in pairs:
+        if not val or not str(val).strip():
+            continue
+        m = _match_dict(val)
+        if not m:
+            continue
+        if m[0] != "기타(접미어)":
+            return (str(val).strip(), col, m)        # 사전매칭 즉시 채택
+        if suffix_fallback is None:
+            suffix_fallback = (str(val).strip(), col, m)  # 접미어는 후순위 보관
+    return suffix_fallback
+
+
 def scan(records):
     """
     records: list of dict, 각 행은
-      {row_no, source, date, slip_no, account, vendor, memo, amount}
+      {row_no, source, date, slip_no, account, vendor, memo, amount, ...}
+    거래처는 단일 vendor 컬럼뿐 아니라 vendor_candidates(여러 컬럼의 값)도 스캔한다
+    (더존 관리항목1~6 분산 대응). vendor_cand_cols 가 있으면 매칭된 컬럼을 기록한다.
+    하위호환: vendor_candidates 가 없으면 기존처럼 vendor 단일값을 쓴다.
     반환: 후보별 집계 + 원천 추적 리스트
     """
     hits = []  # 원천 추적용: 행 단위 매칭 결과
     for r in records:
-        vendor = r.get("vendor") or ""
+        # 거래처 후보 (컬럼, 값) 구성 — 다중 컬럼 + 하위호환 단일 vendor
+        cand_vals = list(r.get("vendor_candidates") or [])
+        cand_cols = list(r.get("vendor_cand_cols") or [])
+        if len(cand_cols) != len(cand_vals):
+            cand_cols = [None] * len(cand_vals)
+        v_single = r.get("vendor") or ""
+        if v_single and v_single not in cand_vals:
+            cand_vals.append(v_single)
+            cand_cols.append(r.get("vendor_col") or "vendor")
+        pairs = list(zip(cand_cols, cand_vals))
+
+        # 후보 중 사전/접미어 매칭되는 거래처 채택, 없으면 첫 비공란 후보
+        picked = _pick_vendor(pairs)
+        if picked:
+            vendor, vendor_col, dict_hit = picked
+        else:
+            dict_hit = None
+            vendor = next((str(v).strip() for _, v in pairs if v and str(v).strip()), "")
+            vendor_col = None
+
         account = (r.get("account") or "").strip()
         memo = r.get("memo") or ""
-
-        dict_hit = _match_dict(vendor)
         acct_hit = FI_ACCOUNT_FLAT.get(account)
         memo_hit = next((h for h in MEMO_HINTS if h in memo), None)
 
@@ -121,11 +161,13 @@ def scan(records):
 
         hits.append({
             **r,
+            "vendor": vendor,                 # 채택된 거래처(대표)
             "norm_vendor": _norm(vendor) or "(거래처미상)",
             "basis": basis,
             "category": category,
             "form": form,
             "matched": kw,
+            "vendor_col": vendor_col,         # 매칭된 컬럼(서면 검토 패널용)
         })
     return hits
 

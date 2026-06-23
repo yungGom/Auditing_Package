@@ -16,8 +16,11 @@ import json
 import hashlib
 
 # 저장 허용 키 — 이 외의 키(데이터 등)는 _sanitize 에서 전부 버린다.
-_ALLOWED_KEYS = {"vendor", "account", "memo", "amount", "header_row", "label", "headers"}
+# vendor_cols: 거래처 후보 컬럼 다중 선택(더존 관리항목 분산 대응)
+_ALLOWED_KEYS = {"vendor", "vendor_cols", "account", "memo", "amount",
+                 "header_row", "label", "headers"}
 _FIELD_KEYS = ("vendor", "account", "memo", "amount")
+_LIST_KEYS = ("headers", "vendor_cols")
 
 
 def default_path():
@@ -60,7 +63,7 @@ def _sanitize(mapping):
                 out[k] = int(v)
             except (TypeError, ValueError):
                 out[k] = 0
-        elif k == "headers":
+        elif k in _LIST_KEYS:
             if isinstance(v, (list, tuple)):
                 out[k] = [str(x) for x in v]
         else:

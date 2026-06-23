@@ -114,8 +114,27 @@ for f in files:
             if auto.get(field) in opts:
                 return opts.index(auto[field])
             return 0
+        # PATCH 6: 거래처는 복수 컬럼(더존 관리항목1~6 분산) 스캔 — multiselect
+        def vendor_default_cols():
+            if prof:
+                vc = prof.get("vendor_cols")
+                if isinstance(vc, list):
+                    sel = [c for c in vc if c in cols]
+                    if sel:
+                        return sel
+                if prof.get("vendor") in cols:
+                    return [prof["vendor"]]
+            cand = [c for c in cols if any(k in str(c)
+                    for k in ("관리항목", "거래처", "상대처", "거래상대"))]
+            if auto.get("vendor") in cols and auto["vendor"] not in cand:
+                cand.insert(0, auto["vendor"])
+            return cand
+
         c1, c2, c3, c4 = st.columns(4)
-        cv = c1.selectbox("거래처명 *", opts, index=idx("vendor", GUESS["vendor"]), key=f"v_{f.name}")
+        cv_list = c1.multiselect(
+            "거래처명 후보 컬럼 * (여러 개 가능)", cols, default=vendor_default_cols(),
+            key=f"v_{f.name}",
+            help="더존 관리항목1~6처럼 거래처가 여러 컬럼에 흩어져 있으면 모두 선택하세요. 각 행에서 금융기관으로 매칭되는 값을 자동 채택합니다.")
         ca = c2.selectbox("계정과목", opts, index=idx("account", GUESS["account"]), key=f"a_{f.name}")
         cm = c3.selectbox("적요", opts, index=idx("memo", GUESS["memo"]), key=f"m_{f.name}")
         camt = c4.selectbox("금액", opts, index=idx("amount", GUESS["amount"]), key=f"amt_{f.name}")
@@ -126,8 +145,11 @@ for f in files:
                      help="같은 양식(동일 헤더 구성) 파일을 다음에 올리면 매핑이 자동 적용됩니다."):
             try:
                 save_profile(sig, {
-                    "header_row": int(hrow), "vendor": cv, "account": ca,
-                    "memo": cm, "amount": camt, "headers": cols, "label": kind,
+                    "header_row": int(hrow),
+                    "vendor": (cv_list[0] if cv_list else "(없음)"),
+                    "vendor_cols": list(cv_list),
+                    "account": ca, "memo": cm, "amount": camt,
+                    "headers": cols, "label": kind,
                 })
                 st.success(f"매핑을 저장했습니다. 같은 양식 파일은 자동 적용됩니다. (저장 위치: {profile_path()})")
             except Exception as e:
@@ -141,10 +163,15 @@ for f in files:
                 amt = float(amt) if amt else 0.0
             except ValueError:
                 amt = 0.0
+            vendor_candidates = [g(c).strip() for c in cv_list]
+            vendor_rep = next((x for x in vendor_candidates if x), "")  # 첫 비공란 = 대표
             records.append({
                 "row_no": row_counter, "source": f.name, "kind": kind,
                 "date": "", "slip_no": "",
-                "account": g(ca).strip(), "vendor": g(cv).strip(),
+                "account": g(ca).strip(),
+                "vendor": vendor_rep,                      # 대표값(하위호환)
+                "vendor_candidates": vendor_candidates,    # 복수 컬럼 값 (PATCH 6)
+                "vendor_cand_cols": list(cv_list),         # 후보 컬럼명 (검토 패널용)
                 "memo": g(cm).strip(), "amount": amt,
                 "raw": r.to_dict(),               # 원본 행 그대로 보존
                 "raw_cols": cols,                  # 원본 컬럼 순서
@@ -255,6 +282,7 @@ if "result" in st.session_state:
     with st.expander("🔎 전체 검토 근거 & 미매칭 안전망"):
         tr = [{"기관": h["norm_vendor"], "출처": h["source"], "원천행": h["row_no"],
                "계정과목": h["account"], "거래처명": h.get("vendor") or "(공란)",
+               "매칭컬럼": h.get("vendor_col") or "-",
                "적요": h["memo"], "금액": h["amount"]}
               for h in sorted(hits, key=lambda x: x["norm_vendor"])]
         st.dataframe(pd.DataFrame(tr), use_container_width=True, hide_index=True)

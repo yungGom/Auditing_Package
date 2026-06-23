@@ -144,6 +144,49 @@ def test_case9_raw_preserved():
     assert h["raw"]["계정과목"] == "사채"
 
 
+# ── 케이스 10: 더존 관리항목 분산 거래처 탐지 (PATCH 6) ──────────────
+def test_case10_multi_vendor_columns():
+    """관리항목2에만 '신한은행'이 든 분개장에서도 탐지된다."""
+    recs = [{
+        "row_no": 1, "source": "더존분개장.xlsx", "kind": "분개장",
+        "date": "2026-01-01", "slip_no": "S1",
+        "account": "보통예금", "memo": "이자", "vendor": "", "amount": 1000.0,
+        "vendor_candidates": ["", "신한은행"],
+        "vendor_cand_cols": ["관리항목1", "관리항목2"],
+        "raw": {}, "raw_cols": [],
+    }]
+    hits = D.scan(recs)
+    assert len(hits) == 1
+    assert hits[0]["norm_vendor"] == "신한은행"
+    assert hits[0]["vendor_col"] == "관리항목2"
+    cands = D.aggregate(hits)
+    assert any(c["기관(정규화)"] == "신한은행" for c in cands)
+
+
+def test_case10b_bank_adopted_over_project_name():
+    """관리항목1=프로젝트명, 관리항목2=은행명이면 은행이 채택된다."""
+    recs = [{
+        "row_no": 1, "source": "더존분개장.xlsx", "kind": "분개장",
+        "date": "", "slip_no": "",
+        "account": "단기차입금", "memo": "차입", "vendor": "프로젝트A", "amount": 0.0,
+        "vendor_candidates": ["프로젝트A", "국민은행"],
+        "vendor_cand_cols": ["관리항목1", "관리항목2"],
+        "raw": {}, "raw_cols": [],
+    }]
+    hits = D.scan(recs)
+    assert hits[0]["norm_vendor"] == "국민은행"
+    assert hits[0]["basis"] == "사전매칭"
+    assert hits[0]["vendor_col"] == "관리항목2"
+
+
+def test_case10c_single_vendor_backward_compat():
+    """vendor_candidates 없는 기존 단일 vendor 레코드도 그대로 탐지(회귀)."""
+    recs = [make_rec(1, "하나은행", "보통예금")]
+    hits = D.scan(recs)
+    assert hits[0]["norm_vendor"] == "하나은행"
+    assert hits[0]["vendor_col"] == "vendor"
+
+
 if __name__ == "__main__":
     import traceback
     tests = [(n, f) for n, f in sorted(globals().items())
