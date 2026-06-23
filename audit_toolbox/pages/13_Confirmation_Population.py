@@ -11,7 +11,7 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import fi_detector as D
 from report_builder import build_workbook, sort_candidates
-from mapping_utils import GUESS, guess_col, detect_header_row
+from mapping_utils import GUESS, guess_col, detect_header_row, resolve_mapping
 from profile_store import match_mapping, save_profile, default_path as profile_path
 
 st.set_page_config(page_title="조회 모집단 완전성", page_icon="📨", layout="wide")
@@ -91,13 +91,16 @@ for f in files:
             st.success("📌 저장된 매핑을 자동 적용했습니다. 맞는지 확인만 하세요.")
         elif psource == "preset":
             st.info(f"🧩 ERP 프리셋 추정 적용: {prof.get('label','')}. 확인 후 저장하면 다음부터 우선 적용됩니다.")
+        # H2: 헤더명 동의어 + 데이터 시그니처 보조 추정 (저장본 없을 때 위치 추정)
+        auto = resolve_mapping(cols, df.to_dict("list"))
 
         def idx(field, keys):
-            # 저장된/프리셋 매핑이 있으면 우선, 없으면 동의어 추정
+            # 우선순위: 저장본/프리셋 → 헤더명+데이터 보조 추정 → (없음)
             if prof and prof.get(field) in opts:
                 return opts.index(prof[field])
-            g = guess_col(cols, keys)
-            return opts.index(g) if g in opts else 0
+            if auto.get(field) in opts:
+                return opts.index(auto[field])
+            return 0
         c1, c2, c3, c4 = st.columns(4)
         cv = c1.selectbox("거래처명 *", opts, index=idx("vendor", GUESS["vendor"]), key=f"v_{f.name}")
         ca = c2.selectbox("계정과목", opts, index=idx("account", GUESS["account"]), key=f"a_{f.name}")
