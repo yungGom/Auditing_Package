@@ -44,6 +44,19 @@ def sidebar():
             st.dataframe(pd.DataFrame(
                 [{"기관": n, "유형": t} for n, t, d, tel in D.ONLINE_FI]),
                 use_container_width=True, hide_index=True, height=280)
+        st.markdown("### 🗂️ 사전 외부 파일")
+        src = "외부 엑셀 사용 중" if (D.EXTERNAL_DICT_LOADED or D.EXTERNAL_ONLINE_LOADED) else "내장 기본값"
+        st.caption(f"현재 출처: {src}")
+        st.caption(f"엑셀을 이 폴더에 두면 코드 수정 없이 갱신됩니다:\n`{D._BASE_DIR}`")
+        st.caption(f"파일명: {D.DICT_XLSX_NAME} · {D.ONLINE_XLSX_NAME}")
+        if st.button("현재 사전 → 엑셀 템플릿 내보내기", key="export_dicts"):
+            try:
+                dp, op = D.export_templates(D._BASE_DIR)
+                D.reload_external()
+                st.success("내보냈습니다. 엑셀을 수정한 뒤 페이지를 새로고침하면 반영됩니다.")
+                st.caption(f"{os.path.basename(dp)} / {os.path.basename(op)}")
+            except Exception as e:
+                st.error(f"내보내기 실패: {e}")
 
 # ── 1) 업로드 ──
 st.markdown("### 1️⃣ 분개장·명세서 업로드")

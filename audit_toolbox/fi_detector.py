@@ -3,6 +3,7 @@
 - 외부 통신 없음. 전부 로컬 처리.
 - 판정이 아니라 '후보 추출 + 근거 제시'가 목적.
 """
+import os
 import re
 import unicodedata
 
@@ -342,3 +343,111 @@ def lookup_online(vendor_norm, form):
     matches.sort(key=lambda m: (m[1] != form, abs(m[4] - len(target))))
     name, typ, date, tel, _ = matches[0]
     return {"online": True, "정식명": name, "전화번호": tel, "서비스일자": date, "유형": typ}
+
+
+# ─────────────────────────────────────────────────────────────
+# PATCH 5: 사전·온라인목록 외부 엑셀 분리 (회계사가 코드 없이 갱신)
+#   같은 폴더에 아래 파일이 있으면 내장 기본값 대신 사용한다:
+#     금융기관사전.xlsx     (열: 카테고리, 키워드)
+#     온라인조회목록.xlsx   (열: 기관명, 유형, 서비스일자, 전화번호)
+#   파일이 없거나 읽기 실패 시 내장 기본값으로 자동 복귀(동작 불변).
+#   외부 통신 없음. 로컬 엑셀만 읽는다.
+# ─────────────────────────────────────────────────────────────
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DICT_XLSX_NAME = "금융기관사전.xlsx"
+ONLINE_XLSX_NAME = "온라인조회목록.xlsx"
+
+# 내장 기본값 스냅샷 (외부 파일 없을 때 복귀용)
+_DEFAULT_FI_DICT = {k: list(v) for k, v in FI_DICT.items()}
+_DEFAULT_ONLINE_FI = list(ONLINE_FI)
+
+EXTERNAL_DICT_LOADED = False
+EXTERNAL_ONLINE_LOADED = False
+
+
+def _load_external_dict(path):
+    """금융기관사전.xlsx → {카테고리:[키워드,...]} 또는 None(없음/실패)."""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(path, read_only=True, data_only=True)
+        ws = wb.active
+        d = {}
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0 or not row:
+                continue  # 헤더 / 빈 행
+            cat = str(row[0]).strip() if row[0] is not None else ""
+            kw = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+            if cat and kw:
+                d.setdefault(cat, []).append(kw)
+        wb.close()
+        return d or None
+    except Exception:
+        return None
+
+
+def _load_external_online(path):
+    """온라인조회목록.xlsx → [(기관명, 유형, 서비스일자, 전화번호),...] 또는 None."""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(path, read_only=True, data_only=True)
+        ws = wb.active
+        out = []
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0 or not row:
+                continue
+            name = str(row[0]).strip() if row[0] is not None else ""
+            typ = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+            svc = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
+            tel = str(row[3]).strip() if len(row) > 3 and row[3] is not None else ""
+            if name and typ:
+                out.append((name, typ, svc, tel))
+        wb.close()
+        return out or None
+    except Exception:
+        return None
+
+
+def reload_external(base_dir=None):
+    """외부 엑셀이 있으면 사전/온라인목록을 교체, 없으면 내장 기본값으로 복귀."""
+    global FI_DICT, ONLINE_FI, _ONLINE_INDEX
+    global EXTERNAL_DICT_LOADED, EXTERNAL_ONLINE_LOADED
+    base = base_dir or _BASE_DIR
+    d = _load_external_dict(os.path.join(base, DICT_XLSX_NAME))
+    o = _load_external_online(os.path.join(base, ONLINE_XLSX_NAME))
+    FI_DICT = d if d else {k: list(v) for k, v in _DEFAULT_FI_DICT.items()}
+    ONLINE_FI = o if o else list(_DEFAULT_ONLINE_FI)
+    EXTERNAL_DICT_LOADED = bool(d)
+    EXTERNAL_ONLINE_LOADED = bool(o)
+    _ONLINE_INDEX = [(_canon(ONLINE_ALIAS.get(n, n)), n, t, dt, tel)
+                     for (n, t, dt, tel) in ONLINE_FI]
+    return EXTERNAL_DICT_LOADED, EXTERNAL_ONLINE_LOADED
+
+
+def export_templates(dirpath):
+    """현재 사전/온라인목록을 엑셀 템플릿 2개로 내보낸다(회계사 편집용)."""
+    from openpyxl import Workbook
+    os.makedirs(dirpath, exist_ok=True)
+    dict_path = os.path.join(dirpath, DICT_XLSX_NAME)
+    online_path = os.path.join(dirpath, ONLINE_XLSX_NAME)
+
+    wb = Workbook(); ws = wb.active; ws.title = "금융기관사전"
+    ws.append(["카테고리", "키워드"])
+    for cat, kws in FI_DICT.items():
+        for kw in kws:
+            ws.append([cat, kw])
+    wb.save(dict_path)
+
+    wb2 = Workbook(); ws2 = wb2.active; ws2.title = "온라인조회목록"
+    ws2.append(["기관명", "유형", "서비스일자", "전화번호"])
+    for (n, t, dt, tel) in ONLINE_FI:
+        ws2.append([n, t, dt, tel])
+    wb2.save(online_path)
+    return dict_path, online_path
+
+
+# 임포트 시 외부 파일 자동 반영 (없으면 내장 기본값 유지 → 동작 불변)
+reload_external()
