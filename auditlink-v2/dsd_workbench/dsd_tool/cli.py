@@ -55,6 +55,20 @@ def main(argv=None):
     p_foot.add_argument("--report", action="store_true",
                         help="관계별 상세 출력")
 
+    p_map = sub.add_parser("map",
+                           help="계정과목 → XBRL element 매핑 추천 (완전 로컬)")
+    p_map.add_argument("xlsx", nargs="?",
+                       help="입력 템플릿 .xlsx (계정과목명|구분|비고)")
+    p_map.add_argument("--template", metavar="경로",
+                       help="빈 입력 템플릿 생성 후 종료")
+    p_map.add_argument("--corpus", default=None,
+                       help="mapping_corpus.sqlite 경로 (기본: dart_explorer 산출물)")
+    p_map.add_argument("--induty", default=None,
+                       help="회사 업종코드 — 동업종 실증 가중치 ×2")
+    p_map.add_argument("--threshold", type=float, default=None,
+                       help="적합 표준 없음 판정 임계 (기본 0.45)")
+    p_map.add_argument("-o", "--out", default=None, help="출력 .xlsx 경로")
+
     p_his = sub.add_parser("history", help="repack 수정이력 조회 (감사조서 증빙)")
     p_his.add_argument("dsd", nargs="?", default=None,
                        help="원본 .dsd 경로 (생략 시 전체 이력)")
@@ -144,6 +158,23 @@ def main(argv=None):
                 if r["verdict"] not in (FUZZY, MISMATCH):
                     _println(f"  [{r['sheet']}] {r['loc']} {r['label']!r} "
                              f"({r['scope']}) 자식 {r['n_children']}개 → 일치")
+        return 0
+
+    if args.cmd == "map":
+        from .mapping import DEFAULT_THRESHOLD, map_accounts, write_template
+        if args.template:
+            path = write_template(args.template)
+            _println(f"입력 템플릿 생성: {path}")
+            return 0
+        if not args.xlsx:
+            _println("입력 .xlsx 경로 또는 --template 를 지정하세요.")
+            return 1
+        res = map_accounts(args.xlsx, out_path=args.out,
+                           db_path=args.corpus, induty=args.induty,
+                           threshold=args.threshold or DEFAULT_THRESHOLD)
+        _println(f"매핑 후보 생성: {res['out_path']}")
+        _println(f"  계정과목 {res['items']}건 / 적합 표준 없음 "
+                 f"{res['no_match']}건 (선택 열은 회계사 기입 — 자동 확정 없음)")
         return 0
 
     if args.cmd == "history":

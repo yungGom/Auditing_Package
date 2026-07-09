@@ -186,6 +186,40 @@ def load_standard_labels(xlsm_path, db_path=None):
     return n
 
 
+def export_references(xlsm_path, out_json=None):
+    """금감원 xlsm Reference Link → element별 기준서 참조 JSON.
+
+    (전량 빌드 중 sqlite 쓰기 경합을 피하려고 DB가 아닌 JSON으로 저장 —
+    D-3b 조회기가 읽는다.)
+    """
+    import json
+    from openpyxl import load_workbook
+    wb = load_workbook(xlsm_path, read_only=True)
+    ws = wb["Reference Link"]
+    refs = {}
+    for row in ws.iter_rows(values_only=True):
+        prefix, name = row[1], row[2]
+        if not name or prefix in (None, "prefix"):
+            continue
+        parts = [str(v).strip() for v in (row[6], row[7], row[8])
+                 if v is not None and str(v).strip()]
+        if not parts:
+            continue
+        eid = f"{prefix}_{name}"
+        ref = " ".join(parts)
+        refs.setdefault(eid, [])
+        if ref not in refs[eid]:
+            refs[eid].append(ref)
+    wb.close()
+    if out_json is None:
+        out_json = os.path.join(os.path.dirname(DEFAULT_DB),
+                                "standard_refs.json")
+    os.makedirs(os.path.dirname(out_json), exist_ok=True)
+    with open(out_json, "w", encoding="utf-8") as f:
+        json.dump(refs, f, ensure_ascii=False)
+    return out_json, len(refs)
+
+
 # ---------------------------------------------------------------------------
 # 통계
 # ---------------------------------------------------------------------------
