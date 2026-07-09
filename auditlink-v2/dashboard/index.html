@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>AuditLink 관제탑</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: 'Malgun Gothic', sans-serif; background: #0d1526;
+         color: #dce4f2; padding: 20px; }
+  h1 { font-size: 19px; color: #fff; }
+  h1 small { color: #7f93b8; font-weight: normal; font-size: 12px; }
+  h2 { font-size: 13px; color: #8fb4f0; margin: 0 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+          gap: 14px; margin-top: 14px; }
+  .card { background: #16223a; border: 1px solid #26365a; border-radius: 10px;
+          padding: 14px 16px; }
+  .wide { grid-column: 1 / -1; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: #7f93b8; font-weight: normal;
+       border-bottom: 1px solid #26365a; padding: 3px 6px; }
+  td { padding: 3px 6px; border-bottom: 1px solid #1c2a47; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { height: 14px; background: #1c2a47; border-radius: 7px; overflow: hidden;
+         margin: 6px 0; }
+  .bar > div { height: 100%; background: linear-gradient(90deg,#3d7bfd,#5fd4a2);
+               transition: width .6s; }
+  .kpis { display: flex; gap: 18px; flex-wrap: wrap; margin: 6px 0; }
+  .kpi b { display: block; font-size: 20px; color: #fff; }
+  .kpi span { font-size: 11px; color: #7f93b8; }
+  .st-통과 { color: #5fd4a2; } .st-진행중 { color: #f2c94c; }
+  .st-실패, .st-error { color: #ff6b6b; }
+  .st-대기 { color: #9f7bfd; }
+  .ok { color: #5fd4a2; } .warn { color: #f2c94c; } .bad { color: #ff6b6b; }
+  #updated { font-size: 11px; color: #7f93b8; }
+  .muted { color: #7f93b8; }
+</style>
+</head>
+<body>
+<h1>AuditLink 관제탑 <small>읽기 전용 · 5초 갱신 · localhost</small></h1>
+<div id="updated">불러오는 중…</div>
+
+<div class="grid">
+  <div class="card wide">
+    <h2>① 코퍼스 빌드 진행률 (mapping_corpus.sqlite)</h2>
+    <div class="kpis" id="corpus-kpis"></div>
+    <div class="bar"><div id="corpus-bar" style="width:0%"></div></div>
+    <div id="corpus-detail" class="muted" style="font-size:12px"></div>
+  </div>
+
+  <div class="card">
+    <h2>② 최근 파이프라인 실행 10건</h2>
+    <table><thead><tr><th>시각</th><th>회사</th><th>상태</th><th>사유</th></tr></thead>
+    <tbody id="runs"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>③ dsd_workbench 수정이력 최근 10건 (history.sqlite)</h2>
+    <table><thead><tr><th>시각</th><th>원본</th><th>모드</th>
+    <th class="num">수정</th><th class="num">&amp;cr;</th><th class="num">dedup</th></tr></thead>
+    <tbody id="history"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>④ 테스트 스위트 최종 결과 (.test_results.json)</h2>
+    <div class="kpis" id="tests"></div>
+  </div>
+
+  <div class="card">
+    <h2>⑤ 게이트 현황판 (GATES.json)</h2>
+    <table><thead><tr><th>패치</th><th>제목</th><th>상태</th><th>비고</th></tr></thead>
+    <tbody id="gates"></tbody></table>
+  </div>
+</div>
+
+<script>
+function esc(s){const d=document.createElement('span');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function kpi(v,l){return `<div class="kpi"><b>${esc(v)}</b><span>${esc(l)}</span></div>`;}
+function stCls(s){s=String(s||'');if(s.startsWith('통과')||s==='ok')return'st-통과';
+ if(s.startsWith('진행'))return'st-진행중';if(s.startsWith('대기'))return'st-대기';
+ if(s==='no_annual'||s==='no_xbrl')return'muted';return'st-실패';}
+
+async function refresh(){
+  try{
+    const r = await fetch('/api/status'); const d = await r.json();
+    document.getElementById('updated').textContent = '마지막 갱신: ' + d.now;
+
+    const c = d.corpus || {};
+    const bs = c.by_status || {};
+    const total = c.target_total, done = c.processed || 0;
+    document.getElementById('corpus-kpis').innerHTML =
+      kpi(total ? `${done.toLocaleString()} / ${total.toLocaleString()}` :
+          done.toLocaleString(), '처리 / 전체(상장사)') +
+      kpi(bs.ok||0, 'ok') + kpi(bs.no_annual||0, 'no_annual') +
+      kpi(bs.no_xbrl||0, 'no_xbrl') + kpi(bs.error||0, 'error') +
+      kpi(`${(c.today_requests_est||0).toLocaleString()} / ${(c.daily_limit||0).toLocaleString()}`,
+          '오늘 API 사용량(추정) / 한도');
+    document.getElementById('corpus-bar').style.width =
+      total ? Math.min(100, done/total*100).toFixed(1)+'%' : '0%';
+    document.getElementById('corpus-detail').textContent =
+      `usages ${(c.usages||0).toLocaleString()}행 · 고유 element ${(c.distinct_elements||0).toLocaleString()}` +
+      ` · 확장 ${(c.extensions||0).toLocaleString()}` +
+      (c.last ? ` · 마지막: ${c.last[0]} (${c.last[1]}, ${c.last[2]})` : '');
+
+    document.getElementById('runs').innerHTML = (d.recent_runs||[]).map(x =>
+      `<tr><td>${esc((x.at||'').slice(5,16))}</td><td>${esc(x.corp)}</td>` +
+      `<td class="${stCls(x.status)}">${esc(x.status)}</td>` +
+      `<td class="muted">${esc((x.error||'').slice(0,42))}</td></tr>`).join('');
+
+    document.getElementById('history').innerHTML = (d.history||[]).map(x =>
+      `<tr><td>${esc((x.ts||'').slice(5,16))}</td><td>${esc(x.dsd)}</td>` +
+      `<td>${esc(x.mode)}</td><td class="num">${x.edits}</td>` +
+      `<td class="num">${x.cleans}</td><td class="num">${x.dedups}</td></tr>`).join('')
+      || '<tr><td colspan="6" class="muted">이력 없음</td></tr>';
+
+    const t = d.tests;
+    document.getElementById('tests').innerHTML = t ?
+      kpi(t.passed, '통과') +
+      `<div class="kpi"><b class="${t.failed? 'bad':'ok'}">${t.failed}</b><span>실패</span></div>` +
+      kpi(t.skipped, '스킵') + kpi(t.duration_s+'s', '소요') + kpi(t.when, '실행 시각')
+      : '<span class="muted">기록 없음 — pytest 실행 시 자동 생성</span>';
+
+    document.getElementById('gates').innerHTML = (d.gates||[]).map(g =>
+      `<tr><td>${esc(g.patch)}</td><td>${esc(g.title)}</td>` +
+      `<td class="${stCls(g.status)}">${esc(g.status)}</td>` +
+      `<td class="muted">${esc(g.note||'')}</td></tr>`).join('');
+  }catch(e){
+    document.getElementById('updated').textContent = '갱신 실패: ' + e;
+  }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

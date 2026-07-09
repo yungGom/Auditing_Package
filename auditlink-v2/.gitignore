@@ -33,3 +33,4 @@ dart_explorer/.env
 dart_explorer/client/.env
 dart_explorer/cache/
 dart_explorer/corpus/
+.test_results.json

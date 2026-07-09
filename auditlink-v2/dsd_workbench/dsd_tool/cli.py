@@ -69,6 +69,16 @@ def main(argv=None):
                        help="적합 표준 없음 판정 임계 (기본 0.45)")
     p_map.add_argument("-o", "--out", default=None, help="출력 .xlsx 경로")
 
+    p_me = sub.add_parser("map-eval",
+                          help="매핑 추천 홀드아웃 자동 검증 (D-3b 게이트)")
+    p_me.add_argument("--corpus", default=None, help="mapping_corpus.sqlite")
+    p_me.add_argument("--holdout", type=int, default=30, help="홀드아웃 회사 수")
+    p_me.add_argument("--seed", type=int, default=42)
+    p_me.add_argument("--caps", default=None,
+                      help="구간별 샘플 상한 '쉬움:100,중간:200,함정:60'")
+    p_me.add_argument("--json", dest="out_json", default=None,
+                      help="리포트 JSON 저장 경로")
+
     p_his = sub.add_parser("history", help="repack 수정이력 조회 (감사조서 증빙)")
     p_his.add_argument("dsd", nargs="?", default=None,
                        help="원본 .dsd 경로 (생략 시 전체 이력)")
@@ -175,6 +185,32 @@ def main(argv=None):
         _println(f"매핑 후보 생성: {res['out_path']}")
         _println(f"  계정과목 {res['items']}건 / 적합 표준 없음 "
                  f"{res['no_match']}건 (선택 열은 회계사 기입 — 자동 확정 없음)")
+        return 0
+
+    if args.cmd == "map-eval":
+        from .mapping_eval import evaluate
+        caps = None
+        if args.caps:
+            caps = {k: int(v) for k, v in
+                    (kv.split(":") for kv in args.caps.split(","))}
+        rep = evaluate(db_path=args.corpus, n_holdout=args.holdout,
+                       caps=caps, seed=args.seed, progress=_println,
+                       out_json=args.out_json)
+        _println(f"홀드아웃 {rep['excluded']}사 (누수 방지 제외) / "
+                 f"정답쌍 {rep['pairs_total']:,} / 표본 {rep['sampled']}")
+        for tier, s in rep["tiers"].items():
+            extra = (f", 확장제시 {s['ext_suggested']}/{s['n']}"
+                     if "ext_suggested" in s else "")
+            _println(f"  [{tier}] n={s['n']}  Top-1 {s['top1']:.1%}  "
+                     f"Top-4 {s['top4']:.1%}{extra}")
+        g = rep["gate"]
+        _println(f"게이트({g['criterion']}): "
+                 f"{'통과' if g['passed'] else '미달'}"
+                 f" — 실측 {g['value']:.1%}" if g["value"] is not None
+                 else "게이트: 중간 구간 표본 없음")
+        for m in rep["misses"][:8]:
+            _println(f"  ✗ [{m['tier']}] {m['label']!r} 정답 "
+                     f"{m['element_id'][:40]} → {m['got'][:2]}")
         return 0
 
     if args.cmd == "history":

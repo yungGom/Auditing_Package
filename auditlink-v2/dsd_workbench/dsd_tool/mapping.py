@@ -156,8 +156,12 @@ def similarity(query_norm, query_raw, label):
     ln = normalize(label)
     if not ln:
         return 0.0
-    best_jamo = max(jamo_similarity(v, ln)
-                    for v in _query_variants(query_norm))
+    variants = _query_variants(query_norm)
+    # 조기 탈출: 어떤 변형과도 음절 겹침이 없으면 무관 (자모 DP 생략)
+    lset = set(ln)
+    if not any(set(v) & lset for v in variants):
+        return 0.0
+    best_jamo = max(jamo_similarity(v, ln) for v in variants)
     sim = (SIM_MIX["jamo"] * best_jamo
            + SIM_MIX["jaccard"] * token_jaccard(query_raw, label))
     return sim * _antonym_penalty(query_norm, ln)
@@ -168,19 +172,24 @@ def similarity(query_norm, query_raw, label):
 # ---------------------------------------------------------------------------
 
 class MappingCorpus:
-    """mapping_corpus.sqlite 읽기 전용 스냅샷 (조회기 시작 시 메모리 적재)."""
+    """mapping_corpus.sqlite 읽기 전용 스냅샷 (조회기 시작 시 메모리 적재).
 
-    def __init__(self, db_path=None, refs_path=None):
+    exclude_corps: 집계에서 제외할 corp_code 집합 — 홀드아웃 검증의
+    누수 방지용 (해당 회사의 라벨·빈도가 추천에 반영되지 않음).
+    """
+
+    def __init__(self, db_path=None, refs_path=None, exclude_corps=None):
         path = db_path or DEFAULT_CORPUS
         if not os.path.exists(path):
             raise FileNotFoundError(
                 f"매핑 코퍼스 없음: {path} — dart_explorer에서 "
                 "`corpus build`로 먼저 생성하세요.")
+        excl = set(exclude_corps or ())
         con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=30)
         self.induty = dict(con.execute(
             "SELECT corp_code, induty_code FROM companies "
             "WHERE status = 'ok'"))
-        self.total_companies = len(self.induty)
+        self.total_companies = len(set(self.induty) - excl)
 
         # element별: 사용 회사 목록, 라벨 변형, Role 코드
         self.elements = {}
@@ -188,6 +197,8 @@ class MappingCorpus:
             "SELECT element_id, corp_code, label_ko, roles FROM usages "
             "WHERE is_ext = 0 AND element_id NOT LIKE 'dart-gcd%'")
         for eid, corp, label, roles in rows:
+            if corp in excl:
+                continue
             e = self.elements.setdefault(
                 eid, {"corps": set(), "labels": set(), "roles": set()})
             e["corps"].add(corp)
@@ -206,6 +217,8 @@ class MappingCorpus:
         self.extensions = collections.defaultdict(set)
         for eid, corp, label in con.execute(
                 "SELECT element_id, corp_code, label_ko FROM extensions"):
+            if corp in excl:
+                continue
             if label:
                 self.extensions[label].add(corp)
         con.close()
