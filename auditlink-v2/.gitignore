@@ -1,0 +1,35 @@
+# Python / backend
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.db
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.log
+
+# Claude Code (keep shared launch.json, ignore personal local settings)
+.claude/settings.local.json
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.sw?
+
+# DSD tool generated artifacts
+dsd_workbench/dsd_tool/fixtures/_work/
+dsd_workbench/dsd_tool/fixtures/verify_g3/
+dsd_workbench/history/
+
+# dart_explorer: API 키·다운로드 캐시 (커밋 금지)
+dart_explorer/.env
+dart_explorer/client/.env
+dart_explorer/cache/
+dart_explorer/corpus/

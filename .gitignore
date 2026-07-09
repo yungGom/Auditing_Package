@@ -6,7 +6,10 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .env
-
+*.dsd
+*.zip
+dsd_workbench/dsd_tool/fixtures/real/
+dart_explorer/tests/fixtures/
 
 # OS / editor
 .DS_Store
