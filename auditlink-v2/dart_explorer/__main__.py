@@ -105,8 +105,8 @@ def main(argv=None):
                                       role_filter=args.role)
         print(f"차원 표 생성: {res['out_path']}")
         for r in res["roles"]:
-            print(f"  [{r['axes']}축/{r['sections']}표/{r['rows']}행] "
-                  f"{r['definition'][:70]}")
+            print(f"  [{r['sheet']}] {r['axes']}축/{r['sections']}표/"
+                  f"{r['rows']}행 — {r['definition'][:60]}")
         return 0
 
     if args.cmd == "corpus":

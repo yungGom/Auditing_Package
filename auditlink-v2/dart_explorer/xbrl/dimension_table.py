@@ -15,6 +15,7 @@ DART 구조 반영 (삼성전자 실측):
 스코프 제외: typed dimension.
 """
 import collections
+import datetime
 import os
 import re
 
@@ -23,7 +24,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from .taxonomy import LB, XL, TaxonomyPackage, _pkg_glob, _sheet_name
+from .taxonomy import LB, XL, TaxonomyPackage, _pkg_glob
 
 XI = "http://www.xbrl.org/2003/instance"
 XD = "http://xbrl.org/2006/xbrldi"
@@ -39,6 +40,17 @@ _NUMFMT = "#,##0;[RED](#,##0)"              # 음수 = 빨간 괄호
 _NUMFMT_DEC = "#,##0.00;[RED](#,##0.00)"
 
 _PERIOD_NAMES = ["당기", "전기", "전전기"]
+
+# 재무제표 시트 약칭 판정 (role 정의 텍스트 키워드 매칭 — 코드 하드코딩 대신
+# "재무상태표" 등 명칭 우선). "포괄손익"을 "손익계산서"보다 먼저 검사해야
+# "포괄손익계산서"가 PL로 잘못 분류되지 않는다.
+_FS_KEYWORDS = [
+    ("포괄손익", "PL1"), ("comprehensive income", "PL1"),
+    ("재무상태표", "BS"), ("financial position", "BS"),
+    ("손익계산서", "PL"), ("income statement", "PL"),
+    ("자본변동표", "CE"), ("changes in equity", "CE"),
+    ("현금흐름표", "CF"), ("cash flows", "CF"),
+]
 
 
 def _qid(text):
@@ -59,6 +71,70 @@ def _try_num(val):
         return float(val)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_date(s):
+    try:
+        return datetime.date.fromisoformat(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_note_role(role_uri):
+    """role 코드가 D8xxxxx(주석) 형태인지 — 재무제표 본문(D2~D6)과 구분."""
+    m = re.match(r"D(\d)", _role_code(role_uri))
+    return bool(m) and m.group(1) == "8"
+
+
+def _is_separate(definition):
+    return "별도" in definition or \
+        ("Separate" in definition and "연결" not in definition)
+
+
+def _fs_abbrev(definition):
+    for kw, code in _FS_KEYWORDS:
+        if kw.lower() in definition.lower():
+            return code
+    return None
+
+
+def _tier_name(years_back):
+    if 0 <= years_back < len(_PERIOD_NAMES):
+        return _PERIOD_NAMES[years_back]
+    return f"{years_back + 1}기 전"
+
+
+def _duration_desc(start, end):
+    """기간 길이 설명: 3개월/누적/N개월 누적/None(연간, 접미사 없음)."""
+    days = (end - start).days + 1
+    months = round(days / 30.44)
+    if days >= 350:
+        return None                          # 연간 — 사업보고서 등
+    if 80 <= days <= 100:
+        return "3개월"
+    if start.month == 1 and start.day == 1:  # 회계연도 개시일부터 누적
+        if 175 <= days <= 190:
+            return "누적"                     # 반기 누적(관용 표기)
+        return f"{months}개월 누적"
+    return f"{months}개월"
+
+
+def _classify_period(ref_date, block):
+    """block=(type,start,end) → {name, desc, kind}. 라벨은 실측 일자 기반."""
+    btype, bstart, bend = block
+    end_date = _parse_date(bend)
+    ref_year = (ref_date or end_date).year if (ref_date or end_date) else None
+    years_back = max(0, ref_year - end_date.year) \
+        if (ref_year and end_date) else 0
+    name = _tier_name(years_back)
+    if btype == "duration":
+        start_date = _parse_date(bstart)
+        desc = _duration_desc(start_date, end_date) \
+            if start_date and end_date else None
+        return {"name": name, "desc": desc, "kind": "duration"}
+    suffix = "초" if end_date and (end_date.month, end_date.day) == (1, 1) \
+        else "말"
+    return {"name": name, "desc": suffix, "kind": "instant"}
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +184,19 @@ class XbrlInstance:
                 "ctx": self.contexts[cref], "value": val,
                 "decimals": el.get("decimals", ""),
             })
+
+        # 보고기준일 (dart-gcd_DocumentPeriodEndDate) — 당기/전기 판정 기준.
+        # 없으면 instant 컨텍스트 중 최신 종료일로 대체.
+        self.doc_period_end = None
+        ref = self.facts.get("dart-gcd_DocumentPeriodEndDate")
+        if ref:
+            self.doc_period_end = _parse_date(ref[0]["value"])
+        if self.doc_period_end is None:
+            ends = [_parse_date(c["end"]) for c in self.contexts.values()
+                    if c["type"] == "instant"]
+            ends = [d for d in ends if d]
+            if ends:
+                self.doc_period_end = max(ends)
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +288,7 @@ class RoleTable:
                  cube: HypercubeDef, role_uri, definition, pl):
         self.pkg = pkg
         self.definition = definition
+        self.ref_date = inst.doc_period_end
         self.cubes = cube.by_base.get(_base_code(_role_code(role_uri)), [])
         structural = _structural_concepts(self.cubes)
 
@@ -319,12 +409,13 @@ class _Section:
         return None
 
     def block_label(self, block):
-        ends = sorted({b[2] for b in self.blocks}, reverse=True)
-        rank = ends.index(block[2])
-        name = _PERIOD_NAMES[rank] if rank < 3 else f"{rank + 1}기 전"
-        if block[0] == "duration":
-            return f"(기간: {name} {block[1]} ~ {block[2]})"
-        return f"(기준일: {name}말 {block[2]})"
+        """실측 일자 기반 라벨. 예: '당기 3개월 (2025-04-01 ~ 2025-06-30)'."""
+        p = _classify_period(self.parent.ref_date, block)
+        _, bstart, bend = block
+        if p["kind"] == "duration":
+            head = f"{p['name']} {p['desc']}" if p["desc"] else p["name"]
+            return f"{head} ({bstart} ~ {bend})"
+        return f"{p['name']}{p['desc']} ({bend})"
 
 
 # ---------------------------------------------------------------------------
@@ -359,21 +450,19 @@ def _hdr(ws, r, c, value):
 
 
 def _render_section_flat(ws, sec: _Section, r):
-    """축 0개: 행=element, 열=기간."""
+    """축 0개: 행=element, 열=기간 (실측 일자 기반 라벨)."""
+    ref_date = sec.parent.ref_date
     cols = list(dict.fromkeys(
         ([b for b in sec.blocks] if sec.block_kind == "duration" else [])
         + sec.inst_cols))
     labels = []
-    di = ii = 0
     for c in cols:
-        if c[0] == "duration":
-            nm = _PERIOD_NAMES[di] if di < 3 else f"{di + 1}기 전"
-            labels.append(f"{nm}\n{c[1]}~{c[2]}")
-            di += 1
+        p = _classify_period(ref_date, c)
+        if p["kind"] == "duration":
+            head = f"{p['name']} {p['desc']}" if p["desc"] else p["name"]
+            labels.append(f"{head}\n{c[1]}~{c[2]}")
         else:
-            nm = (_PERIOD_NAMES[ii] + "말") if ii < 3 else ""
-            labels.append(f"{nm}\n{c[2]}")
-            ii += 1
+            labels.append(f"{p['name']}{p['desc']}\n{c[2]}")
     _hdr(ws, r, 1, "계정과목")
     for j, lab in enumerate(labels):
         _hdr(ws, r, 2 + j, lab)
@@ -439,23 +528,85 @@ def _render_section_dim(ws, sec: _Section, r):
     return r
 
 
+def _assign_sheet_names(entries):
+    """(role_uri, definition) 목록 → DSD 편집용 엑셀과 동일한 시트명 체계.
+
+    - 재무제표 본문(D2~D6): 정의 텍스트 키워드로 BS/PL/PL1/CE/CF 판정.
+      연결·별도가 "모두 렌더되는" 경우에만 별도에 `_별도` 접미사(연결이 기본).
+    - 주석(D8xxxxx): role 코드 오름차순으로 1, 2, 3, ... 순번.
+    - 판정 불가·충돌 시 role 코드로 폴백 + 31자 제한·중복 접미사 처리.
+    """
+    note_sorted = sorted(
+        [(uri, d) for uri, d in entries if _is_note_role(uri)],
+        key=lambda e: _role_code(e[0]))
+    note_number = {uri: str(i + 1) for i, (uri, _) in enumerate(note_sorted)}
+
+    fs_abbrev = {}
+    for uri, definition in entries:
+        if _is_note_role(uri):
+            continue
+        ab = _fs_abbrev(definition)
+        if ab:
+            fs_abbrev[uri] = ab
+    # 손익계산서(PL)가 따로 없이 "단일 포괄손익계산서"만 있는 경우
+    # (K-IFRS 단일 표시 방식) — 유일한 손익 시트이므로 PL1이 아닌 PL로 명명.
+    # PL1은 손익계산서·포괄손익계산서가 별개 표로 둘 다 존재할 때만 쓴다.
+    if "PL" not in fs_abbrev.values() and "PL1" in fs_abbrev.values():
+        fs_abbrev = {u: ("PL" if a == "PL1" else a)
+                     for u, a in fs_abbrev.items()}
+
+    def_by_uri = dict(entries)
+    variants = collections.defaultdict(set)
+    for uri, ab in fs_abbrev.items():
+        variants[ab].add(
+            "별도" if _is_separate(def_by_uri[uri]) else "연결")
+
+    used, names = set(), []
+    for uri, definition in entries:
+        if _is_note_role(uri):
+            base = note_number.get(uri, _role_code(uri))
+        else:
+            ab = fs_abbrev.get(uri)
+            if ab is None:
+                base = _role_code(uri)               # 미분류 폴백
+            elif _is_separate(definition) and len(variants[ab]) > 1:
+                base = f"{ab}_별도"
+            else:
+                base = ab
+        name, i = base[:31], 2
+        while name in used:
+            name = f"{base[:29]}_{i}"
+            i += 1
+        used.add(name)
+        names.append(name)
+    return names
+
+
 def render_dimension_tables(folder, out_path=None, role_filter=None):
     """패키지 폴더 → Role별 차원 표 엑셀. 요약 dict 반환."""
     pkg = TaxonomyPackage(folder)
     inst = XbrlInstance(folder)
     cube = HypercubeDef(folder)
-    wb = Workbook()
-    wb.remove(wb.active)
-    rendered = []
-    used_names = set()
+
+    entries = []
     for role_uri, definition, pl in pkg.roles():
         if role_filter and role_filter not in definition and \
                 role_filter not in role_uri:
             continue
         table = RoleTable(pkg, inst, cube, role_uri, definition, pl)
-        if not table.has_facts:
-            continue
-        ws = wb.create_sheet(_sheet_name(definition, used_names))
+        if table.has_facts:
+            entries.append((role_uri, definition, table))
+    if not entries:
+        raise ValueError("렌더링할 Role이 없습니다 (필터 확인).")
+
+    names = _assign_sheet_names([(u, d) for u, d, _ in entries])
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    rendered = []
+    for (role_uri, definition, table), sheet_name in zip(entries, names):
+        ws = wb.create_sheet(sheet_name)
+        # 추적성 보존: role 코드 + 정의 전문 (definition에 "[Dxxxxxx] ..." 포함)
         ws.append([definition])
         ws.cell(row=1, column=1).font = _BOLD
         r = 3
@@ -470,12 +621,11 @@ def render_dimension_tables(folder, out_path=None, role_filter=None):
         ws.freeze_panes = "B2"
         rendered.append({
             "definition": definition,
+            "sheet": sheet_name,
             "sections": len(table.sections),
             "axes": max((len(s.axes) for s in table.sections), default=0),
             "rows": sum(len(s.rows) for s in table.sections),
         })
-    if not rendered:
-        raise ValueError("렌더링할 Role이 없습니다 (필터 확인).")
     if out_path is None:
         out_path = os.path.join(folder, "차원표.xlsx")
     wb.save(out_path)
