@@ -71,6 +71,13 @@
     <table><thead><tr><th>패치</th><th>제목</th><th>상태</th><th>비고</th></tr></thead>
     <tbody id="gates"></tbody></table>
   </div>
+
+  <div class="card">
+    <h2>⑥ 확인된 DART 편집기 버전 (KNOWN_VERSIONS.md)</h2>
+    <table><thead><tr><th>editver</th><th class="num">확인 파일 수</th>
+    <th>G2</th><th>최근 확인</th></tr></thead>
+    <tbody id="versions"></tbody></table>
+  </div>
 </div>
 
 <script>
@@ -124,6 +131,12 @@ async function refresh(){
       `<tr><td>${esc(g.patch)}</td><td>${esc(g.title)}</td>` +
       `<td class="${stCls(g.status)}">${esc(g.status)}</td>` +
       `<td class="muted">${esc(g.note||'')}</td></tr>`).join('');
+
+    document.getElementById('versions').innerHTML = (d.known_versions||[]).map(v =>
+      `<tr><td>${esc(v.editver)}</td><td class="num">${v.files}</td>` +
+      `<td class="${v.g2==='PASS'?'ok':'bad'}">${esc(v.g2)}</td>` +
+      `<td class="muted">${esc(v.date)}</td></tr>`).join('')
+      || '<tr><td colspan="4" class="muted">확인된 버전 없음</td></tr>';
   }catch(e){
     document.getElementById('updated').textContent = '갱신 실패: ' + e;
   }

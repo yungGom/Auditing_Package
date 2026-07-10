@@ -4,10 +4,13 @@
 - 수정이력: dsd_workbench/history/history.sqlite (mode=ro, 파일 읽기)
 - 테스트: .test_results.json (pytest 후크 기록)
 - 게이트: GATES.json (수동 기록)
+- 편집기 버전: dsd_workbench/KNOWN_VERSIONS.md (표 파싱, 파일 읽기 —
+  dsd_workbench는 코드 import 없이 파일로만 접근해 네트워크 경계를 유지한다)
 """
 import datetime
 import json
 import os
+import re
 import sqlite3
 
 from fastapi import FastAPI
@@ -22,6 +25,10 @@ CORP_CODES = os.path.join(_ROOT, "dart_explorer", "cache", "corp",
                           "corp_codes.json")
 TEST_RESULTS = os.path.join(_ROOT, ".test_results.json")
 GATES = os.path.join(_ROOT, "GATES.json")
+KNOWN_VERSIONS = os.path.join(_ROOT, "dsd_workbench", "KNOWN_VERSIONS.md")
+
+_KV_ROW_RE = re.compile(
+    r"^\|\s*(\d+(?:\.\d+)+)\s*\|\s*(\d+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s*\|")
 DAILY_LIMIT = 20000
 # 회사 1곳 처리 ≈ 요청 3건 (list 검색 + fnlttXbrl + company) — 추정치 표기용
 _REQ_PER_COMPANY = 3
@@ -105,6 +112,19 @@ def _recent_history(limit=10):
         return []
 
 
+def _known_versions():
+    if not os.path.exists(KNOWN_VERSIONS):
+        return []
+    rows = []
+    with open(KNOWN_VERSIONS, encoding="utf-8") as f:
+        for line in f:
+            m = _KV_ROW_RE.match(line)
+            if m:
+                rows.append({"editver": m.group(1), "files": int(m.group(2)),
+                            "g2": m.group(3), "date": m.group(4)})
+    return rows
+
+
 def _read_json(path):
     if not os.path.exists(path):
         return None
@@ -124,6 +144,7 @@ def status():
         "history": _recent_history(),
         "tests": _read_json(TEST_RESULTS),
         "gates": (_read_json(GATES) or {}).get("gates", []),
+        "known_versions": _known_versions(),
     }
 
 

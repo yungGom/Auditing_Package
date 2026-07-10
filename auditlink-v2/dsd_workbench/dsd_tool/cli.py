@@ -79,6 +79,10 @@ def main(argv=None):
     p_me.add_argument("--json", dest="out_json", default=None,
                       help="리포트 JSON 저장 경로")
 
+    p_vc = sub.add_parser("version-check",
+                          help="DART 편집기 버전 확인 + 즉석 G2 스모크 (A-3b)")
+    p_vc.add_argument("dsd", help="확인할 .dsd 파일")
+
     p_his = sub.add_parser("history", help="repack 수정이력 조회 (감사조서 증빙)")
     p_his.add_argument("dsd", nargs="?", default=None,
                        help="원본 .dsd 경로 (생략 시 전체 이력)")
@@ -211,6 +215,37 @@ def main(argv=None):
         for m in rep["misses"][:8]:
             _println(f"  ✗ [{m['tier']}] {m['label']!r} 정답 "
                      f"{m['element_id'][:40]} → {m['got'][:2]}")
+        return 0
+
+    if args.cmd == "version-check":
+        from .version import (NEW_VERSION_PROCEDURE, UNKNOWN_WARNING,
+                              g2_smoke, is_known, known_versions_table,
+                              read_version_info)
+        with open(args.dsd, "rb") as f:
+            data = f.read()
+        v = read_version_info(data)
+        _println(f"파일: {args.dsd}")
+        _println(f"  editver={v['editver'] or '(없음)'} / "
+                 f"docver={v['docver'] or '(없음)'} / "
+                 f"schema={v['schema'] or '(없음)'}")
+        known = is_known(v["editver"])
+        if known:
+            row = next((r for r in known_versions_table()
+                       if r["editver"] == v["editver"]), None)
+            _println(f"  ✓ 확인된 버전 (KNOWN_VERSIONS.md 등재"
+                     + (f" — 확인 파일 {row['files']}개, "
+                        f"최근 확인 {row['date']}" if row else "") + ")")
+        else:
+            _println("  " + UNKNOWN_WARNING.format(ver=v["editver"]))
+            _println("  새 편집기 버전 대응 절차:")
+            for line in NEW_VERSION_PROCEDURE.splitlines():
+                _println(f"    {line}")
+        smoke = g2_smoke(args.dsd)
+        status = "PASS" if (smoke["changes"] == 0 and
+                            smoke["byte_identical"]) else "FAIL"
+        _println(f"  즉석 G2 스모크(무변경 왕복): {status} "
+                 f"(변경 {smoke['changes']}건, 바이트 동일="
+                 f"{smoke['byte_identical']})")
         return 0
 
     if args.cmd == "history":

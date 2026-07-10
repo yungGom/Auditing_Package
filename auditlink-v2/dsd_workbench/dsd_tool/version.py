@@ -23,6 +23,19 @@ UNKNOWN_WARNING = (
     "batch_validate를 재실행하여 KNOWN_VERSIONS.md를 갱신하세요: "
     "python -m dsd_tool.tests.batch_validate")
 
+# 새 편집기 버전 출시 시 절차 (KNOWN_VERSIONS.md에도 명문화되어 있음).
+# 방침(불변): editver/docver는 절대 수정·창작하지 않는다 — 밑바닥 생성 DSD는
+# dart4.xsd 스키마 검증에 실패한다(실측). 버전 변환은 DART 편집기 고유 기능이며
+# repack 산출물은 항상 뼈대 DSD의 버전을 그대로 상속한다.
+NEW_VERSION_PROCEDURE = """\
+1. 대표 DSD 1개(한빛정밀 클린본)를 새 편집기에서 열기 → 저장
+   → 편집기가 변환한 파일 확보 (예: *_6_1변환.dsd)
+2. 변환본을 fixtures/real/에 세대 추가
+3. batch_validate: 변환본 extract → 무변경 repack → G2(내용 동일) 확인
+4. 통과 → KNOWN_VERSIONS.md에 행 추가 (editver, 확인일, G2 결과)
+   실패 → 직렬화 차이 리포트 후 진행 중단 (기획 세션 회신)
+5. 이후 신버전 뼈대 사용 가능 (구버전 DSD는 편집기 하위호환으로 계속 열림)"""
+
 
 def known_versions_path() -> str:
     workbench = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,6 +71,54 @@ def known_versions() -> set:
 
 def is_known(editver) -> bool:
     return editver is not None and editver in known_versions()
+
+
+def known_versions_table() -> list:
+    """KNOWN_VERSIONS.md 표를 [{editver, files, g2, date}] 목록으로 파싱.
+
+    E-0 대시보드의 "확인된 편집기 버전" 카드가 이 함수로 읽어서 보여준다
+    (신규 비즈니스 로직 없음 — 기존 파일을 파싱해 보여주기만).
+    """
+    path = known_versions_path()
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            m = re.match(
+                r"^\|\s*(\d+(?:\.\d+)+)\s*\|\s*(\d+)\s*\|\s*(\S+)\s*\|"
+                r"\s*(\S+)\s*\|", line)
+            if m:
+                rows.append({"editver": m.group(1), "files": int(m.group(2)),
+                            "g2": m.group(3), "date": m.group(4)})
+    return rows
+
+
+def g2_smoke(dsd_path, work_dir=None) -> dict:
+    """즉석 G2 스모크: extract(무변경) → repack(keep-cr) → 바이트 비교.
+
+    version-check가 "이 파일 자체"에서 즉시 검증하는 용도 — batch_validate
+    처럼 KNOWN_VERSIONS.md를 갱신하지는 않는다(그건 배치 검증의 몫).
+    """
+    import shutil
+    import tempfile
+
+    from .excel_out import extract
+    from .repack import repack
+
+    tmp = work_dir or tempfile.mkdtemp(prefix="version_check_")
+    try:
+        xlsx = os.path.join(tmp, "_g2_smoke.xlsx")
+        out = os.path.join(tmp, "_g2_smoke_out.dsd")
+        extract(dsd_path, xlsx, keep_note_numbers=True)
+        res = repack(xlsx, dsd_path, out, clean_cr=False,
+                     record_history=False)
+        with open(dsd_path, "rb") as f1, open(out, "rb") as f2:
+            identical = f1.read() == f2.read()
+        return {"changes": len(res["changes"]), "byte_identical": identical}
+    finally:
+        if work_dir is None:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def update_known_versions(results: dict):
