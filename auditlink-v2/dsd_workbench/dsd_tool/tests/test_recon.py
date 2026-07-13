@@ -1,0 +1,133 @@
+"""A-5b 게이트: 전기대사 (삼성전자 FY2025 ↔ FY2024 실파일 페어).
+
+1. 본문 전기열 전수 대사 — 대부분 TRUE 기대
+2. 주석 제목 매칭률 + 표 대사 (최초 실행 = 벤치마크)
+3. 변조 테스트: 전기 사본 당기값 1개 +1 → 해당 셀만 FALSE
+4. 모드 ② 호환성 판정은 RECON_모드2_호환성.md 문서로 회신
+"""
+import os
+import shutil
+
+import pytest
+from openpyxl import load_workbook
+
+from dsd_tool.excel_out import extract
+from dsd_tool.recon import GUIDE, recon
+
+_REAL = os.path.join(os.path.dirname(__file__), "..", "fixtures", "real")
+_CUR = os.path.join(_REAL, "[삼성전자(주)]_2025_[감사보고서].dsd")
+_PRI = os.path.join(_REAL, "[삼성전자(주)]_2024_[감사보고서].dsd")
+
+pytestmark = pytest.mark.skipif(
+    not (os.path.exists(_CUR) and os.path.exists(_PRI)),
+    reason="삼성 FY2025/FY2024 페어 없음")
+
+
+@pytest.fixture(scope="module")
+def result(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("recon")
+    return recon(_CUR, _PRI, out_path=str(tmp / "전기대사.xlsx"))
+
+
+# ---------------------------------------------------------------------------
+# 게이트 1: 본문 전수 대사 — 삼성은 재작성 없음 → 전부 TRUE
+# ---------------------------------------------------------------------------
+
+def test_gate1_statements_all_true(result):
+    s = result["stmt"]
+    assert s["n"] >= 100                       # BS/PL/PL1/CE/CF 전수
+    assert s["false"] == 0, [
+        (sheet, r["label"], r["note"])
+        for sheet, rows in result["stmt_results"].items()
+        for r in rows if not r["true"]]
+    # CE 2차원(변동내역×자본항목) 대사 포함 확인
+    ce = result["stmt_results"].get("CE", [])
+    assert len(ce) >= 15
+    assert all("×" in r["label"] for r in ce)
+
+
+# ---------------------------------------------------------------------------
+# 게이트 2: 주석 제목 매칭 + 표 대사 벤치마크
+# ---------------------------------------------------------------------------
+
+def test_gate2_note_benchmark(result):
+    assert result["note_matched"] / result["note_total"] >= 0.9
+    n = result["notes"]
+    assert n["n"] >= 100                       # 표 셀 대조가 실제 수행됨
+    rate = n["true"] / n["n"]
+    print(f"\n[벤치마크 A-5b] 주석 제목 매칭 {result['note_matched']}/"
+          f"{result['note_total']}, 표 대사 {n['n']}건 TRUE율 {rate:.1%}")
+    assert rate >= 0.6                         # 최초 벤치마크 하한 (보고 후 확정)
+
+
+# ---------------------------------------------------------------------------
+# 게이트 3: 변조 테스트 — 전기 사본 당기값 1개 +1 → 해당 셀만 FALSE
+# ---------------------------------------------------------------------------
+
+def test_gate3_tamper_detection(result, tmp_path):
+    cur_x = str(tmp_path / "당기.xlsx")
+    pri_x = str(tmp_path / "전기.xlsx")
+    extract(_CUR, cur_x)
+    extract(_PRI, pri_x)
+
+    base = recon(cur_x, pri_x, out_path=str(tmp_path / "기준.xlsx"))
+    assert base["stmt"]["false"] == 0
+
+    # 전기 파일 BS 당기 열에서 '현금및현금성자산' 값 +1 변조
+    wb = load_workbook(pri_x)
+    ws = wb["BS"]
+    target = None
+    for row in ws.iter_rows():
+        label = str(row[0].value or "")
+        if "현금및현금성자산" in label:
+            for c in row[1:]:
+                if isinstance(c.value, (int, float)):
+                    c.value = c.value + 1      # 당기 열(첫 숫자 열)
+                    target = label
+                    break
+            break
+    assert target
+    wb.save(pri_x)
+
+    tampered = recon(cur_x, pri_x, out_path=str(tmp_path / "변조.xlsx"))
+    false_rows = [(sheet, r["label"], r["note"])
+                  for sheet, rows in tampered["stmt_results"].items()
+                  for r in rows if not r["true"]]
+    assert len(false_rows) == 1                # 해당 셀만 FALSE
+    sheet, label, note = false_rows[0]
+    assert sheet == "BS" and "현금및현금성자산" in label
+    assert "값 상이" in note and "±1" in note
+
+    # 출력 엑셀: FALSE 행 하이라이트 + 안내문
+    wb2 = load_workbook(tampered["out_path"])
+    ws0 = wb2["요약"]
+    text = "\n".join(str(c.value) for row in ws0.iter_rows()
+                     for c in row if c.value)
+    assert GUIDE in text
+    assert "FALSE 1" in text.replace("FALSE  ", "FALSE ")
+    det = wb2["대사_BS"]
+    hit = [r for r in det.iter_rows(min_row=3)
+           if r[3].value == "FALSE"]
+    assert len(hit) == 1
+    assert str(hit[0][0].fill.start_color.rgb).endswith("FFC7CE")
+
+
+# ---------------------------------------------------------------------------
+# 출력 형식 (A-5a 톤 통일)
+# ---------------------------------------------------------------------------
+
+def test_output_format(result):
+    wb = load_workbook(result["out_path"])
+    assert wb.sheetnames[0] == "요약"
+    assert "대사_BS" in wb.sheetnames and "대사_CE" in wb.sheetnames
+    det = wb["대사_BS"]
+    hdr = [c.value for c in det[2]]
+    assert hdr[:5] == ["계정과목", "당기보고서 전기값", "전기보고서 당기값",
+                       "판정", "비고"]
+    vals = [r[3].value for r in det.iter_rows(min_row=3) if r[3].value]
+    assert set(vals) <= {"TRUE", "FALSE"}      # 판정은 2값만
+    # 요약 → 시트 하이퍼링크
+    ws0 = wb["요약"]
+    links = [str(c.value) for row in ws0.iter_rows() for c in row
+             if c.value and str(c.value).startswith("=HYPERLINK")]
+    assert links

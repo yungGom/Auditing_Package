@@ -81,6 +81,16 @@ def main(argv=None):
     p_me.add_argument("--json", dest="out_json", default=None,
                       help="리포트 JSON 저장 경로")
 
+    p_rc = sub.add_parser("recon",
+                          help="전기대사 — 당기 전기값 ↔ 전기 당기값 (A-5b)")
+    p_rc.add_argument("current", help="당기 .dsd 또는 편집용 .xlsx")
+    p_rc.add_argument("--prior", required=True,
+                      help="전기 .dsd/.xlsx (초도감사는 dart_explorer가 "
+                           "수신해 둔 캐시 파일 경로)")
+    p_rc.add_argument("--tolerance", type=float, default=0,
+                      help="허용오차 (기본 0 — 엄격 일치)")
+    p_rc.add_argument("-o", "--out", default=None, help="출력 .xlsx 경로")
+
     p_ws = sub.add_parser("worksheet",
                           help="XBRL 작성 워크시트 생성 — DSD→전사 가이드 (F-1)")
     p_ws.add_argument("dsd", help="회사 DSD 파일")
@@ -235,6 +245,20 @@ def main(argv=None):
         for m in rep["misses"][:8]:
             _println(f"  ✗ [{m['tier']}] {m['label']!r} 정답 "
                      f"{m['element_id'][:40]} → {m['got'][:2]}")
+        return 0
+
+    if args.cmd == "recon":
+        from .recon import GUIDE, recon
+        res = recon(args.current, args.prior, out_path=args.out,
+                    tolerance=args.tolerance, progress=_println)
+        _println(f"전기대사 완료: {res['out_path']}")
+        s, n = res["stmt"], res["notes"]
+        _println(f"  본문: 대사 {s['n']} · TRUE {s['true']} · "
+                 f"FALSE {s['false']}")
+        _println(f"  주석: 제목 매칭 {res['note_matched']}/"
+                 f"{res['note_total']} · 표 대사 {n['n']} · TRUE {n['true']}"
+                 f" · FALSE {n['false']}")
+        _println(f"  ※ {GUIDE}")
         return 0
 
     if args.cmd == "worksheet":
