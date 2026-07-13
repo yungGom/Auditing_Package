@@ -50,14 +50,33 @@ def test_gate1_statements_all_true(result):
 # 게이트 2: 주석 제목 매칭 + 표 대사 벤치마크
 # ---------------------------------------------------------------------------
 
-def test_gate2_note_benchmark(result):
+def test_gate2_note_false_breakdown(result):
+    """확정 기준(2026-07-10): TRUE율은 게이트가 아니다 — 정당한 FALSE를
+    찾는 게 목적. 게이트 = 값 상이 중 매칭 오류 오탐 0건 + FALSE 전수 분해."""
     assert result["note_matched"] / result["note_total"] >= 0.9
     n = result["notes"]
     assert n["n"] >= 100                       # 표 셀 대조가 실제 수행됨
-    rate = n["true"] / n["n"]
-    print(f"\n[벤치마크 A-5b] 주석 제목 매칭 {result['note_matched']}/"
-          f"{result['note_total']}, 표 대사 {n['n']}건 TRUE율 {rate:.1%}")
-    assert rate >= 0.6                         # 최초 벤치마크 하한 (보고 후 확정)
+
+    bd = result["breakdown"]
+    assert bd["mismatch_flags"] == 0           # ★ 게이트: 매칭 오류 오탐 0건
+    # ① 항목 없음: 목록화 (삼성 실측 — FY2025 신규 공시 행)
+    assert bd["missing"] >= 1
+    # ③ 표 쌍 매칭 실패: 원인별 분류 존재
+    assert bd["unpaired"] >= 1
+    # ④ 제목 매칭 실패 1건: FY2024에 없는 신규 주석('공정가치 측정')
+    assert bd["title_misses"] == result["note_total"] - \
+        result["note_matched"]
+
+    # FALSE분해 시트: 값 상이 건은 당기/전기 셀 주소·값·열 헤더 병기
+    wb = load_workbook(result["out_path"])
+    assert "FALSE분해" in wb.sheetnames
+    ws = wb["FALSE분해"]
+    text = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
+    assert any("항목 없음" in t for t in text)
+    assert any("표 쌍 매칭 실패" in t for t in text)
+    assert any("제목 매칭 실패" in t for t in text)
+    assert any("당기 셀" in t for t in text) and \
+        any("전기 열 헤더" in t for t in text)
 
 
 # ---------------------------------------------------------------------------

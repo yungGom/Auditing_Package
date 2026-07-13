@@ -241,10 +241,11 @@ def _pair_regions(ws_c, regs_c, ws_p, regs_p):
 
     (연도 간 표 삽입·삭제·순서 이동에 강건 — 실측: 순서 zip은 대량
     '항목 없음' 오탐)
+    반환: (pairs, unpaired) — unpaired는 [(당기 region 번호, 원인, 최고자카드)]
     """
     sets_c = [_row_label_set(ws_c, r) for r in regs_c]
     sets_p = [_row_label_set(ws_p, r) for r in regs_p]
-    pairs = []
+    pairs, unpaired = [], []
     used_p = set()
     for i, sc in enumerate(sets_c):
         best, best_j = 0.0, None
@@ -256,8 +257,18 @@ def _pair_regions(ws_c, regs_c, ws_p, regs_p):
                 best, best_j = jac, j
         if best_j is not None and best >= 0.3:
             used_p.add(best_j)
-            pairs.append((regs_c[i], regs_p[best_j]))
-    return pairs
+            pairs.append((i, regs_c[i], regs_p[best_j]))
+        else:
+            if not sc:
+                reason = "행 라벨 없는 표(헤더만/수치 그리드)"
+            elif len(regs_p) == len(used_p):
+                reason = "전기 쪽 잔여 표 없음(신규 표 추정)"
+            elif best > 0:
+                reason = f"행 라벨 자카드 {best:.2f} < 0.30 (구조 상이)"
+            else:
+                reason = "행 라벨 공통분모 없음(신규 표 추정)"
+            unpaired.append((i + 1, reason, round(best, 2)))
+    return pairs, unpaired
 
 
 def recon_note_tables(cur_ctx, pri_ctx, cur_sheet, pri_sheet, tolerance=0):
@@ -268,22 +279,69 @@ def recon_note_tables(cur_ctx, pri_ctx, cur_sheet, pri_sheet, tolerance=0):
     from .textutil import try_number
 
     results, skipped = [], 0
-    paired = _pair_regions(ws_c, regs_c, ws_p, regs_p)
-    for ti, (reg_c, reg_p) in enumerate(paired, 1):
+    unpaired_out = []
+    paired, unpaired = _pair_regions(ws_c, regs_c, ws_p, regs_p)
+    for idx, reason, jac in unpaired:
+        unpaired_out.append({"table": idx, "reason": reason, "jaccard": jac})
+    def _col_header(ws, rowmap, region, c):
+        parts = []
+        for r in region[:2]:
+            v = ws.cell(row=r, column=c).value
+            if v:
+                parts.append(str(v).replace("\n", ""))
+        return " / ".join(parts)
+
+    for ti, (ci, reg_c, reg_p) in enumerate(paired, 1):
         cols_c = _period_cols(ws_c, rm_c, reg_c, "전기")
         cols_p = _period_cols(ws_p, rm_p, reg_p, "당기")
         if not cols_c or not cols_p:
             skipped += 1
             continue
-        pri_vals = {}
+        hdr_c = {c: _col_header(ws_c, rm_c, reg_c, c) for c in cols_c}
+        hdr_p = {c: _col_header(ws_p, rm_p, reg_p, c) for c in cols_p}
+        addr_to_hdr_p = {f"{get_column_letter(c)}": hdr_p[c] for c in cols_p}
+
+        # 열 대응: 기간(당기/전기) 외 헤더 시맨틱 매칭 — j-순서 대응은
+        # '장부금액↔보유주식수' 류 오탐 실측(38건 전원)으로 폐기.
+        # 시맨틱이 비어있는 단순 표(헤더가 기간뿐)만 순서 대응 유지.
+        def _sem(hdr):
+            return _norm2(re.sub(r"당\s*기|전\s*기|말|초", "", hdr))
+
+        col_pair = {}                          # cols_c → cols_p | None
+        used = set()
+        for c in cols_c:
+            sc = _sem(hdr_c[c])
+            hit = None
+            for p in cols_p:
+                if p in used:
+                    continue
+                if _sem(hdr_p[p]) == sc:
+                    hit = p
+                    break
+            if hit is None and not sc:
+                hit = next((p for p in cols_p
+                            if p not in used and not _sem(hdr_p[p])), None)
+            if hit is not None:
+                used.add(hit)
+            else:
+                unpaired_out.append({
+                    "table": ti,
+                    "reason": f"열 시맨틱 불일치 — 당기 열 "
+                              f"'{hdr_c[c][:30]}'에 대응하는 전기 열 없음",
+                    "jaccard": ""})
+            col_pair[c] = hit                  # None = 열 시맨틱 불일치
+        pri_vals = {}                       # (라벨, 전기열) → (값, 셀주소)
+        pri_pool = []                       # 전기표 당기열 전체 (오탐 스캔 풀)
         for r in reg_p[1:]:
             lab = _norm_label(_label(ws_p, r))
-            if not lab:
-                continue
-            for j, c in enumerate(cols_p):
+            for c in cols_p:
                 v = try_number(ws_p.cell(row=r, column=c).value)
-                if v is not None:
-                    pri_vals.setdefault((lab, j), v)
+                if v is None:
+                    continue
+                addr = f"{get_column_letter(c)}{r}"
+                pri_pool.append((v, addr, _label(ws_p, r)))
+                if lab:
+                    pri_vals.setdefault((lab, c), (v, addr))
         for r in reg_c[1:]:
             lab = _norm_label(_label(ws_c, r))
             if not lab:
@@ -292,14 +350,33 @@ def recon_note_tables(cur_ctx, pri_ctx, cur_sheet, pri_sheet, tolerance=0):
                 v = try_number(ws_c.cell(row=r, column=c).value)
                 if v is None:
                     continue
-                pv = pri_vals.get((lab, j))
-                if pv is None and j == 0:
-                    pv = pri_vals.get((lab, 0))
+                pc = col_pair.get(c)
+                if pc is None:                 # 열 시맨틱 불일치 — 대사 불가
+                    continue
+                hitp = pri_vals.get((lab, pc))
+                pv, paddr = hitp if hitp else (None, None)
                 ok, note = _verdict(v, pv, tolerance)
-                results.append({"table": ti, "label": _label(ws_c, r),
-                                "col": j + 1, "cur_prior": v,
-                                "pri_current": pv, "true": ok, "note": note})
-    return results, skipped
+                # 오탐 스캔: 같은 값이 전기표 당기열의 "다른 셀"에 존재하면
+                # 행 매칭 오류(오탐) 후보 — 사용자 육안 판정용 표시
+                mism = None
+                if not ok and pv is not None:
+                    cand = [(pw, aw, lw) for pw, aw, lw in pri_pool
+                            if pw == v and aw != paddr]
+                    if cand:
+                        mism = (f"오탐 후보 — 같은 값이 전기표 "
+                                f"{cand[0][1]}('{cand[0][2].strip()[:16]}')에 존재")
+                paddr_col = re.match(r"([A-Z]+)", paddr).group(1) \
+                    if paddr else None
+                results.append({
+                    "table": ti, "label": _label(ws_c, r), "col": j + 1,
+                    "cur_prior": v, "pri_current": pv, "true": ok,
+                    "note": note, "cur_addr": f"{get_column_letter(c)}{r}",
+                    "pri_addr": paddr, "cur_sheet": cur_sheet,
+                    "pri_sheet": pri_sheet, "mismatch_flag": mism,
+                    "cur_col_hdr": hdr_c.get(c, ""),
+                    "pri_col_hdr": addr_to_hdr_p.get(paddr_col, "")
+                    if paddr_col else ""})
+    return results, skipped, unpaired_out
 
 
 # ---------------------------------------------------------------------------
@@ -329,14 +406,32 @@ def recon(cur_path, prior_path, out_path=None, tolerance=0, progress=None):
         note_map = match_note_titles(cur_ctx, pri_ctx)
         note_results = {}
         note_skipped = {}
+        note_unpaired = {}
         for cur_s, pri_s, title in note_map:
             if pri_s is None:
                 continue
-            res, skipped = recon_note_tables(cur_ctx, pri_ctx, cur_s, pri_s,
-                                             tolerance)
-            if res or skipped:
+            res, skipped, unpaired = recon_note_tables(
+                cur_ctx, pri_ctx, cur_s, pri_s, tolerance)
+            if res or skipped or unpaired:
                 note_results[cur_s] = res
                 note_skipped[cur_s] = skipped
+                note_unpaired[cur_s] = unpaired
+
+        # 제목 매칭 실패 원인 진단 (양쪽 제목을 병기해 육안 확인 가능하게)
+        title_misses = []
+        pri_titles_all = [
+            (s, str(pri_ctx.wb[s].cell(1, 1).value or ""))
+            for s in pri_ctx.note_sheets]
+        for cur_s, pri_s, title in note_map:
+            if pri_s is not None:
+                continue
+            qn = _norm_label(re.sub(r"^\d+\.\s*", "", title))
+            near = sorted(
+                pri_titles_all,
+                key=lambda t: -len(set(qn) & set(_norm_label(
+                    re.sub(r"^\d+\.\s*", "", t[1])))))[:2]
+            title_misses.append({"cur_sheet": cur_s, "title": title,
+                                 "nearest": near})
 
         if out_path is None:
             base = re.sub(r"\.(dsd|xlsx)$", "", os.path.basename(cur_path),
@@ -346,12 +441,17 @@ def recon(cur_path, prior_path, out_path=None, tolerance=0, progress=None):
                 f"전기대사_{base}.xlsx")
         summary = _write_recon_excel(stmt_results, note_map, note_results,
                                      note_skipped, out_path, cur_path,
-                                     prior_path, tolerance)
+                                     prior_path, tolerance,
+                                     note_unpaired=note_unpaired,
+                                     title_misses=title_misses)
     return summary
 
 
 def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
-                       out_path, cur_path, prior_path, tolerance):
+                       out_path, cur_path, prior_path, tolerance,
+                       note_unpaired=None, title_misses=None):
+    note_unpaired = note_unpaired or {}
+    title_misses = title_misses or []
     wb = Workbook()
     ws0 = wb.active
     ws0.title = "요약"
@@ -460,10 +560,102 @@ def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
                       ["표", "행 라벨", "당기보고서 전기값",
                        "전기보고서 당기값", "판정", "비고"])
 
+    breakdown = _write_false_breakdown(wb, note_results, note_unpaired,
+                                       title_misses)
+
     wb.save(out_path)
     return {"out_path": out_path,
             "stmt": {"n": stmt_n, "true": stmt_t, "false": stmt_n - stmt_t},
             "notes": {"n": note_n, "true": note_t,
                       "false": note_n - note_t},
             "note_matched": matched, "note_total": len(note_map),
-            "stmt_results": stmt_results, "note_results": note_results}
+            "stmt_results": stmt_results, "note_results": note_results,
+            "breakdown": breakdown}
+
+
+def _write_false_breakdown(wb, note_results, note_unpaired, title_misses):
+    """[FALSE분해] 시트 — 주석 FALSE 전수 사유 분해 (벤치마크 기준 확정판).
+
+    ① 항목 없음(신규/소멸 행): 목록
+    ② 값 상이: 당기/전기 셀 주소·값 병기 + 오탐 후보(같은 값이 전기표
+       당기열의 다른 셀에 존재 = 행 매칭 오류 의심) 표시 — 게이트: 오탐 0건
+    ③ 표 쌍 매칭 실패: 원인별
+    ④ 제목 매칭 실패: 원인(최근접 전기 제목 병기)
+    """
+    ws = wb.create_sheet("FALSE분해")
+    warn = PatternFill("solid", start_color="FFEB9C")
+
+    def _hdr_row(cells):
+        ws.append(cells)
+        for c in ws[ws.max_row]:
+            c.font = _BOLD
+            c.fill = _HDR_FILL
+
+    missing, differs = [], []
+    for sheet, rows in note_results.items():
+        for r in rows:
+            if r["true"]:
+                continue
+            if "항목 없음" in r["note"]:
+                missing.append(r)
+            else:
+                differs.append(r)
+
+    ws.append(["① 항목 없음 (신규/소멸 행) — 정당한 FALSE 후보 목록"])
+    ws.cell(ws.max_row, 1).font = _BOLD
+    _hdr_row(["주석", "표", "행 라벨", "당기 셀", "당기보고서 전기값"])
+    for r in missing:
+        ws.append([r["cur_sheet"], r["table"], r["label"],
+                   f"'{r['cur_sheet']}'!{r['cur_addr']}", r["cur_prior"]])
+        ws.cell(ws.max_row, 5).number_format = _NUMFMT
+    ws.append([])
+
+    ws.append(["② 값 상이 — 셀 주소·값·열 헤더 병기 (오탐 후보는 육안 확인 대상)"])
+    ws.cell(ws.max_row, 1).font = _BOLD
+    _hdr_row(["주석", "표", "행 라벨", "당기 셀", "당기보고서 전기값",
+              "당기 열 헤더", "전기 셀", "전기보고서 당기값", "전기 열 헤더",
+              "차이", "오탐 후보"])
+    n_mismatch_flag = 0
+    for r in differs:
+        diff = abs(float(r["cur_prior"]) - float(r["pri_current"])) \
+            if r["pri_current"] is not None else None
+        flag = r.get("mismatch_flag") or ""
+        if flag:
+            n_mismatch_flag += 1
+        ws.append([r["cur_sheet"], r["table"], r["label"],
+                   f"'{r['cur_sheet']}'!{r['cur_addr']}", r["cur_prior"],
+                   r.get("cur_col_hdr", ""),
+                   f"'{r['pri_sheet']}'!{r['pri_addr']}", r["pri_current"],
+                   r.get("pri_col_hdr", ""), diff, flag])
+        for col in (5, 8, 10):
+            ws.cell(ws.max_row, col).number_format = _NUMFMT
+        if flag:
+            for c in ws[ws.max_row]:
+                c.fill = warn
+    ws.append([])
+
+    ws.append(["③ 표 쌍 매칭 실패 — 원인별"])
+    ws.cell(ws.max_row, 1).font = _BOLD
+    _hdr_row(["주석", "당기 표 번호", "원인", "최고 자카드"])
+    n_unpaired = 0
+    for sheet, items in note_unpaired.items():
+        for u in items:
+            n_unpaired += 1
+            ws.append([sheet, u["table"], u["reason"], u["jaccard"]])
+    ws.append([])
+
+    ws.append(["④ 제목 매칭 실패 — 원인 (최근접 전기 제목 병기)"])
+    ws.cell(ws.max_row, 1).font = _BOLD
+    _hdr_row(["당기 주석", "당기 제목", "최근접 전기 제목 1", "최근접 전기 제목 2"])
+    for t in title_misses:
+        near = [f"[{s}] {ttl[:40]}" for s, ttl in t["nearest"]]
+        ws.append([t["cur_sheet"], t["title"][:60],
+                   near[0] if near else "", near[1] if len(near) > 1 else ""])
+
+    for col, w in (("A", 8), ("B", 8), ("C", 34), ("D", 20), ("E", 18),
+                   ("F", 20), ("G", 18), ("H", 14), ("I", 44)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A2"
+    return {"missing": len(missing), "differs": len(differs),
+            "mismatch_flags": n_mismatch_flag, "unpaired": n_unpaired,
+            "title_misses": len(title_misses)}
