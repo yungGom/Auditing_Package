@@ -54,6 +54,8 @@ def main(argv=None):
     p_foot.add_argument("--prior", help="전기 .xlsx — 전기대사 모드")
     p_foot.add_argument("--report", action="store_true",
                         help="관계별 상세 출력")
+    p_foot.add_argument("--excel", action="store_true",
+                        help="AI_Footing 형식 결과 엑셀 생성 (A-5a)")
 
     p_map = sub.add_parser("map",
                            help="계정과목 → XBRL element 매핑 추천 (완전 로컬)")
@@ -78,6 +80,18 @@ def main(argv=None):
                       help="구간별 샘플 상한 '쉬움:100,중간:200,함정:60'")
     p_me.add_argument("--json", dest="out_json", default=None,
                       help="리포트 JSON 저장 경로")
+
+    p_ws = sub.add_parser("worksheet",
+                          help="XBRL 작성 워크시트 생성 — DSD→전사 가이드 (F-1)")
+    p_ws.add_argument("dsd", help="회사 DSD 파일")
+    p_ws.add_argument("--report", default="annual",
+                      choices=["annual", "half", "q1", "q3"],
+                      help="대상 보고서 유형 (기간 블록 명명)")
+    p_ws.add_argument("--induty", default=None,
+                      help="회사 업종코드 — 동업종 실증 가중 ×2")
+    p_ws.add_argument("--corpus", default=None,
+                      help="mapping_corpus.sqlite 경로")
+    p_ws.add_argument("-o", "--out", default=None, help="출력 .xlsx 경로")
 
     p_vc = sub.add_parser("version-check",
                           help="DART 편집기 버전 확인 + 즉석 G2 스모크 (A-3b)")
@@ -172,6 +186,12 @@ def main(argv=None):
                 if r["verdict"] not in (FUZZY, MISMATCH):
                     _println(f"  [{r['sheet']}] {r['loc']} {r['label']!r} "
                              f"({r['scope']}) 자식 {r['n_children']}개 → 일치")
+        if args.excel:
+            from .foot_excel import write_ai_footing
+            xres = write_ai_footing(args.xlsx, res)
+            _println(f"AI_Footing 엑셀 생성: {xres['out_path']}")
+            _println(f"  푸팅 오류 {xres['foot_errors']} / "
+                     f"크로스 오류 {xres['cross_errors']} — 총괄표에 집계")
         return 0
 
     if args.cmd == "map":
@@ -215,6 +235,17 @@ def main(argv=None):
         for m in rep["misses"][:8]:
             _println(f"  ✗ [{m['tier']}] {m['label']!r} 정답 "
                      f"{m['element_id'][:40]} → {m['got'][:2]}")
+        return 0
+
+    if args.cmd == "worksheet":
+        from .worksheet import build_worksheet
+        res = build_worksheet(args.dsd, out_path=args.out,
+                              report_type=args.report, induty=args.induty,
+                              corpus_db=args.corpus, progress=_println)
+        s = res["stats"]
+        _println(f"워크시트 생성: {res['out_path']}")
+        _println(f"  항목 {s['rows']} / 매핑 {s['mapped']} / "
+                 f"확장 후보 {s['extension']} — 확정 ☐은 회계사 기입")
         return 0
 
     if args.cmd == "version-check":
