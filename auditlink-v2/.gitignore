@@ -34,3 +34,6 @@ dart_explorer/client/.env
 dart_explorer/cache/
 dart_explorer/corpus/
 .test_results.json
+
+# dart_explorer: 택사노미 버전 저장소 (대용량 원본 — 커밋 금지, D-4a)
+dart_explorer/taxonomies/

@@ -52,6 +52,11 @@ def connect(db_path=None):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     con = sqlite3.connect(path)
     con.executescript(_SCHEMA)
+    # D-4a: standard_labels에 택사노미 세대 태그 (기존 DB 마이그레이션)
+    try:
+        con.execute("ALTER TABLE standard_labels ADD COLUMN version TEXT")
+    except sqlite3.OperationalError:
+        pass
     return con
 
 
@@ -171,19 +176,28 @@ def build(year, limit=None, db_path=None, cli=None, listed_only=True,
 # 표준 라벨 적재 (금감원 xlsm)
 # ---------------------------------------------------------------------------
 
-def load_standard_labels(xlsm_path, db_path=None):
+def load_standard_labels(xlsm_path, db_path=None, version=None):
+    """금감원 xlsm 표준 라벨 적재. version 미지정 시 systemid 열에서 자동 감지
+    (dart_all_YYYY-MM-DD_pre 기준일 — D-4a). 기존 element는 갱신하지 않는다
+    (INSERT OR IGNORE: 최초 적재 세대로 고정, version 열은 그 세대의 감사조서
+    근거로만 사용)."""
     from .taxonomy import fss_xlsm_role_rows
+    if version is None:
+        from .taxonomy_diff import detect_version
+        version = detect_version(xlsm_path)
     con = connect(db_path)
     for _, rows in fss_xlsm_role_rows(xlsm_path):
         for r in rows:
             eid = f"{r['prefix']}_{r['id']}" if r["prefix"] else r["id"]
             con.execute(
-                "INSERT OR IGNORE INTO standard_labels VALUES(?,?,?)",
-                (eid, r["ko_std"], r["en_std"]))
+                "INSERT OR IGNORE INTO standard_labels VALUES(?,?,?,?)",
+                (eid, r["ko_std"], r["en_std"], version))
     con.commit()
     n = con.execute("SELECT COUNT(*) FROM standard_labels").fetchone()[0]
+    by_version = dict(con.execute(
+        "SELECT version, COUNT(*) FROM standard_labels GROUP BY version"))
     con.close()
-    return n
+    return {"total": n, "version": version, "by_version": by_version}
 
 
 def export_references(xlsm_path, out_json=None):

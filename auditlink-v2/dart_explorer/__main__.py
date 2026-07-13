@@ -53,6 +53,20 @@ def main(argv=None):
     p_d.add_argument("--role", default=None,
                      help="Role 필터 (예: D610005 — 부분일치, 기본 전체)")
 
+    p_td = sub.add_parser("taxdiff", help="택사노미 버전 diff (D-4b)")
+    p_td.add_argument("old", help="구버전 (버전명 예: 2024-06-30, 또는 파일 경로)")
+    p_td.add_argument("new", help="신버전 (버전명 예: 2026-01-31, 또는 파일 경로)")
+    p_td.add_argument("-o", "--out", default=None, help="출력 .xlsx 경로")
+
+    p_tc = sub.add_parser("taxcheck",
+                          help="전기 XBRL 인스턴스 신버전 호환성 점검 (D-4c/d)")
+    p_tc.add_argument("xbrl", help="전기 XBRL 패키지 폴더")
+    p_tc.add_argument("--against", required=True,
+                      help="대조할 신버전 (버전명 또는 파일 경로)")
+    p_tc.add_argument("--corpus", default=None,
+                      help="D-3b 매핑 코퍼스 경로 (대체후보 추천용)")
+    p_tc.add_argument("-o", "--out", default=None, help="출력 .xlsx 경로")
+
     p_c = sub.add_parser("corpus", help="매핑 코퍼스 구축·통계 (D-3a)")
     c_sub = p_c.add_subparsers(dest="corpus_cmd", required=True)
     c_b = c_sub.add_parser("build", help="XBRL 일괄 수신·적재 (재개 가능)")
@@ -61,7 +75,9 @@ def main(argv=None):
                      help="목표 총 회사 수 (기존 처리분 포함)")
     c_sub.add_parser("stats", help="코퍼스 통계")
     c_l = c_sub.add_parser("load-standard", help="금감원 xlsm 표준 라벨 적재")
-    c_l.add_argument("xlsm", help="금감원 택사노미 xlsm 경로")
+    c_l.add_argument("xlsm", help="금감원 택사노미 xlsm 경로 (버전명도 허용)")
+    c_l.add_argument("--version", default=None,
+                     help="세대 태그 (기본: systemid에서 자동 감지, D-4a)")
 
     args = parser.parse_args(argv)
 
@@ -109,6 +125,28 @@ def main(argv=None):
                   f"{r['rows']}행 — {r['definition'][:60]}")
         return 0
 
+    if args.cmd == "taxdiff":
+        from .xbrl.taxonomy_diff import taxdiff
+        res = taxdiff(args.old, args.new, args.out, progress=print)
+        print(f"taxdiff 완료: {res['out_path']}")
+        print(f"  {res['old_version']} → {res['new_version']}")
+        print(f"  신설 {len(res['added'])} / 폐지 {len(res['removed'])} / "
+              f"공통(양쪽 존재) {res['kept']} "
+              f"(그중 라벨변경 {len(res['changed'])} / "
+              f"라벨동일 {res['kept'] - len(res['changed'])})")
+        return 0
+
+    if args.cmd == "taxcheck":
+        from .xbrl.taxonomy_diff import run_taxcheck
+        res = run_taxcheck(args.xbrl, args.against, mapping_db=args.corpus,
+                           out_path=args.out, progress=print)
+        print(f"taxcheck 완료: {res['out_path']}")
+        print(f"  녹색(그대로) {res['green']} / 노랑(폐지) {res['yellow']} / "
+              f"파랑(라벨·Role 변경) {res['blue']}")
+        if res.get("promotions"):
+            print(f"  확장→표준 승격 후보: {len(res['promotions'])}건")
+        return 0
+
     if args.cmd == "corpus":
         from .xbrl import corpus
         if args.corpus_cmd == "build":
@@ -116,8 +154,11 @@ def main(argv=None):
                                   progress=print)
             print(f"빌드 결과: {counts}")
         elif args.corpus_cmd == "load-standard":
-            n = corpus.load_standard_labels(args.xlsm)
-            print(f"표준 라벨 적재: {n:,}건")
+            from .xbrl.taxonomy_diff import resolve_version_dir
+            xlsm = resolve_version_dir(args.xlsm)
+            res = corpus.load_standard_labels(xlsm, version=args.version)
+            print(f"표준 라벨 적재: 총 {res['total']:,}건 "
+                  f"(이번 세대 {res['version']}) — 세대별: {res['by_version']}")
         else:
             s = corpus.stats()
             print(f"회사: {s['companies']}")
