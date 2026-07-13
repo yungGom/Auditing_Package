@@ -6,6 +6,7 @@
 4. 모드 ② 호환성 판정은 RECON_모드2_호환성.md 문서로 회신
 """
 import os
+import re
 import shutil
 
 import pytest
@@ -117,18 +118,13 @@ def test_gate3_tamper_detection(result, tmp_path):
     assert sheet == "BS" and "현금및현금성자산" in label
     assert "값 상이" in note and "±1" in note
 
-    # 출력 엑셀: FALSE 행 하이라이트 + 안내문
+    # 출력 엑셀: 요약 카운트 + 안내문 (상세는 실무 양식 병렬 시트)
     wb2 = load_workbook(tampered["out_path"])
     ws0 = wb2["요약"]
     text = "\n".join(str(c.value) for row in ws0.iter_rows()
                      for c in row if c.value)
     assert GUIDE in text
     assert "FALSE 1" in text.replace("FALSE  ", "FALSE ")
-    det = wb2["대사_BS"]
-    hit = [r for r in det.iter_rows(min_row=3)
-           if r[3].value == "FALSE"]
-    assert len(hit) == 1
-    assert str(hit[0][0].fill.start_color.rgb).endswith("FFC7CE")
 
 
 # ---------------------------------------------------------------------------
@@ -136,17 +132,34 @@ def test_gate3_tamper_detection(result, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_output_format(result):
+    """실무 양식(문용.xlsb 실측): 당기 원문 | 판정 수식 | 전기 원문 병렬."""
     wb = load_workbook(result["out_path"])
     assert wb.sheetnames[0] == "요약"
-    assert "대사_BS" in wb.sheetnames and "대사_CE" in wb.sheetnames
-    det = wb["대사_BS"]
-    hdr = [c.value for c in det[2]]
-    assert hdr[:5] == ["계정과목", "당기보고서 전기값", "전기보고서 당기값",
-                       "판정", "비고"]
-    vals = [r[3].value for r in det.iter_rows(min_row=3) if r[3].value]
-    assert set(vals) <= {"TRUE", "FALSE"}      # 판정은 2값만
-    # 요약 → 시트 하이퍼링크
+    # 시트 구성 = 실무 양식 (원문 배치 그대로 BS/PL/…/주석 번호)
+    assert {"BS", "PL", "CE", "CF"} <= set(wb.sheetnames)
+    assert any(n.isdigit() for n in wb.sheetnames)
+
+    # 판정 = 셀 참조 수식 (=E{r}=L{r} — 당기파일 전기셀 = 전기파일 당기셀)
+    bs = wb["BS"]
+    formulas = [str(c.value) for row in bs.iter_rows() for c in row
+                if c.value and str(c.value).startswith("=") and
+                "=" in str(c.value)[1:]]
+    assert formulas, "판정 수식 없음"
+    assert any(re.fullmatch(r"=[A-Z]+\d+=[A-Z]+\d+", f) for f in formulas)
+
+    # 좌측 당기 원문 + 우측 전기 원문 병렬 (같은 행에 같은 계정 라벨)
+    found_parallel = False
+    for row in bs.iter_rows(min_row=5):
+        vals = [(c.column, str(c.value)) for c in row if c.value is not None]
+        labels = [v for _, v in vals if "현금및현금성자산" in v]
+        if len(labels) >= 2:
+            found_parallel = True
+            break
+    assert found_parallel, "좌우 병렬 원문 배치 아님"
+
+    # 요약 → 시트 하이퍼링크 + FALSE분해 시트
     ws0 = wb["요약"]
     links = [str(c.value) for row in ws0.iter_rows() for c in row
              if c.value and str(c.value).startswith("=HYPERLINK")]
-    assert links
+    assert any('#\'BS\'' in ln or "#BS" in ln for ln in links)
+    assert "FALSE분해" in wb.sheetnames

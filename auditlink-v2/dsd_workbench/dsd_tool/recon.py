@@ -380,6 +380,177 @@ def recon_note_tables(cur_ctx, pri_ctx, cur_sheet, pri_sheet, tolerance=0):
 
 
 # ---------------------------------------------------------------------------
+# 실무 양식 병렬 시트 (한진칼_전기대사_문용.xlsb 실측 재현)
+# 좌측 = 당기 원문 | 판정(셀 참조 수식 =좌전기셀=우당기셀) | 우측 = 전기 원문
+# ---------------------------------------------------------------------------
+
+def _copy_block(dst_ws, src_ws, rows, cols, dst_row0, dst_col0, row_map):
+    """원문 블록 복사 (값만). row_map: 원본행 → 출력행."""
+    for r in rows:
+        out_r = row_map(r)
+        if out_r is None:
+            continue
+        for i, c in enumerate(cols):
+            v = src_ws.cell(row=r, column=c).value
+            if v is None:
+                continue
+            cell = dst_ws.cell(row=dst_row0 + out_r, column=dst_col0 + i)
+            cell.value = v
+            if isinstance(v, (int, float)):
+                cell.number_format = _NUMFMT
+
+
+def _side_statement(dst, cur_ctx, pri_ctx, sheet):
+    """본문 시트: 당기 원문 | 판정열(전기값 열별) | 전기 원문 (행 라벨 정렬)."""
+    ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[sheet]
+    rm_c, rm_p = cur_ctx.rowmaps[sheet], pri_ctx.rowmaps[sheet]
+    periods_c, rows_c = cur_ctx.fs_sequences(sheet)
+    periods_p, rows_p = pri_ctx.fs_sequences(sheet)
+
+    all_cols_c = sorted({c for r in rm_c for c in rm_c[r]})
+    all_cols_p = sorted({c for r in rm_p for c in rm_p[r]})
+    width_c = max(all_cols_c) if all_cols_c else 6
+    amount_c = [c for c in all_cols_c if c >= 3]
+    prior_cols_c = amount_c[len(amount_c) // 2:] if len(amount_c) >= 4 \
+        else amount_c[-1:]                     # 당기파일 '전기' 값 열들
+    amount_p = [c for c in all_cols_p if c >= 3]
+    cur_cols_p = amount_p[:len(amount_p) // 2] if len(amount_p) >= 4 \
+        else amount_p[:1]                      # 전기파일 '당기' 값 열들
+
+    verdict_col0 = width_c + 1                 # 판정열 시작
+    n_verdict = len(prior_cols_c)
+    right0 = verdict_col0 + n_verdict + 1      # 우측 전기 원문 시작
+
+    # 전기 행 매핑 (2단 정규화 라벨)
+    pri_by_label = {}
+    for r in rows_p:
+        raw = _label(ws_p, r)
+        for key in (_norm1(raw), _norm2(raw)):
+            if key:
+                pri_by_label.setdefault(key, r)
+
+    # 좌측: 당기 원문 전 행 그대로 (제목~표)
+    max_row_c = max(rm_c) if rm_c else 1
+    for r in range(1, max_row_c + 1):
+        for c in range(1, width_c + 1):
+            v = ws_c.cell(row=r, column=c).value
+            if v is None:
+                continue
+            cell = dst.cell(row=r, column=c)
+            cell.value = v
+            if isinstance(v, (int, float)):
+                cell.number_format = _NUMFMT
+
+    from .textutil import try_number
+    for r in rows_c:
+        raw = _label(ws_c, r)
+        pr = pri_by_label.get(_norm1(raw)) or pri_by_label.get(_norm2(raw))
+        if pr is not None:
+            # 우측: 전기 원문 행을 당기 행 옆에 정렬 배치
+            for i, c in enumerate(all_cols_p):
+                v = ws_p.cell(row=pr, column=c).value
+                if v is None:
+                    continue
+                cell = dst.cell(row=r, column=right0 + i)
+                cell.value = v
+                if isinstance(v, (int, float)):
+                    cell.number_format = _NUMFMT
+        # 판정 수식: 당기파일 전기셀 = 전기파일 당기셀 (실무 양식 그대로)
+        for k, pc in enumerate(prior_cols_c):
+            if try_number(ws_c.cell(row=r, column=pc).value) is None:
+                continue
+            vcell = dst.cell(row=r, column=verdict_col0 + k)
+            if pr is not None and k < len(cur_cols_p):
+                right_col = right0 + all_cols_p.index(cur_cols_p[k])
+                vcell.value = (f"={get_column_letter(pc)}{r}="
+                               f"{get_column_letter(right_col)}{r}")
+            else:
+                vcell.value = "FALSE"          # 전기 보고서에 항목 없음
+                vcell.fill = _FALSE_FILL
+    hdr = dst.cell(row=max(1, min(rm_c) - 1), column=verdict_col0)
+    hdr.value = "판정"
+    hdr.font = _BOLD
+
+
+def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet):
+    """주석 시트: 표 쌍·행 라벨 매칭으로 좌우 병렬 + 판정 수식."""
+    ws_c = cur_ctx.wb[cur_sheet]
+    rm_c = cur_ctx.rowmaps[cur_sheet]
+    from .textutil import try_number
+
+    # 좌측: 당기 원문 전체
+    all_cols_c = sorted({c for r in rm_c for c in rm_c[r]})
+    width_c = max(all_cols_c) if all_cols_c else 3
+    for r in sorted(rm_c):
+        for c in rm_c[r]:
+            v = ws_c.cell(row=r, column=c).value
+            if v is None:
+                continue
+            cell = dst.cell(row=r, column=c)
+            cell.value = v
+            if isinstance(v, (int, float)):
+                cell.number_format = _NUMFMT
+
+    if pri_sheet is None:
+        dst.cell(row=1, column=width_c + 2,
+                 value="전기 보고서에 대응 주석 없음 — 수동 확인").font = _BOLD
+        return
+
+    ws_p = pri_ctx.wb[pri_sheet]
+    rm_p = pri_ctx.rowmaps[pri_sheet]
+    regs_c, regs_p = _regions(rm_c), _regions(rm_p)
+    paired, _ = _pair_regions(ws_c, regs_c, ws_p, regs_p)
+    verdict_col = width_c + 1
+    right0 = width_c + 3
+
+    for ci, reg_c, reg_p in paired:
+        cols_c = _period_cols(ws_c, rm_c, reg_c, "전기")
+        cols_p = _period_cols(ws_p, rm_p, reg_p, "당기")
+        all_cols_p = sorted({c for r in reg_p for c in rm_p.get(r, [])})
+        pri_rows = {}
+        for r in reg_p[1:]:
+            for key in (_norm1(_label(ws_p, r)), _norm2(_label(ws_p, r))):
+                if key:
+                    pri_rows.setdefault(key, r)
+        for r in reg_c[1:]:
+            raw = _label(ws_c, r)
+            pr = pri_rows.get(_norm1(raw)) or pri_rows.get(_norm2(raw))
+            if pr is None:
+                continue
+            for i, c in enumerate(all_cols_p):
+                v = ws_p.cell(row=pr, column=c).value
+                if v is None:
+                    continue
+                cell = dst.cell(row=r, column=right0 + i)
+                cell.value = v
+                if isinstance(v, (int, float)):
+                    cell.number_format = _NUMFMT
+            if cols_c and cols_p and \
+                    try_number(ws_c.cell(row=r, column=cols_c[0]).value) \
+                    is not None:
+                right_col = right0 + all_cols_p.index(cols_p[0]) \
+                    if cols_p[0] in all_cols_p else None
+                if right_col:
+                    dst.cell(row=r, column=verdict_col).value = (
+                        f"={get_column_letter(cols_c[0])}{r}="
+                        f"{get_column_letter(right_col)}{r}")
+
+
+def write_side_by_side(cur_ctx, pri_ctx, note_map, wb):
+    """실무 양식 상세 시트들을 wb에 추가 (요약/FALSE분해는 별도 유지)."""
+    for sheet in cur_ctx.fs_sheets:
+        if sheet not in pri_ctx.fs_sheets:
+            continue
+        dst = wb.create_sheet(sheet)
+        _side_statement(dst, cur_ctx, pri_ctx, sheet)
+        dst.column_dimensions["A"].width = 34
+    for cur_s, pri_s, _title in note_map:
+        dst = wb.create_sheet(cur_s)
+        _side_note(dst, cur_ctx, pri_ctx, cur_s, pri_s)
+        dst.column_dimensions["A"].width = 30
+
+
+# ---------------------------------------------------------------------------
 # 실행 + 엑셀 출력
 # ---------------------------------------------------------------------------
 
@@ -443,13 +614,15 @@ def recon(cur_path, prior_path, out_path=None, tolerance=0, progress=None):
                                      note_skipped, out_path, cur_path,
                                      prior_path, tolerance,
                                      note_unpaired=note_unpaired,
-                                     title_misses=title_misses)
+                                     title_misses=title_misses,
+                                     cur_ctx=cur_ctx, pri_ctx=pri_ctx)
     return summary
 
 
 def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
                        out_path, cur_path, prior_path, tolerance,
-                       note_unpaired=None, title_misses=None):
+                       note_unpaired=None, title_misses=None,
+                       cur_ctx=None, pri_ctx=None):
     note_unpaired = note_unpaired or {}
     title_misses = title_misses or []
     wb = Workbook()
@@ -495,7 +668,7 @@ def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
         c.fill = _HDR_FILL
     for kind, sheet, n, t, f in lines:
         ws0.append([kind, sheet, n, t, f,
-                    f'=HYPERLINK("#\'대사_{sheet}\'!A1","시트 바로가기")'])
+                    f'=HYPERLINK("#\'{sheet}\'!A1","시트 바로가기")'])
         ws0.cell(ws0.max_row, 6).font = _LINK_FONT
         if f:
             ws0.cell(ws0.max_row, 5).fill = _FALSE_FILL
@@ -523,42 +696,10 @@ def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
     for col in ("B", "D", "E", "F"):
         ws0.column_dimensions[col].width = 16
 
-    # 상세 시트
-    def _detail_sheet(name, rows, headers):
-        ws = wb.create_sheet(f"대사_{name}"[:31])
-        c = ws.cell(1, 8, '=HYPERLINK("#요약!A1","요약으로")')
-        c.font = _LINK_FONT
-        ws.append(headers)
-        for cc in ws[2]:
-            cc.font = _BOLD
-            cc.fill = _HDR_FILL
-        for r in rows:
-            vals = [r.get("table", ""), r["label"], r["cur_prior"],
-                    r["pri_current"] if r["pri_current"] is not None else "",
-                    str(r["true"]).upper(), r["note"]]
-            if headers[0] != "표":
-                vals = vals[1:]
-            ws.append(vals)
-            for cc in ws[ws.max_row]:
-                if isinstance(cc.value, (int, float)):
-                    cc.number_format = _NUMFMT
-            if not r["true"]:
-                for cc in ws[ws.max_row]:
-                    cc.fill = _FALSE_FILL
-        ws.column_dimensions["A"].width = 8 if headers[0] == "표" else 42
-        ws.column_dimensions["B"].width = 42 if headers[0] == "표" else 18
-        for i in range(2, len(headers) + 1):
-            ws.column_dimensions[get_column_letter(i)].width = 18
-        ws.freeze_panes = "A3"
-
-    for sheet, rows in stmt_results.items():
-        _detail_sheet(sheet, rows,
-                      ["계정과목", "당기보고서 전기값", "전기보고서 당기값",
-                       "판정", "비고"])
-    for sheet, rows in note_results.items():
-        _detail_sheet(sheet, rows,
-                      ["표", "행 라벨", "당기보고서 전기값",
-                       "전기보고서 당기값", "판정", "비고"])
+    # 상세 시트 — 실무 양식(문용.xlsb) 병렬 배치: 당기 원문 | 판정 수식 |
+    # 전기 원문. 판정 근거는 셀 참조 수식이라 엑셀에서 추적 가능.
+    if cur_ctx is not None and pri_ctx is not None:
+        write_side_by_side(cur_ctx, pri_ctx, note_map, wb)
 
     breakdown = _write_false_breakdown(wb, note_results, note_unpaired,
                                        title_misses)
