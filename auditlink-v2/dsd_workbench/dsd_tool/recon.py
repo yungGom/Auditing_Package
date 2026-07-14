@@ -29,7 +29,7 @@ import re
 import tempfile
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .excel_out import extract
@@ -51,7 +51,13 @@ _BOLD = Font(bold=True)
 _HDR_FILL = PatternFill("solid", start_color="D9E1F2")
 _FALSE_FILL = PatternFill("solid", start_color="FFC7CE")
 _LINK_FONT = Font(color="FF0563C1", underline="single")
-_NUMFMT = "#,##0;[RED](#,##0)"
+# 서식 규격 (한진칼_전기대사_문용.xlsb 실측 + 확정 지시):
+# 숫자 음수 괄호, 데이터 영역 thin 테두리, 표 헤더 행 회색(실측 DCDCDC),
+# 판정은 FALSE만 하이라이트(TRUE 무강조)
+_NUMFMT = "#,##0;(#,##0)"
+_THIN = Side(style="thin")
+_DATA_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+_TBL_HDR_FILL = PatternFill("solid", start_color="DCDCDC")
 
 GUIDE = ("FALSE 존재 시 전기 재작성·계정 재분류 여부를 확인하십시오 "
          "(판정은 기계, 해석은 회계사)")
@@ -446,6 +452,34 @@ def _copy_row(dst, src_ws, src_row, cols, dst_row, dst_col0):
             cell.number_format = _NUMFMT
 
 
+def _fill_header_row(dst, row, col_ranges):
+    """표 헤더 행 구분 — 실측(문용.xlsb) 회색 배경."""
+    for cols in col_ranges:
+        for c in cols:
+            dst.cell(row=row, column=c).fill = _TBL_HDR_FILL
+
+
+def _style_sheet(ws):
+    """서식 규격 적용: 값 있는 셀 전면 thin 테두리 + 열 폭.
+
+    열 폭: 긴 문자열(라벨) 열 30, 숫자 열 14 (실측 근사).
+    """
+    label_cols, numeric_cols = set(), set()
+    for row in ws.iter_rows():
+        for c in row:
+            if c.value is None:
+                continue
+            c.border = _DATA_BORDER
+            if isinstance(c.value, (int, float)):
+                numeric_cols.add(c.column)
+            elif isinstance(c.value, str) and len(c.value) >= 6 and \
+                    c.value not in ("TRUE", "FALSE"):
+                label_cols.add(c.column)
+    for col in label_cols | numeric_cols:
+        ws.column_dimensions[get_column_letter(col)].width = \
+            30 if col in label_cols else 14
+
+
 def _side_statement(dst, cur_ctx, pri_ctx, sheet, results):
     """본문 시트: 당기 원문 | 판정(행 단위) | 전기 원문 (행 라벨 정렬)."""
     ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[sheet]
@@ -471,6 +505,16 @@ def _side_statement(dst, cur_ctx, pri_ctx, sheet, results):
     max_row_c = max(rm_c) if rm_c else 1
     for r in range(1, max_row_c + 1):
         _copy_row(dst, ws_c, r, range(1, width_c + 1), r, 1)
+
+    # 우측 헤더: 전기 파일 표 헤더를 당기 표 헤더 행 위치에
+    regs_c, regs_p = _regions(rm_c), _regions(rm_p)
+    if regs_c and regs_p:
+        hdr_c = max(regs_c, key=len)[0]
+        _copy_row(dst, ws_p, max(regs_p, key=len)[0], all_cols_p,
+                  hdr_c, right0)
+        _fill_header_row(dst, hdr_c,
+                         [range(1, width_c + 1),
+                          range(right0, right0 + len(all_cols_p))])
 
     for r in rows_c:
         raw = _label(ws_c, r)
@@ -509,6 +553,9 @@ def _side_ce(dst, cur_ctx, pri_ctx, sheet, results):
         hdr_c = max(regs_c, key=len)[0]
         hdr_p = max(regs_p, key=len)[0]
         _copy_row(dst, ws_p, hdr_p, all_cols_p, hdr_c, right0)
+        _fill_header_row(dst, hdr_c,
+                         [range(1, width_c + 1),
+                          range(right0, right0 + len(all_cols_p))])
 
     for res in results:
         if res.get("pri_row") is not None:
@@ -546,6 +593,10 @@ def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet, results):
 
     for _ci, reg_c, reg_p in paired:
         all_cols_p = sorted({c for r in reg_p for c in rm_p.get(r, [])})
+        _copy_row(dst, ws_p, reg_p[0], all_cols_p, reg_c[0], right0)
+        _fill_header_row(dst, reg_c[0],
+                         [rm_c.get(reg_c[0], []),
+                          range(right0, right0 + len(all_cols_p))])
         pri_rows = {}
         for r in reg_p[1:]:
             for key in (_norm1(_label(ws_p, r)), _norm2(_label(ws_p, r))):
@@ -577,12 +628,14 @@ def write_side_by_side(cur_ctx, pri_ctx, note_map, wb, stmt_results,
             _side_ce(dst, cur_ctx, pri_ctx, sheet, res)
         else:
             _side_statement(dst, cur_ctx, pri_ctx, sheet, res)
+        _style_sheet(dst)
         dst.column_dimensions["A"].width = 34
         rendered.append(("본문", sheet))
     for cur_s, pri_s, _title in note_map:
         dst = wb.create_sheet(cur_s)
         _side_note(dst, cur_ctx, pri_ctx, cur_s, pri_s,
                    note_results.get(cur_s, []))
+        _style_sheet(dst)
         dst.column_dimensions["A"].width = 30
         rendered.append(("주석", cur_s))
     return rendered

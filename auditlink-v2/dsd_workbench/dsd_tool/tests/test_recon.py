@@ -165,6 +165,23 @@ def test_output_format(result):
             break
     assert found_parallel, "좌우 병렬 원문 배치 아님"
 
+    # 서식 규격 (문용.xlsb 실측): 숫자 음수 괄호 서식 + 데이터 영역
+    # thin 테두리 + 표 헤더 회색(DCDCDC) — TRUE는 무강조, FALSE만 빨강
+    num_cells = [c for row in bs.iter_rows() for c in row
+                 if isinstance(c.value, (int, float))]
+    assert num_cells
+    assert all(c.number_format == "#,##0;(#,##0)" for c in num_cells)
+    assert all(c.border.left.style == "thin" for c in num_cells)
+    fills = {str(c.fill.start_color.rgb) for row in bs.iter_rows()
+             for c in row if c.fill and c.fill.patternType == "solid"}
+    assert any(f.endswith("DCDCDC") for f in fills), "표 헤더 회색 없음"
+    for row in bs.iter_rows():
+        for c in row:
+            if c.value == "TRUE":
+                assert c.fill.patternType is None, "TRUE는 무강조"
+            elif c.value == "FALSE":
+                assert str(c.fill.start_color.rgb).endswith("FFC7CE")
+
     # 요약 → 시트 하이퍼링크 + FALSE분해 시트
     ws0 = wb["요약"]
     links = [str(c.value) for row in ws0.iter_rows() for c in row
