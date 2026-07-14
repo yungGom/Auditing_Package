@@ -198,6 +198,39 @@ def test_output_format(result):
 
 
 # ---------------------------------------------------------------------------
+# 회귀: 판정 셀은 전 시트 수식이어야 함 (리터럴 회귀 방지)
+# ---------------------------------------------------------------------------
+
+def test_verdicts_are_formulas_all_sheets(result):
+    """생성된 엑셀을 다시 읽어 값이 있는 판정 셀은 전부 수식('='로 시작)
+    인지 전 시트 검증.
+
+    유일한 예외 = 리터럴 "FALSE": 전기 보고서에 대응 행이 없는 경우
+    (신규/소멸 행)는 참조할 우측 셀 자체가 없어 수식을 만들 수 없다 —
+    이때만 리터럴 FALSE를 허용하며, 그 외 리터럴("TRUE" 포함)은 회귀.
+    """
+    wb = load_workbook(result["out_path"])
+    checked = 0
+    for sheet in wb.sheetnames:
+        if sheet in ("요약", "FALSE분해"):
+            continue
+        ws = wb[sheet]
+        vcol = next((c.column for c in ws[1] if c.value == "판정"), None)
+        if vcol is None:                       # 판정 없는 시트(미매칭 주석)
+            continue
+        for row in ws.iter_rows(min_row=2, min_col=vcol, max_col=vcol):
+            v = row[0].value
+            if v is None:
+                continue
+            checked += 1
+            assert isinstance(v, str), \
+                f"{sheet}!{row[0].coordinate}: 파이썬 {type(v).__name__} 판정"
+            assert v.startswith("=") or v == "FALSE", \
+                f"{sheet}!{row[0].coordinate}: 수식 아닌 판정 {v!r}"
+    assert checked >= 100                      # 본문+주석 전수에 걸쳐 검증됨
+
+
+# ---------------------------------------------------------------------------
 # 회귀: 요약 카운트 == 시트별 판정 실측 카운트 (전 시트, 재발 방지)
 # ---------------------------------------------------------------------------
 
