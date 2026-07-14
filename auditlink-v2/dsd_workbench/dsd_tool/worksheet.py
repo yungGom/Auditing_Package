@@ -115,10 +115,11 @@ class _MemberMatcher:
 
 def build_worksheet(dsd_path, out_path=None, report_type="annual",
                     induty=None, corpus_db=None, holdout_corp=None,
-                    progress=None):
-    """회사 DSD → XBRL 전사 가이드 워크시트. 요약 dict 반환.
+                    include_notes=True, progress=None):
+    """회사 DSD → XBRL 전사 가이드 워크시트 (본문 F-1 + 주석 F-2).
 
     holdout_corp: 게이트 검증용 — 해당 회사를 코퍼스 집계에서 제외(누수 방지).
+    include_notes: 주석 워크시트(role 배정·표→차원 매핑) 포함 여부.
     """
     if report_type not in PERIOD_LABELS:
         raise ValueError(f"report_type은 {sorted(PERIOD_LABELS)} 중 하나")
@@ -248,6 +249,22 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                 (sheet, category, len(sheet_rows),
                  sum(1 for x in sheet_rows if x["top1"] is None)))
 
+        # --- 주석 워크시트 (F-2) ---------------------------------------
+        note_results = None
+        if include_notes and ctx.note_sheets:
+            try:
+                from .note_worksheet import NoteAssets, build_note_sheets
+                assets = NoteAssets(db_path=corpus_db)
+                note_results = build_note_sheets(
+                    wb, ctx, corpus, assets, induty=induty,
+                    progress=progress)
+                sheet_summaries.append(
+                    ("주석 1~%d" % len(ctx.note_sheets), "주석",
+                     len(ctx.note_sheets), len(note_results["unassigned"])))
+            except FileNotFoundError as e:
+                note_results = {"error": f"표준 자산 없음: {e} — "
+                                "dart_explorer corpus export 필요"}
+
         _write_overview(overview, dsd_path, report_type, stats,
                         sheet_summaries)
         if out_path is None:
@@ -255,7 +272,7 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                               flags=re.I) + "_XBRL작성워크시트.xlsx"
         wb.save(out_path)
     return {"out_path": out_path, "stats": stats,
-            "sheets": results_by_sheet}
+            "sheets": results_by_sheet, "notes": note_results}
 
 
 def _write_overview(ws, dsd_path, report_type, stats, sheet_summaries):

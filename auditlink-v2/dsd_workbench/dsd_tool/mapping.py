@@ -306,6 +306,36 @@ def suggest(corpus: MappingCorpus, name, category=None, induty=None,
 # 엑셀 입출력
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# 추천 상태 4종 (Design v2 추천 카드와 일치)
+# ---------------------------------------------------------------------------
+
+STATE_STANDARD = "표준"                 # 정상 표준 후보
+STATE_PREFER_STANDARD = "표준 사용 권장"  # 확장 실증 + 고유사 표준 동시 → 표준 권장
+STATE_EXTENSION = "확장 필요"            # 적합 표준 없음, 확장 실증만
+STATE_MANUAL = "수동 확인"               # 신호 없음
+
+# 함정 구간 재해석(2026-07-10): 회사들이 확장으로 만들던 항목이 표준화되는
+# 흐름(D-4d 실증 — 특수관계자 계열 유사도 1.00 다수)이므로, 확장 사례와
+# 고유사 표준이 동시에 잡히면 불필요 확장 억제를 위해 표준 사용을 권장한다.
+PREFER_STD_SIM = 0.45
+
+
+def classify_suggestion(res):
+    """suggest() 결과 → 상태 4종. (state, top후보|None) 반환."""
+    cands = res.get("candidates") or []
+    exts = res.get("similar_extensions") or []
+    if res.get("verdict") == "후보":
+        return STATE_STANDARD, cands[0]
+    if exts and cands and cands[0]["sim"] >= PREFER_STD_SIM:
+        return STATE_PREFER_STANDARD, cands[0]
+    if exts:
+        return STATE_EXTENSION, None
+    if cands and cands[0]["sim"] >= PREFER_STD_SIM:
+        return STATE_PREFER_STANDARD, cands[0]
+    return STATE_MANUAL, None
+
+
 def write_template(path):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill

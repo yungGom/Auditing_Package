@@ -234,6 +234,84 @@ def export_references(xlsm_path, out_json=None):
     return out_json, len(refs)
 
 
+def export_note_assets(xlsx_path, out_dir=None):
+    """F-2용 표준 자산 추출 → JSON 2종 (sqlite 잠금 없는 파일 교환).
+
+    - standard_roles.json: 주석(D8xxxxx) role 정의 목록
+      [{code, sector, consol, definition}]
+    - standard_hypercubes.json: role 코드 → 축·member
+      {code: [{axis, axis_label, members: [[id, label], ...]}]}
+    열 배치는 헤더 행에서 탐지 (D-4b 교훈 — 위치 하드코딩 금지).
+    """
+    import json
+    import re as _re
+    from openpyxl import load_workbook
+
+    out_dir = out_dir or os.path.dirname(DEFAULT_DB)
+    os.makedirs(out_dir, exist_ok=True)
+    wb = load_workbook(xlsx_path, read_only=True)
+
+    # --- Role 일람표 → 주석 role 정의 ---------------------------------------
+    roles = []
+    ws = wb["Role 일람표"]
+    for row in ws.iter_rows(values_only=True):
+        cells = [str(v) if v is not None else "" for v in row]
+        definition = next((c for c in cells
+                           if _re.match(r"^\[D\d{6}", c)), None)
+        if not definition:
+            continue
+        code = _re.match(r"^\[(D\d{6})", definition).group(1)
+        sector = next((c for c in cells if c in
+                       ("비금융업", "금융업", "보험업", "증권업")), "")
+        consol = "별도" if "별도" in " ".join(cells) else "연결"
+        roles.append({"code": code, "sector": sector, "consol": consol,
+                      "definition": definition})
+    with open(os.path.join(out_dir, "standard_roles.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(roles, f, ensure_ascii=False)
+
+    # --- Definition Link → role별 하이퍼큐브 축·member ----------------------
+    cubes = {}
+    ws = wb["Definition Link"]
+    code = None
+    col = {}
+    cur_axes = []
+    for row in ws.iter_rows(values_only=True):
+        if row[0] == "LinkRole":
+            if code and cur_axes:
+                cubes.setdefault(code, []).extend(cur_axes)
+            uri = str(row[1] or "")
+            m = _re.search(r"role[-/](D\d{6})", uri) or \
+                _re.search(r"(D\d{6})", uri)
+            code = m.group(1) if m else None
+            cur_axes = []
+            col = {}
+            continue
+        if row[0] == "prefix" and "arcrole" in row:
+            col = {name: i for i, name in enumerate(row) if name}
+            continue
+        if not code or not col or row[col.get("name", 1)] is None:
+            continue
+        prefix = row[col["prefix"]] or ""
+        name = row[col["name"]]
+        label = row[col.get("label", 2)] or ""
+        arc = str(row[col["arcrole"]] or "")
+        eid = f"{prefix}_{name}"
+        if arc.endswith("hypercube-dimension"):
+            cur_axes.append({"axis": eid, "axis_label": label,
+                             "members": []})
+        elif ("domain-member" in arc or "dimension-domain" in arc) \
+                and cur_axes:
+            cur_axes[-1]["members"].append([eid, label])
+    if code and cur_axes:
+        cubes.setdefault(code, []).extend(cur_axes)
+    wb.close()
+    with open(os.path.join(out_dir, "standard_hypercubes.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(cubes, f, ensure_ascii=False)
+    return {"roles": len(roles), "hypercube_roles": len(cubes)}
+
+
 # ---------------------------------------------------------------------------
 # 통계
 # ---------------------------------------------------------------------------
