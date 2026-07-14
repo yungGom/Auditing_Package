@@ -36,15 +36,16 @@ def result(tmp_path_factory):
 
 def test_gate1_statements_all_true(result):
     s = result["stmt"]
-    assert s["n"] >= 100                       # BS/PL/PL1/CE/CF 전수
+    assert s["n"] >= 90                        # BS/PL/PL1/CE/CF 전수(행 단위)
     assert s["false"] == 0, [
         (sheet, r["label"], r["note"])
         for sheet, rows in result["stmt_results"].items()
         for r in rows if not r["true"]]
-    # CE 2차원(변동내역×자본항목) 대사 포함 확인
+    # CE 행 단위(전기 블록 행 × 자본항목 열 전체 일치) 대사 포함 확인
     ce = result["stmt_results"].get("CE", [])
-    assert len(ce) >= 15
-    assert all("×" in r["label"] for r in ce)
+    assert len(ce) >= 5
+    assert all(r["true"] for r in ce)
+    assert all(r.get("pri_row") for r in ce)   # 전기 파일 행과 실제 매칭됨
 
 
 # ---------------------------------------------------------------------------
@@ -132,22 +133,29 @@ def test_gate3_tamper_detection(result, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_output_format(result):
-    """실무 양식(문용.xlsb 실측): 당기 원문 | 판정 수식 | 전기 원문 병렬."""
+    """실무 양식(문용.xlsb 배치): 당기 원문 | 판정 | 전기 원문 병렬.
+
+    판정 값 규칙(확정): 문자열 "TRUE"/"FALSE"만 — 수식·파이썬 bool 금지.
+    """
     wb = load_workbook(result["out_path"])
     assert wb.sheetnames[0] == "요약"
     # 시트 구성 = 실무 양식 (원문 배치 그대로 BS/PL/…/주석 번호)
     assert {"BS", "PL", "CE", "CF"} <= set(wb.sheetnames)
     assert any(n.isdigit() for n in wb.sheetnames)
 
-    # 판정 = 셀 참조 수식 (=E{r}=L{r} — 당기파일 전기셀 = 전기파일 당기셀)
-    bs = wb["BS"]
-    formulas = [str(c.value) for row in bs.iter_rows() for c in row
-                if c.value and str(c.value).startswith("=") and
-                "=" in str(c.value)[1:]]
-    assert formulas, "판정 수식 없음"
-    assert any(re.fullmatch(r"=[A-Z]+\d+=[A-Z]+\d+", f) for f in formulas)
+    for sheet in ("BS", "PL", "CE", "CF"):
+        ws = wb[sheet]
+        vcol = next((c.column for c in ws[1] if c.value == "판정"), None)
+        assert vcol, f"{sheet}: 판정 열 없음"
+        vals = [row[0].value for row in
+                ws.iter_rows(min_row=2, min_col=vcol, max_col=vcol)
+                if row[0].value is not None]
+        assert vals, f"{sheet}: 판정 값 없음"
+        assert all(v in ("TRUE", "FALSE") for v in vals), \
+            f"{sheet}: 문자열 TRUE/FALSE 외 판정 값 {vals[:3]}"
 
     # 좌측 당기 원문 + 우측 전기 원문 병렬 (같은 행에 같은 계정 라벨)
+    bs = wb["BS"]
     found_parallel = False
     for row in bs.iter_rows(min_row=5):
         vals = [(c.column, str(c.value)) for c in row if c.value is not None]
@@ -163,3 +171,51 @@ def test_output_format(result):
              if c.value and str(c.value).startswith("=HYPERLINK")]
     assert any('#\'BS\'' in ln or "#BS" in ln for ln in links)
     assert "FALSE분해" in wb.sheetnames
+
+
+# ---------------------------------------------------------------------------
+# 회귀: 요약 카운트 == 시트별 판정 실측 카운트 (전 시트, 재발 방지)
+# ---------------------------------------------------------------------------
+
+def test_summary_equals_rendered_verdicts(result):
+    """생성된 엑셀을 다시 읽어 요약 표의 (대사, TRUE, FALSE)가 각 시트에
+    실제 렌더된 판정 열 실측과 일치하는지 전 시트 검증."""
+    wb = load_workbook(result["out_path"])
+    ws0 = wb["요약"]
+
+    # 요약 표 파싱: 헤더 [구분, 시트, 대사, TRUE, FALSE, ...] 이후 행들
+    summary_rows = {}
+    in_table = False
+    for row in ws0.iter_rows(values_only=True):
+        if row[:2] == ("구분", "시트"):
+            in_table = True
+            continue
+        if in_table:
+            if not row[0]:
+                break
+            summary_rows[str(row[1])] = (row[2], row[3], row[4])
+    assert summary_rows, "요약 표 없음"
+    assert {"BS", "PL", "CE", "CF"} <= set(summary_rows)
+
+    for sheet, (n, t, f) in summary_rows.items():
+        ws = wb[sheet]
+        vcol = next((c.column for c in ws[1] if c.value == "판정"), None)
+        assert vcol, f"{sheet}: 판정 열 없음"
+        vals = [row[0].value for row in
+                ws.iter_rows(min_row=2, min_col=vcol, max_col=vcol)]
+        rt = sum(1 for v in vals if v == "TRUE")
+        rf = sum(1 for v in vals if v == "FALSE")
+        assert (n, t, f) == (rt + rf, rt, rf), \
+            f"{sheet}: 요약 {(n, t, f)} != 실측 {(rt + rf, rt, rf)}"
+
+    # 요약 상단 전체 판정 문구의 합계도 실측 총합과 일치
+    total = [str(c.value) for row in ws0.iter_rows() for c in row
+             if c.value and "전체 판정" in str(c.value)][0]
+    m = re.search(r"본문 대사 (\d+) · TRUE (\d+) · FALSE (\d+) / "
+                  r"주석 대사 (\d+) · TRUE (\d+) · FALSE (\d+)", total)
+    assert m
+    sn, st, sf = (sum(v[i] for s, v in summary_rows.items()
+                      if s in ("BS", "PL", "PL1", "CE", "CF"))
+                  for i in range(3))
+    assert (int(m.group(1)), int(m.group(2)), int(m.group(3))) == \
+        (sn, st, sf)

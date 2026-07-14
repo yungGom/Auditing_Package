@@ -17,8 +17,9 @@
 대사 로직:
 - 본문(BS/PL/PL1/CF): 당기 파일 "전기 열" ↔ 전기 파일 "당기 열",
   계정 매칭은 A-4 계정명 정규화 재사용
-- CE: 행(변동내역, 블록 라벨의 날짜 제거) × 열(자본항목) 2차원 매칭 —
-  당기 파일의 전기 블록(전기초~전기말) ↔ 전기 파일의 당기 블록
+- CE: 당기 파일의 전기 블록(전기초~전기말) ↔ 전기 파일의 당기 블록을
+  행 단위로 매칭(블록 라벨의 날짜 제거), 행의 모든 자본항목 열이
+  일치해야 TRUE — 시트에 렌더되는 판정 열과 1:1
 - 주석: 번호가 아니라 제목 정규화로 매칭 (연도 간 번호 이동 대응).
   표 내부는 헤더의 당기/전기 열 식별 후 행 라벨 매칭 → 셀 대조.
   서술문 내 숫자는 스코프 제외 (오탐 과다).
@@ -124,8 +125,8 @@ def recon_statement(cur_ctx, pri_ctx, sheet, tolerance=0):
         if pv is None and lab2:                 # 2차 폴백 (표기 변형 흡수)
             pv = pri_by_label2.get(lab2)
         ok, note = _verdict(v, pv, tolerance)
-        rows.append({"label": label, "cur_prior": v, "pri_current": pv,
-                     "true": ok, "note": note})
+        rows.append({"row": r, "label": label, "cur_prior": v,
+                     "pri_current": pv, "true": ok, "note": note})
     return rows
 
 
@@ -133,15 +134,15 @@ def recon_statement(cur_ctx, pri_ctx, sheet, tolerance=0):
 # CE 대사 (행 변동내역 × 열 자본항목 — 2차원)
 # ---------------------------------------------------------------------------
 
-def _ce_grid(ctx, sheet, want_block):
-    """CE 시트에서 (행라벨정규화, 열라벨정규화) → 값 grid.
+def _ce_rows(ctx, sheet, want_block):
+    """CE 블록의 행 목록 [(행번호, 정규화라벨, 원문라벨, {열라벨: 값})].
 
     want_block: '전기'(전기초~전기말 구간) 또는 '당기'.
     """
     rowmap = ctx.rowmaps[sheet]
     regions = _regions(rowmap)
     if not regions:
-        return {}, []
+        return []
     region = max(regions, key=len)
     ws = ctx.wb[sheet]
     header = region[0]
@@ -152,21 +153,17 @@ def _ce_grid(ctx, sheet, want_block):
     # 블록 구간 탐지: '(전기초)' 행 ~ '(전기말)' 행
     start = end = None
     for r in region[1:]:
-        label = _label(ws, r)
-        m = _BLOCK_TAG_RE.search(label)
-        if m and m.group(1) + "기" == want_block + "기"[1:]:
-            pass
-        if m:
-            tag = m.group(1)                    # 당 or 전
-            if (want_block == "전기") == (tag == "전"):
-                if m.group(2) == "초":
-                    start = r
-                else:
-                    end = r
+        m = _BLOCK_TAG_RE.search(_label(ws, r))
+        if m and (want_block == "전기") == (m.group(1) == "전"):
+            if m.group(2) == "초":
+                start = r
+            else:
+                end = r
     if start is None or end is None:
-        return {}, sorted(cols.values())
+        return []
 
-    grid = {}
+    from .textutil import try_number
+    out = []
     for r in region[1:]:
         if not (start <= r <= end):
             continue
@@ -177,23 +174,42 @@ def _ce_grid(ctx, sheet, want_block):
         lab = _norm_label(lab)
         if not lab:
             continue
+        vals = {}
         for c, col_lab in cols.items():
-            from .textutil import try_number
             v = try_number(ws.cell(row=r, column=c).value)
             if v is not None:
-                grid[(lab, col_lab)] = v
-    return grid, sorted(set(cols.values()))
+                vals[col_lab] = v
+        out.append((r, lab, raw, vals))
+    return out
 
 
 def recon_ce(cur_ctx, pri_ctx, sheet, tolerance=0):
-    cur_grid, _ = _ce_grid(cur_ctx, sheet, "전기")
-    pri_grid, _ = _ce_grid(pri_ctx, sheet, "당기")
+    """행 단위 판정 — 당기 파일 전기 블록 행 ↔ 전기 파일 당기 블록 행.
+
+    같은 라벨끼리 연도가 달라 못 붙는 날짜 접두는 제거하고, 블록을
+    구분해 매칭('당기순이익'이 양 블록에 반복돼도 안전). 행의 모든
+    자본항목 열이 일치해야 TRUE — 렌더 판정 열과 1:1.
+    """
+    cur = _ce_rows(cur_ctx, sheet, "전기")
+    pri = _ce_rows(pri_ctx, sheet, "당기")
+    pri_by_label = {}
+    for r, lab, _raw, vals in pri:
+        pri_by_label.setdefault(lab, (r, vals))
     rows = []
-    for (rl, cl), v in sorted(cur_grid.items()):
-        pv = pri_grid.get((rl, cl))
-        ok, note = _verdict(v, pv, tolerance)
-        rows.append({"label": f"{rl} × {cl}", "cur_prior": v,
-                     "pri_current": pv, "true": ok, "note": note})
+    for r, lab, raw, vals in cur:
+        if not vals:
+            continue
+        hit = pri_by_label.get(lab)
+        if hit is None:
+            rows.append({"row": r, "pri_row": None, "label": raw,
+                         "true": False, "note": "전기 보고서에 항목 없음"})
+            continue
+        pr, pvals = hit
+        bad = sorted(cl for cl, v in vals.items()
+                     if not _verdict(v, pvals.get(cl), tolerance)[0])
+        rows.append({"row": r, "pri_row": pr, "label": raw,
+                     "true": not bad,
+                     "note": "" if not bad else "값 상이: " + ", ".join(bad)})
     return rows
 
 
@@ -368,6 +384,7 @@ def recon_note_tables(cur_ctx, pri_ctx, cur_sheet, pri_sheet, tolerance=0):
                 paddr_col = re.match(r"([A-Z]+)", paddr).group(1) \
                     if paddr else None
                 results.append({
+                    "row": r,
                     "table": ti, "label": _label(ws_c, r), "col": j + 1,
                     "cur_prior": v, "pri_current": pv, "true": ok,
                     "note": note, "cur_addr": f"{get_column_letter(c)}{r}",
@@ -380,48 +397,69 @@ def recon_note_tables(cur_ctx, pri_ctx, cur_sheet, pri_sheet, tolerance=0):
 
 
 # ---------------------------------------------------------------------------
-# 실무 양식 병렬 시트 (한진칼_전기대사_문용.xlsb 실측 재현)
-# 좌측 = 당기 원문 | 판정(셀 참조 수식 =좌전기셀=우당기셀) | 우측 = 전기 원문
+# 실무 양식 병렬 시트 (한진칼_전기대사_문용.xlsb 배치 재현)
+# 좌측 = 당기 원문 | 판정("TRUE"/"FALSE" 문자열) | 우측 = 전기 원문
+#
+# 판정 값 규칙 (확정): 문자열 "TRUE"/"FALSE"만 — 수식·파이썬 bool 금지.
+# 요약 카운트는 별도 집계가 아니라 여기 렌더된 판정 열을 재계산해서
+# 만든다(count_rendered_verdicts) — 요약과 상세가 어긋날 수 없는 구조.
 # ---------------------------------------------------------------------------
 
-def _copy_block(dst_ws, src_ws, rows, cols, dst_row0, dst_col0, row_map):
-    """원문 블록 복사 (값만). row_map: 원본행 → 출력행."""
-    for r in rows:
-        out_r = row_map(r)
-        if out_r is None:
+def _put_verdict(dst, row, col, ok):
+    cell = dst.cell(row=row, column=col)
+    cell.value = "TRUE" if ok else "FALSE"
+    if not ok:
+        cell.fill = _FALSE_FILL
+
+
+def _verdict_header(dst, col):
+    hdr = dst.cell(row=1, column=col)
+    hdr.value = "판정"
+    hdr.font = _BOLD
+    hdr.fill = _HDR_FILL
+
+
+def _row_verdicts(results):
+    """셀 단위 결과 → 행 단위 {행번호: (TRUE여부, 비고)}.
+
+    행의 모든 대사 셀이 TRUE여야 행 TRUE (렌더 판정 열은 행당 1개).
+    """
+    out = {}
+    for r in results:
+        prev = out.get(r["row"])
+        if prev is None:
+            out[r["row"]] = (bool(r["true"]),
+                             "" if r["true"] else r["note"])
+        elif prev[0] and not r["true"]:
+            out[r["row"]] = (False, r["note"])
+    return out
+
+
+def _copy_row(dst, src_ws, src_row, cols, dst_row, dst_col0):
+    for i, c in enumerate(cols):
+        v = src_ws.cell(row=src_row, column=c).value
+        if v is None:
             continue
-        for i, c in enumerate(cols):
-            v = src_ws.cell(row=r, column=c).value
-            if v is None:
-                continue
-            cell = dst_ws.cell(row=dst_row0 + out_r, column=dst_col0 + i)
-            cell.value = v
-            if isinstance(v, (int, float)):
-                cell.number_format = _NUMFMT
+        cell = dst.cell(row=dst_row, column=dst_col0 + i)
+        cell.value = v
+        if isinstance(v, (int, float)):
+            cell.number_format = _NUMFMT
 
 
-def _side_statement(dst, cur_ctx, pri_ctx, sheet):
-    """본문 시트: 당기 원문 | 판정열(전기값 열별) | 전기 원문 (행 라벨 정렬)."""
+def _side_statement(dst, cur_ctx, pri_ctx, sheet, results):
+    """본문 시트: 당기 원문 | 판정(행 단위) | 전기 원문 (행 라벨 정렬)."""
     ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[sheet]
     rm_c, rm_p = cur_ctx.rowmaps[sheet], pri_ctx.rowmaps[sheet]
-    periods_c, rows_c = cur_ctx.fs_sequences(sheet)
-    periods_p, rows_p = pri_ctx.fs_sequences(sheet)
+    _periods_c, rows_c = cur_ctx.fs_sequences(sheet)
+    _periods_p, rows_p = pri_ctx.fs_sequences(sheet)
 
     all_cols_c = sorted({c for r in rm_c for c in rm_c[r]})
     all_cols_p = sorted({c for r in rm_p for c in rm_p[r]})
     width_c = max(all_cols_c) if all_cols_c else 6
-    amount_c = [c for c in all_cols_c if c >= 3]
-    prior_cols_c = amount_c[len(amount_c) // 2:] if len(amount_c) >= 4 \
-        else amount_c[-1:]                     # 당기파일 '전기' 값 열들
-    amount_p = [c for c in all_cols_p if c >= 3]
-    cur_cols_p = amount_p[:len(amount_p) // 2] if len(amount_p) >= 4 \
-        else amount_p[:1]                      # 전기파일 '당기' 값 열들
+    verdict_col = width_c + 1
+    right0 = verdict_col + 2                   # 우측 전기 원문 시작
 
-    verdict_col0 = width_c + 1                 # 판정열 시작
-    n_verdict = len(prior_cols_c)
-    right0 = verdict_col0 + n_verdict + 1      # 우측 전기 원문 시작
-
-    # 전기 행 매핑 (2단 정규화 라벨)
+    # 전기 행 매핑 (2단 정규화 라벨) — 우측 원문 정렬 배치용
     pri_by_label = {}
     for r in rows_p:
         raw = _label(ws_p, r)
@@ -432,64 +470,67 @@ def _side_statement(dst, cur_ctx, pri_ctx, sheet):
     # 좌측: 당기 원문 전 행 그대로 (제목~표)
     max_row_c = max(rm_c) if rm_c else 1
     for r in range(1, max_row_c + 1):
-        for c in range(1, width_c + 1):
-            v = ws_c.cell(row=r, column=c).value
-            if v is None:
-                continue
-            cell = dst.cell(row=r, column=c)
-            cell.value = v
-            if isinstance(v, (int, float)):
-                cell.number_format = _NUMFMT
+        _copy_row(dst, ws_c, r, range(1, width_c + 1), r, 1)
 
-    from .textutil import try_number
     for r in rows_c:
         raw = _label(ws_c, r)
         pr = pri_by_label.get(_norm1(raw)) or pri_by_label.get(_norm2(raw))
         if pr is not None:
-            # 우측: 전기 원문 행을 당기 행 옆에 정렬 배치
-            for i, c in enumerate(all_cols_p):
-                v = ws_p.cell(row=pr, column=c).value
-                if v is None:
-                    continue
-                cell = dst.cell(row=r, column=right0 + i)
-                cell.value = v
-                if isinstance(v, (int, float)):
-                    cell.number_format = _NUMFMT
-        # 판정 수식: 당기파일 전기셀 = 전기파일 당기셀 (실무 양식 그대로)
-        for k, pc in enumerate(prior_cols_c):
-            if try_number(ws_c.cell(row=r, column=pc).value) is None:
-                continue
-            vcell = dst.cell(row=r, column=verdict_col0 + k)
-            if pr is not None and k < len(cur_cols_p):
-                right_col = right0 + all_cols_p.index(cur_cols_p[k])
-                vcell.value = (f"={get_column_letter(pc)}{r}="
-                               f"{get_column_letter(right_col)}{r}")
-            else:
-                vcell.value = "FALSE"          # 전기 보고서에 항목 없음
-                vcell.fill = _FALSE_FILL
-    hdr = dst.cell(row=max(1, min(rm_c) - 1), column=verdict_col0)
-    hdr.value = "판정"
-    hdr.font = _BOLD
+            _copy_row(dst, ws_p, pr, all_cols_p, r, right0)
+
+    # 판정: recon_statement 결과 그대로 렌더 (문자열 TRUE/FALSE)
+    for res in results:
+        _put_verdict(dst, res["row"], verdict_col, res["true"])
+    _verdict_header(dst, verdict_col)
 
 
-def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet):
-    """주석 시트: 표 쌍·행 라벨 매칭으로 좌우 병렬 + 판정 수식."""
+def _side_ce(dst, cur_ctx, pri_ctx, sheet, results):
+    """CE 시트: 당기 원문 | 판정(행 단위) | 전기 원문(당기 블록 정렬).
+
+    recon_ce가 매칭한 전기 파일 행(pri_row)을 그대로 옆에 붙인다 —
+    본문식 라벨 매칭은 연도 포함 날짜 라벨·블록 반복 라벨에서 오정렬
+    (요약 TRUE ↔ 시트 FALSE 불일치의 원인이었음).
+    """
+    ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[sheet]
+    rm_c, rm_p = cur_ctx.rowmaps[sheet], pri_ctx.rowmaps[sheet]
+    all_cols_p = sorted({c for r in rm_p for c in rm_p[r]})
+    width_c = max((c for r in rm_c for c in rm_c[r]), default=6)
+    verdict_col = width_c + 1
+    right0 = verdict_col + 2
+
+    # 좌측: 당기 원문 전체
+    max_row_c = max(rm_c) if rm_c else 1
+    for r in range(1, max_row_c + 1):
+        _copy_row(dst, ws_c, r, range(1, width_c + 1), r, 1)
+
+    # 우측 헤더: 전기 파일 표 헤더를 당기 표 헤더 행 위치에
+    regs_c, regs_p = _regions(rm_c), _regions(rm_p)
+    if regs_c and regs_p:
+        hdr_c = max(regs_c, key=len)[0]
+        hdr_p = max(regs_p, key=len)[0]
+        _copy_row(dst, ws_p, hdr_p, all_cols_p, hdr_c, right0)
+
+    for res in results:
+        if res.get("pri_row") is not None:
+            _copy_row(dst, ws_p, res["pri_row"], all_cols_p,
+                      res["row"], right0)
+        _put_verdict(dst, res["row"], verdict_col, res["true"])
+        if res["note"]:
+            dst.cell(row=res["row"], column=verdict_col + 1,
+                     value=res["note"])
+    _verdict_header(dst, verdict_col)
+
+
+def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet, results):
+    """주석 시트: 표 쌍·행 라벨 매칭으로 좌우 병렬 + 행 단위 판정."""
     ws_c = cur_ctx.wb[cur_sheet]
     rm_c = cur_ctx.rowmaps[cur_sheet]
-    from .textutil import try_number
 
     # 좌측: 당기 원문 전체
     all_cols_c = sorted({c for r in rm_c for c in rm_c[r]})
     width_c = max(all_cols_c) if all_cols_c else 3
     for r in sorted(rm_c):
-        for c in rm_c[r]:
-            v = ws_c.cell(row=r, column=c).value
-            if v is None:
-                continue
-            cell = dst.cell(row=r, column=c)
-            cell.value = v
-            if isinstance(v, (int, float)):
-                cell.number_format = _NUMFMT
+        _copy_row(dst, ws_c, r, range(1, width_c + 1), r, 1)
 
     if pri_sheet is None:
         dst.cell(row=1, column=width_c + 2,
@@ -503,9 +544,7 @@ def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet):
     verdict_col = width_c + 1
     right0 = width_c + 3
 
-    for ci, reg_c, reg_p in paired:
-        cols_c = _period_cols(ws_c, rm_c, reg_c, "전기")
-        cols_p = _period_cols(ws_p, rm_p, reg_p, "당기")
+    for _ci, reg_c, reg_p in paired:
         all_cols_p = sorted({c for r in reg_p for c in rm_p.get(r, [])})
         pri_rows = {}
         for r in reg_p[1:]:
@@ -515,39 +554,56 @@ def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet):
         for r in reg_c[1:]:
             raw = _label(ws_c, r)
             pr = pri_rows.get(_norm1(raw)) or pri_rows.get(_norm2(raw))
-            if pr is None:
-                continue
-            for i, c in enumerate(all_cols_p):
-                v = ws_p.cell(row=pr, column=c).value
-                if v is None:
-                    continue
-                cell = dst.cell(row=r, column=right0 + i)
-                cell.value = v
-                if isinstance(v, (int, float)):
-                    cell.number_format = _NUMFMT
-            if cols_c and cols_p and \
-                    try_number(ws_c.cell(row=r, column=cols_c[0]).value) \
-                    is not None:
-                right_col = right0 + all_cols_p.index(cols_p[0]) \
-                    if cols_p[0] in all_cols_p else None
-                if right_col:
-                    dst.cell(row=r, column=verdict_col).value = (
-                        f"={get_column_letter(cols_c[0])}{r}="
-                        f"{get_column_letter(right_col)}{r}")
+            if pr is not None:
+                _copy_row(dst, ws_p, pr, all_cols_p, r, right0)
+
+    # 판정: recon_note_tables 결과를 행 단위로 접어 렌더
+    for row, (ok, note) in sorted(_row_verdicts(results).items()):
+        _put_verdict(dst, row, verdict_col, ok)
+    if results:
+        _verdict_header(dst, verdict_col)
 
 
-def write_side_by_side(cur_ctx, pri_ctx, note_map, wb):
-    """실무 양식 상세 시트들을 wb에 추가 (요약/FALSE분해는 별도 유지)."""
+def write_side_by_side(cur_ctx, pri_ctx, note_map, wb, stmt_results,
+                       note_results):
+    """실무 양식 상세 시트들을 wb에 추가. [(구분, 시트명)] 반환."""
+    rendered = []
     for sheet in cur_ctx.fs_sheets:
         if sheet not in pri_ctx.fs_sheets:
             continue
         dst = wb.create_sheet(sheet)
-        _side_statement(dst, cur_ctx, pri_ctx, sheet)
+        res = stmt_results.get(sheet, [])
+        if sheet.endswith("CE"):
+            _side_ce(dst, cur_ctx, pri_ctx, sheet, res)
+        else:
+            _side_statement(dst, cur_ctx, pri_ctx, sheet, res)
         dst.column_dimensions["A"].width = 34
+        rendered.append(("본문", sheet))
     for cur_s, pri_s, _title in note_map:
         dst = wb.create_sheet(cur_s)
-        _side_note(dst, cur_ctx, pri_ctx, cur_s, pri_s)
+        _side_note(dst, cur_ctx, pri_ctx, cur_s, pri_s,
+                   note_results.get(cur_s, []))
         dst.column_dimensions["A"].width = 30
+        rendered.append(("주석", cur_s))
+    return rendered
+
+
+def count_rendered_verdicts(ws):
+    """시트에 실제로 렌더된 판정 열의 TRUE/FALSE 실측 카운트.
+
+    요약 카운트의 유일한 원천 — 별도 집계 금지 (요약≠상세 재발 방지).
+    """
+    vcol = next((c.column for c in ws[1] if c.value == "판정"), None)
+    if vcol is None:
+        return 0, 0, 0
+    t = f = 0
+    for row in ws.iter_rows(min_row=2, min_col=vcol, max_col=vcol):
+        v = row[0].value
+        if v == "TRUE":
+            t += 1
+        elif v == "FALSE":
+            f += 1
+    return t + f, t, f
 
 
 # ---------------------------------------------------------------------------
@@ -629,23 +685,25 @@ def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
     ws0 = wb.active
     ws0.title = "요약"
 
-    def _counts(rows):
-        n = len(rows)
-        t = sum(1 for r in rows if r["true"])
-        return n, t, n - t
-
+    # 상세 시트 먼저 렌더 — 요약 카운트는 렌더된 판정 열에서 재계산
+    # (별도 집계 금지: 요약과 상세가 어긋날 수 없는 단일 원천 구조)
+    rendered = write_side_by_side(cur_ctx, pri_ctx, note_map, wb,
+                                  stmt_results, note_results)
     stmt_n = stmt_t = note_n = note_t = 0
     lines = []
-    for sheet, rows in stmt_results.items():
-        n, t, f = _counts(rows)
-        stmt_n += n
-        stmt_t += t
-        lines.append(("본문", sheet, n, t, f))
-    for sheet, rows in note_results.items():
-        n, t, f = _counts(rows)
-        note_n += n
-        note_t += t
-        lines.append(("주석", sheet, n, t, f))
+    sheet_counts = {}
+    for kind, sheet in rendered:
+        n, t, f = count_rendered_verdicts(wb[sheet])
+        sheet_counts[sheet] = (n, t, f)
+        if n == 0:
+            continue                           # 판정 없는 시트(미매칭 주석 등)
+        if kind == "본문":
+            stmt_n += n
+            stmt_t += t
+        else:
+            note_n += n
+            note_t += t
+        lines.append((kind, sheet, n, t, f))
 
     ws0.append(["전기대사 결과"])
     ws0.cell(1, 1).font = Font(bold=True, size=14)
@@ -685,7 +743,7 @@ def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
         matched += int(pri_s is not None)
         skipped = note_skipped.get(cur_s, 0)
         state = ("미매칭 — 수동 확인" if pri_s is None else
-                 f"대사 {len(note_results.get(cur_s, []))}건"
+                 f"대사 {sheet_counts.get(cur_s, (0,))[0]}건"
                  + (f" (기간열 없는 표 {skipped}개 스킵" ")" if skipped
                     else ""))
         ws0.append([cur_s, pri_s or "-", title[:60], state])
@@ -695,11 +753,6 @@ def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
     ws0.column_dimensions["C"].width = 50
     for col in ("B", "D", "E", "F"):
         ws0.column_dimensions[col].width = 16
-
-    # 상세 시트 — 실무 양식(문용.xlsb) 병렬 배치: 당기 원문 | 판정 수식 |
-    # 전기 원문. 판정 근거는 셀 참조 수식이라 엑셀에서 추적 가능.
-    if cur_ctx is not None and pri_ctx is not None:
-        write_side_by_side(cur_ctx, pri_ctx, note_map, wb)
 
     breakdown = _write_false_breakdown(wb, note_results, note_unpaired,
                                        title_misses)
@@ -725,6 +778,9 @@ def _write_false_breakdown(wb, note_results, note_unpaired, title_misses):
     """
     ws = wb.create_sheet("FALSE분해")
     warn = PatternFill("solid", start_color="FFEB9C")
+    ws.append(["※ 분해는 셀 단위 상세 — 요약·시트 판정 열은 행 단위"
+               "(행의 모든 셀 일치 시 TRUE)"])
+    ws.cell(1, 1).font = _BOLD
 
     def _hdr_row(cells):
         ws.append(cells)
