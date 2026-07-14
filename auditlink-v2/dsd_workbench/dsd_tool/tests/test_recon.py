@@ -133,9 +133,10 @@ def test_gate3_tamper_detection(result, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_output_format(result):
-    """실무 양식(문용.xlsb 배치): 당기 원문 | 판정 | 전기 원문 병렬.
+    """실무 양식(문용.xlsb 배치): 당기 원문 | 판정 수식 | 전기 원문 병렬.
 
-    판정 값 규칙(확정): 문자열 "TRUE"/"FALSE"만 — 수식·파이썬 bool 금지.
+    판정 규칙(확정): 셀 참조 수식 =A1=B1 (복수 셀 =AND(...)), 전기
+    대응 행 없으면 리터럴 "FALSE" — 파이썬 bool 금지.
     """
     wb = load_workbook(result["out_path"])
     assert wb.sheetnames[0] == "요약"
@@ -143,6 +144,8 @@ def test_output_format(result):
     assert {"BS", "PL", "CE", "CF"} <= set(wb.sheetnames)
     assert any(n.isdigit() for n in wb.sheetnames)
 
+    pat = re.compile(
+        r"^=(?:AND\()?[A-Z]+\d+=[A-Z]+\d+(?:,[A-Z]+\d+=[A-Z]+\d+)*\)?$")
     for sheet in ("BS", "PL", "CE", "CF"):
         ws = wb[sheet]
         vcol = next((c.column for c in ws[1] if c.value == "판정"), None)
@@ -151,8 +154,10 @@ def test_output_format(result):
                 ws.iter_rows(min_row=2, min_col=vcol, max_col=vcol)
                 if row[0].value is not None]
         assert vals, f"{sheet}: 판정 값 없음"
-        assert all(v in ("TRUE", "FALSE") for v in vals), \
-            f"{sheet}: 문자열 TRUE/FALSE 외 판정 값 {vals[:3]}"
+        assert all(isinstance(v, str) and (pat.match(v) or v == "FALSE")
+                   for v in vals), \
+            f"{sheet}: 수식/FALSE 외 판정 값 {vals[:3]}"
+        assert any(pat.match(str(v)) for v in vals), f"{sheet}: 수식 없음"
 
     # 좌측 당기 원문 + 우측 전기 원문 병렬 (같은 행에 같은 계정 라벨)
     bs = wb["BS"]
@@ -175,11 +180,13 @@ def test_output_format(result):
     fills = {str(c.fill.start_color.rgb) for row in bs.iter_rows()
              for c in row if c.fill and c.fill.patternType == "solid"}
     assert any(f.endswith("DCDCDC") for f in fills), "표 헤더 회색 없음"
+    from dsd_tool.recon import _eval_verdict
     for row in bs.iter_rows():
         for c in row:
-            if c.value == "TRUE":
+            v = _eval_verdict(bs, c.value) if c.value is not None else None
+            if v is True:
                 assert c.fill.patternType is None, "TRUE는 무강조"
-            elif c.value == "FALSE":
+            elif v is False:
                 assert str(c.fill.start_color.rgb).endswith("FFC7CE")
 
     # 요약 → 시트 하이퍼링크 + FALSE분해 시트
@@ -196,7 +203,7 @@ def test_output_format(result):
 
 def test_summary_equals_rendered_verdicts(result):
     """생성된 엑셀을 다시 읽어 요약 표의 (대사, TRUE, FALSE)가 각 시트에
-    실제 렌더된 판정 열 실측과 일치하는지 전 시트 검증."""
+    실제 렌더된 판정 열 실측(수식 참조 셀 평가)과 일치하는지 전 시트 검증."""
     wb = load_workbook(result["out_path"])
     ws0 = wb["요약"]
 
@@ -214,16 +221,11 @@ def test_summary_equals_rendered_verdicts(result):
     assert summary_rows, "요약 표 없음"
     assert {"BS", "PL", "CE", "CF"} <= set(summary_rows)
 
+    from dsd_tool.recon import count_rendered_verdicts
     for sheet, (n, t, f) in summary_rows.items():
-        ws = wb[sheet]
-        vcol = next((c.column for c in ws[1] if c.value == "판정"), None)
-        assert vcol, f"{sheet}: 판정 열 없음"
-        vals = [row[0].value for row in
-                ws.iter_rows(min_row=2, min_col=vcol, max_col=vcol)]
-        rt = sum(1 for v in vals if v == "TRUE")
-        rf = sum(1 for v in vals if v == "FALSE")
-        assert (n, t, f) == (rt + rf, rt, rf), \
-            f"{sheet}: 요약 {(n, t, f)} != 실측 {(rt + rf, rt, rf)}"
+        rn, rt, rf = count_rendered_verdicts(wb[sheet])
+        assert (n, t, f) == (rn, rt, rf), \
+            f"{sheet}: 요약 {(n, t, f)} != 실측 {(rn, rt, rf)}"
 
     # 요약 상단 전체 판정 문구의 합계도 실측 총합과 일치
     total = [str(c.value) for row in ws0.iter_rows() for c in row

@@ -404,17 +404,58 @@ def recon_note_tables(cur_ctx, pri_ctx, cur_sheet, pri_sheet, tolerance=0):
 
 # ---------------------------------------------------------------------------
 # 실무 양식 병렬 시트 (한진칼_전기대사_문용.xlsb 배치 재현)
-# 좌측 = 당기 원문 | 판정("TRUE"/"FALSE" 문자열) | 우측 = 전기 원문
+# 좌측 = 당기 원문 | 판정(셀 참조 수식 =좌전기셀=우당기셀) | 우측 = 전기 원문
 #
-# 판정 값 규칙 (확정): 문자열 "TRUE"/"FALSE"만 — 수식·파이썬 bool 금지.
-# 요약 카운트는 별도 집계가 아니라 여기 렌더된 판정 열을 재계산해서
-# 만든다(count_rendered_verdicts) — 요약과 상세가 어긋날 수 없는 구조.
+# 판정 규칙 (확정): 셀 참조 수식(=E8=N8, 복수 셀은 =AND(...)) — 엑셀에서
+# 근거 추적 가능. 전기 대응 행이 없으면 리터럴 "FALSE". 파이썬 bool 금지.
+# 요약 카운트는 별도 집계가 아니라 렌더된 판정 수식을 파싱해 참조 셀
+# 값을 직접 평가(count_rendered_verdicts)해서 만든다 — 요약과 상세가
+# 어긋날 수 없는 단일 원천 구조.
 # ---------------------------------------------------------------------------
 
-def _put_verdict(dst, row, col, ok):
+_VERDICT_FORMULA_RE = re.compile(
+    r"^=(?:AND\()?([A-Z]+\d+=[A-Z]+\d+(?:,[A-Z]+\d+=[A-Z]+\d+)*)\)?$")
+
+
+def _eval_verdict(ws, value):
+    """렌더된 판정 셀 평가: 수식이면 참조 셀 값 비교, 리터럴이면 그대로.
+
+    True/False/None(판정 셀 아님) 반환. 엑셀 평가와 동일 규칙
+    (숫자는 수치 비교, 그 외는 값 비교, 빈 셀 대비는 불일치).
+    """
+    if value == "TRUE":
+        return True
+    if value == "FALSE":
+        return False
+    m = _VERDICT_FORMULA_RE.match(str(value or ""))
+    if not m:
+        return None
+    for pair in m.group(1).split(","):
+        a, b = pair.split("=")
+        va, vb = ws[a].value, ws[b].value
+        if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
+            if float(va) != float(vb):
+                return False
+        elif va != vb:
+            return False
+    return True
+
+
+def _write_verdict(dst, row, col, pairs):
+    """판정 셀 기록. pairs: [(좌측 셀 주소, 우측 셀 주소)].
+
+    1쌍 → =A=B, 복수 쌍 → =AND(A=B,...), 쌍 없음(전기 항목 없음) →
+    리터럴 "FALSE". FALSE 평가 시 하이라이트 (TRUE 무강조).
+    """
     cell = dst.cell(row=row, column=col)
-    cell.value = "TRUE" if ok else "FALSE"
-    if not ok:
+    if not pairs:
+        cell.value = "FALSE"
+        cell.fill = _FALSE_FILL
+        return
+    exprs = [f"{a}={b}" for a, b in pairs]
+    cell.value = f"={exprs[0]}" if len(exprs) == 1 \
+        else "=AND(" + ",".join(exprs) + ")"
+    if _eval_verdict(dst, cell.value) is False:
         cell.fill = _FALSE_FILL
 
 
@@ -423,22 +464,6 @@ def _verdict_header(dst, col):
     hdr.value = "판정"
     hdr.font = _BOLD
     hdr.fill = _HDR_FILL
-
-
-def _row_verdicts(results):
-    """셀 단위 결과 → 행 단위 {행번호: (TRUE여부, 비고)}.
-
-    행의 모든 대사 셀이 TRUE여야 행 TRUE (렌더 판정 열은 행당 1개).
-    """
-    out = {}
-    for r in results:
-        prev = out.get(r["row"])
-        if prev is None:
-            out[r["row"]] = (bool(r["true"]),
-                             "" if r["true"] else r["note"])
-        elif prev[0] and not r["true"]:
-            out[r["row"]] = (False, r["note"])
-    return out
 
 
 def _copy_row(dst, src_ws, src_row, cols, dst_row, dst_col0):
@@ -473,7 +498,8 @@ def _style_sheet(ws):
             if isinstance(c.value, (int, float)):
                 numeric_cols.add(c.column)
             elif isinstance(c.value, str) and len(c.value) >= 6 and \
-                    c.value not in ("TRUE", "FALSE"):
+                    c.value not in ("TRUE", "FALSE") and \
+                    not c.value.startswith("="):
                 label_cols.add(c.column)
     for col in label_cols | numeric_cols:
         ws.column_dimensions[get_column_letter(col)].width = \
@@ -522,9 +548,29 @@ def _side_statement(dst, cur_ctx, pri_ctx, sheet, results):
         if pr is not None:
             _copy_row(dst, ws_p, pr, all_cols_p, r, right0)
 
-    # 판정: recon_statement 결과 그대로 렌더 (문자열 TRUE/FALSE)
+    # 판정 수식: 당기파일 전기셀 = 전기파일 당기셀 (행당 1열, 실무 양식)
+    from .textutil import try_number
+    amount_c = [c for c in all_cols_c if c >= 3]
+    prior_cols_c = amount_c[len(amount_c) // 2:] if len(amount_c) >= 4 \
+        else amount_c[-1:]                     # 당기파일 '전기' 값 열들
+    amount_p = [c for c in all_cols_p if c >= 3]
+    cur_cols_p = amount_p[:len(amount_p) // 2] if len(amount_p) >= 4 \
+        else amount_p[:1]                      # 전기파일 '당기' 값 열들
     for res in results:
-        _put_verdict(dst, res["row"], verdict_col, res["true"])
+        r = res["row"]
+        raw = _label(ws_c, r)
+        pr = pri_by_label.get(_norm1(raw)) or pri_by_label.get(_norm2(raw))
+        pairs = []
+        if pr is not None:
+            for k, pc in enumerate(prior_cols_c):
+                if k >= len(cur_cols_p):
+                    break
+                if try_number(ws_c.cell(row=r, column=pc).value) is None:
+                    continue
+                right_col = right0 + all_cols_p.index(cur_cols_p[k])
+                pairs.append((f"{get_column_letter(pc)}{r}",
+                              f"{get_column_letter(right_col)}{r}"))
+        _write_verdict(dst, r, verdict_col, pairs)
     _verdict_header(dst, verdict_col)
 
 
@@ -557,14 +603,37 @@ def _side_ce(dst, cur_ctx, pri_ctx, sheet, results):
                          [range(1, width_c + 1),
                           range(right0, right0 + len(all_cols_p))])
 
+    # 자본항목 열 대응 (헤더 라벨 기준 — recon_ce와 동일 키)
+    from .textutil import try_number
+
+    def _colmap(ws, rowmap, regs):
+        if not regs:
+            return {}
+        hdr = max(regs, key=len)[0]
+        return {_norm_label(str(ws.cell(row=hdr, column=c).value or "")
+                            .replace("\n", "")): c
+                for c in rowmap[hdr][2:]}
+
+    cols_c = _colmap(ws_c, rm_c, regs_c)
+    cols_p = _colmap(ws_p, rm_p, regs_p)
+
     for res in results:
+        r = res["row"]
+        pairs = []
         if res.get("pri_row") is not None:
-            _copy_row(dst, ws_p, res["pri_row"], all_cols_p,
-                      res["row"], right0)
-        _put_verdict(dst, res["row"], verdict_col, res["true"])
+            _copy_row(dst, ws_p, res["pri_row"], all_cols_p, r, right0)
+            for lab, c in cols_c.items():
+                if try_number(ws_c.cell(row=r, column=c).value) is None:
+                    continue
+                p = cols_p.get(lab)
+                if p is None or p not in all_cols_p:
+                    continue
+                rc = right0 + all_cols_p.index(p)
+                pairs.append((f"{get_column_letter(c)}{r}",
+                              f"{get_column_letter(rc)}{r}"))
+        _write_verdict(dst, r, verdict_col, pairs)
         if res["note"]:
-            dst.cell(row=res["row"], column=verdict_col + 1,
-                     value=res["note"])
+            dst.cell(row=r, column=verdict_col + 1, value=res["note"])
     _verdict_header(dst, verdict_col)
 
 
@@ -591,8 +660,10 @@ def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet, results):
     verdict_col = width_c + 1
     right0 = width_c + 3
 
-    for _ci, reg_c, reg_p in paired:
+    tbl_cols_p = {}                            # 표 번호 → 전기표 열 목록
+    for ti, (_ci, reg_c, reg_p) in enumerate(paired, 1):
         all_cols_p = sorted({c for r in reg_p for c in rm_p.get(r, [])})
+        tbl_cols_p[ti] = all_cols_p
         _copy_row(dst, ws_p, reg_p[0], all_cols_p, reg_c[0], right0)
         _fill_header_row(dst, reg_c[0],
                          [rm_c.get(reg_c[0], []),
@@ -608,9 +679,29 @@ def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet, results):
             if pr is not None:
                 _copy_row(dst, ws_p, pr, all_cols_p, r, right0)
 
-    # 판정: recon_note_tables 결과를 행 단위로 접어 렌더
-    for row, (ok, note) in sorted(_row_verdicts(results).items()):
-        _put_verdict(dst, row, verdict_col, ok)
+    # 판정: recon_note_tables 셀 결과를 행 단위로 접어 수식 렌더
+    # (행의 대사 셀 전부 대응 시 =AND(...), 하나라도 전기 항목 없으면
+    #  리터럴 FALSE)
+    from openpyxl.utils import column_index_from_string
+    by_row = {}
+    for res in results:
+        by_row.setdefault(res["row"], []).append(res)
+    for row, cells in sorted(by_row.items()):
+        pairs = []
+        for res in cells:
+            if res["pri_addr"] is None:
+                pairs = []
+                break
+            pcol = column_index_from_string(
+                re.match(r"([A-Z]+)", res["pri_addr"]).group(1))
+            acp = tbl_cols_p.get(res["table"], [])
+            if pcol not in acp:
+                pairs = []
+                break
+            rc = right0 + acp.index(pcol)
+            pairs.append((res["cur_addr"],
+                          f"{get_column_letter(rc)}{row}"))
+        _write_verdict(dst, row, verdict_col, pairs)
     if results:
         _verdict_header(dst, verdict_col)
 
@@ -644,17 +735,18 @@ def write_side_by_side(cur_ctx, pri_ctx, note_map, wb, stmt_results,
 def count_rendered_verdicts(ws):
     """시트에 실제로 렌더된 판정 열의 TRUE/FALSE 실측 카운트.
 
-    요약 카운트의 유일한 원천 — 별도 집계 금지 (요약≠상세 재발 방지).
+    판정 수식을 파싱해 참조 셀 값을 직접 평가 — 요약 카운트의 유일한
+    원천이며 별도 집계 금지 (요약≠상세 재발 방지).
     """
     vcol = next((c.column for c in ws[1] if c.value == "판정"), None)
     if vcol is None:
         return 0, 0, 0
     t = f = 0
     for row in ws.iter_rows(min_row=2, min_col=vcol, max_col=vcol):
-        v = row[0].value
-        if v == "TRUE":
+        v = _eval_verdict(ws, row[0].value)
+        if v is True:
             t += 1
-        elif v == "FALSE":
+        elif v is False:
             f += 1
     return t + f, t, f
 
