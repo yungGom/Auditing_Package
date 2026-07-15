@@ -39,7 +39,7 @@ def _session(sid):
     with jobs.connect() as con:
         row = con.execute(
             "SELECT id, dsd_path, created, meta, state, xlsx_path, diff, "
-            "diff_options, repack FROM sessions WHERE id=?",
+            "diff_options, repack, foot, recon FROM sessions WHERE id=?",
             (sid,)).fetchone()
     if row is None:
         raise HTTPException(404, "세션 없음")
@@ -54,7 +54,9 @@ def _session(sid):
             "xlsx_path": row[5],
             "diff": json.loads(row[6]) if row[6] else None,
             "diff_options": json.loads(row[7]) if row[7] else None,
-            "repack": json.loads(row[8]) if row[8] else None}
+            "repack": json.loads(row[8]) if row[8] else None,
+            "foot": json.loads(row[9]) if row[9] else None,
+            "recon": json.loads(row[10]) if row[10] else None}
 
 
 def _update(sid, **cols):
@@ -246,6 +248,149 @@ def repack_session(sid: str, body: dict = None):
         return result
 
     return {"job_id": jobs.submit("repack", _run)}
+
+
+# --------------------------------------------------------------------------
+# UI-2: Footing (A-4/A-5a) + 전기대사 (A-5b) — 기존 함수 얇은 래퍼
+# --------------------------------------------------------------------------
+
+def _run_foot(sid, xlsx, excel, limit, progress):
+    """foot() 실행 + 세션 저장 (레벨 재검증과 공용)."""
+    progress("Footing 검증 중…")
+    from dsd_tool.foot import foot
+    res = foot(xlsx, limit=limit)
+    payload = {
+        "summary": {"match": res["match"], "rounding": res["fuzzy"],
+                    "mismatch": res["mismatch"],
+                    "cross": res["note_missing"],
+                    "note_found": res["note_found"],
+                    "manual_overrides": res["manual_overrides"]},
+        "findings": res["foot"], "levels": res["levels"],
+        "notes": res["notes"],
+        "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+    }
+    if excel:
+        progress("AI_Footing 엑셀 생성 중…")
+        from dsd_tool.foot_excel import write_ai_footing
+        x = write_ai_footing(xlsx, res)
+        payload["ai_excel_path"] = x["out_path"]
+    _update(sid, foot=json.dumps(payload, ensure_ascii=False, default=str))
+    return {"summary": payload["summary"],
+            "ai_excel_path": payload.get("ai_excel_path")}
+
+
+@router.post("/sessions/{sid}/foot", status_code=202)
+def foot_session(sid: str, body: dict = None):
+    s = _session(sid)
+    if not s["xlsx_path"] or not os.path.exists(s["xlsx_path"]):
+        raise HTTPException(409, "extract 미실행 — 먼저 추출하세요")
+    body = body or {}
+    excel = bool(body.get("excel"))
+    limit = int(body.get("limit") or 2)
+    xlsx = s["xlsx_path"]
+    return {"job_id": jobs.submit(
+        "foot", lambda p: _run_foot(sid, xlsx, excel, limit, p))}
+
+
+@router.put("/sessions/{sid}/foot/levels", status_code=202)
+def foot_levels(sid: str, body: dict):
+    """레벨 오버라이드 → 재검증. 기존 관례 그대로 자동화 —
+    _FOOT [레벨] 섹션의 '수동(수정 후 재실행)' 열에 기입 후 foot 재실행."""
+    s = _session(sid)
+    if not s["foot"]:
+        raise HTTPException(409, "Footing 미실행 — 먼저 검증을 실행하세요")
+    overrides = body.get("overrides") or []
+    if not overrides:
+        raise HTTPException(400, "overrides가 비었습니다")
+    want = {(str(o["sheet"]), int(o["row"])):
+            (int(o["level"]) if o.get("level") else None)
+            for o in overrides}
+    xlsx = s["xlsx_path"]
+
+    def _run(progress):
+        progress("레벨 오버라이드 기입…")
+        from openpyxl import load_workbook
+
+        from dsd_tool.foot import FOOT_SHEET
+        wb = load_workbook(xlsx)
+        ws = wb[FOOT_SHEET]
+        in_sec = False
+        applied = 0
+        for row in ws.iter_rows():
+            v0 = row[0].value
+            if v0 == "[레벨]":
+                in_sec = True
+                continue
+            if in_sec and isinstance(v0, str) and v0.startswith("["):
+                break
+            if in_sec and v0 and row[1].value is not None:
+                try:
+                    key = (str(v0), int(row[1].value))
+                except (TypeError, ValueError):
+                    continue
+                if key in want:
+                    ws.cell(row=row[0].row, column=5).value = want[key]
+                    applied += 1
+        wb.save(xlsx)
+        progress(f"수동 레벨 {applied}건 기입 — 재검증…")
+        out = _run_foot(sid, xlsx, False, 2, progress)
+        out["applied"] = applied
+        return out
+
+    return {"job_id": jobs.submit("foot-levels", _run)}
+
+
+@router.post("/sessions/{sid}/recon", status_code=202)
+def recon_session(sid: str, body: dict):
+    s = _session(sid)
+    prior = body.get("prior_path") or body.get("prior_cache_ref") or ""
+    if not os.path.isfile(prior):
+        raise HTTPException(400, f"전기 파일 없음: {prior}")
+    tolerance = float(body.get("tolerance") or 0)
+    # 전기 소스 뱃지: dart_explorer 캐시 경유 여부 (파일 경로 기준)
+    norm = os.path.normpath(prior).lower()
+    source = "opendart-cache" if os.sep + "dart_explorer" + os.sep in norm \
+        and os.sep + "cache" + os.sep in norm else "local"
+    dsd = s["dsd_path"]
+    os.makedirs(_WORKDIR, exist_ok=True)
+    out = os.path.join(_WORKDIR, f"{sid}_전기대사.xlsx")
+
+    def _run(progress):
+        progress("전기대사 실행 중…")
+        from dsd_tool.recon import GUIDE, recon
+        res = recon(dsd, prior, out_path=out, tolerance=tolerance,
+                    progress=lambda m: progress(m))
+        body_rows = []
+        for sheet, rows in (res.get("stmt_results") or {}).items():
+            for r in rows:
+                body_rows.append({
+                    "sheet": sheet, "label": r.get("label"),
+                    "cur": r.get("cur_prior"), "pri": r.get("pri_current"),
+                    "true": bool(r.get("true")), "note": r.get("note", "")})
+        note_rows = []
+        for sheet, rows in (res.get("note_results") or {}).items():
+            for r in rows:
+                note_rows.append({
+                    "sheet": sheet, "table": r.get("table"),
+                    "label": r.get("label"), "cur": r.get("cur_prior"),
+                    "pri": r.get("pri_current"),
+                    "true": bool(r.get("true")), "note": r.get("note", "")})
+        payload = {
+            "verdict": (res["stmt"]["false"] + res["notes"]["false"]) == 0,
+            "stmt": res["stmt"], "notes_summary": res["notes"],
+            "note_matched": res["note_matched"],
+            "note_total": res["note_total"],
+            "guide": GUIDE, "excel_path": res["out_path"],
+            "prior_path": prior, "source": source,
+            "tolerance": tolerance, "body": body_rows, "notes": note_rows,
+            "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+        }
+        _update(sid, recon=json.dumps(payload, ensure_ascii=False,
+                                      default=str))
+        return {"verdict": payload["verdict"], "stmt": res["stmt"],
+                "notes": res["notes"], "excel_path": res["out_path"]}
+
+    return {"job_id": jobs.submit("recon", _run)}
 
 
 @router.get("/sessions/{sid}/history")

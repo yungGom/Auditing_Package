@@ -142,9 +142,10 @@ export default function Home({ openSession }: {
           }}>
             {[
               { icon: "sync", color: "#3a5a2e", title: "코퍼스",
-                detail: corpus
-                  ? `${(corpus.companies ?? corpus.ok ?? "-").toLocaleString?.() ?? corpus.companies}사 적재`
-                  : "조회 중…" },
+                detail: corpus?.available
+                  ? `ok ${(corpus.by_status?.ok ?? 0).toLocaleString()}사 / `
+                    + `처리 ${(corpus.processed ?? 0).toLocaleString()}사`
+                  : corpus ? "코퍼스 없음" : "조회 중…" },
               { icon: "verified", color: "#001e40", title: "게이트 현황",
                 detail: gates.length
                   ? `${passed}/${gates.length} 통과` : "조회 중…" },

@@ -32,11 +32,11 @@ export default function Session({ sessionId, initialTab }: {
   }, [sessionId]);
   useEffect(reload, [reload]);
 
-  const runJob = async (path: string, body?: any) => {
+  const runJob = async (path: string, body?: any, method = "POST") => {
     setErr("");
     try {
       const r = await api(path, {
-        method: "POST", body: JSON.stringify(body || {}),
+        method, body: JSON.stringify(body || {}),
       });
       const done = await pollJob(r.job_id, setJob);
       setJob(null);
@@ -62,10 +62,16 @@ export default function Session({ sessionId, initialTab }: {
     "repack완료": chip("#3a5a2e", "#dcead2"),
   };
   const diffCounts = s.diff?.counts;
+  const footBad = s.foot
+    ? (s.foot.summary.mismatch + s.foot.summary.rounding +
+       s.foot.summary.cross)
+    : undefined;
   const tabs = [
     { key: "overview", label: "개요" },
     { key: "sheets", label: "시트 뷰" },
-    { key: "footing", label: "Footing", chip: "UI-2" },
+    { key: "footing", label: "Footing",
+      count: footBad !== undefined ? String(footBad) : undefined,
+      countBad: (footBad || 0) > 0 },
     { key: "change", label: "변경검토",
       count: diffCounts ? String(diffCounts.total) : undefined },
     { key: "history", label: "이력" },
@@ -98,28 +104,30 @@ export default function Session({ sessionId, initialTab }: {
           </span>
         </div>
         <div style={{ display: "flex", gap: 2 }}>
-          {tabs.map((t) => (
+          {tabs.map((t) => {
+            const active = tab === t.key ||
+              (t.key === "footing" && tab === "prior");
+            return (
             <div key={t.key} data-testid={`tab-${t.key}`}
               onClick={() => setTab(t.key)} style={{
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "9px 14px", cursor: "pointer",
                 font: `600 13px ${F_LABEL}`,
                 borderBottom: `2px solid ${
-                  tab === t.key ? "#001e40" : "transparent"}`,
-                color: tab === t.key ? "#001e40" : "#737780",
+                  active ? "#001e40" : "transparent"}`,
+                color: active ? "#001e40" : "#737780",
               }}>
               <span>{t.label}</span>
               {t.count && <span style={{
-                font: `700 10px ${F_LABEL}`, color: "#001e40",
-                background: "#d5e3ff", borderRadius: 9999,
+                font: `700 10px ${F_LABEL}`,
+                color: (t as any).countBad ? "#930010" : "#001e40",
+                background: (t as any).countBad ? "#ffdad6" : "#d5e3ff",
+                borderRadius: 9999,
                 padding: "1px 7px", fontVariantNumeric: "tabular-nums",
               }}>{t.count}</span>}
-              {t.chip && <span style={{
-                font: `600 9px ${F_LABEL}`, color: "#737780",
-                background: "#e1e3e4", borderRadius: 4, padding: "1px 6px",
-              }}>{t.chip}</span>}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -143,11 +151,9 @@ export default function Session({ sessionId, initialTab }: {
           goChange={() => setTab("change")} />
       )}
       {tab === "sheets" && <Sheets sessionId={sessionId} s={s} />}
-      {tab === "footing" && (
-        <div style={{
-          padding: 24, font: `500 13px ${F_LABEL}`, color: "#737780",
-        }}>Footing 탭은 UI-2에서 구현됩니다 — CLI: <code
-          style={{ fontFamily: MONO }}>python -m dsd_tool foot</code></div>
+      {(tab === "footing" || tab === "prior") && (
+        <FootingTab sessionId={sessionId} s={s} runJob={runJob}
+          setErr={setErr} initialSub={tab === "prior" ? "prior" : "foot"} />
       )}
       {tab === "change" && (
         <ChangeReview sessionId={sessionId} s={s} setErr={setErr}
@@ -173,6 +179,17 @@ function Overview({ s, onExtract, goChange }: {
   const meta = s.meta || {};
   const pipeline = s.pipeline || [];
   const curIdx = pipeline.findIndex((p: any) => !p.done);
+  const [vcheck, setVcheck] = useState<any>(null);
+  const runVersionCheck = async () => {
+    setVcheck({ running: true });
+    try {
+      const r = await api(`/api/workbench/version-check?dsd_path=${
+        encodeURIComponent(s.dsd_path)}`);
+      setVcheck(r);
+    } catch (e: any) {
+      setVcheck({ error: e.message });
+    }
+  };
   return (
     <div style={{
       padding: 24, maxWidth: 1080, display: "flex",
@@ -270,12 +287,28 @@ function Overview({ s, onExtract, goChange }: {
               gap: 6,
             }}>
               {meta.editver || "(없음)"}
-              {meta.editver_known ? (
-                <span style={chip("#3a5a2e", "#dcead2")}>
-                  <Icon name="check" size={12} />검증됨</span>
-              ) : (
-                <span style={chip("#930010", "#ffdad6")}>
-                  <Icon name="warning" size={12} />미검증</span>
+              <span title="클릭 → version-check 즉석 실행 (G2 스모크 포함)"
+                onClick={runVersionCheck} style={{
+                  ...(meta.editver_known
+                    ? chip("#3a5a2e", "#dcead2")
+                    : chip("#930010", "#ffdad6")),
+                  cursor: "pointer",
+                }}>
+                <Icon name={meta.editver_known ? "check" : "warning"}
+                  size={12} />
+                {meta.editver_known ? "검증됨" : "미검증"}
+              </span>
+              {vcheck && (
+                <span style={vcheck.running
+                  ? chip("#43474f", "#edeeef")
+                  : vcheck.error || vcheck.g2_smoke === "fail"
+                    ? chip("#930010", "#ffdad6")
+                    : chip("#3a5a2e", "#dcead2")}>
+                  {vcheck.running ? "version-check 실행 중…(G2 왕복)"
+                    : vcheck.error ? vcheck.error
+                      : `version-check: ${vcheck.known ? "등재" : "미등재"}
+                         · G2 ${vcheck.g2_smoke.toUpperCase()}`}
+                </span>
               )}
             </span>
             <span style={{ color: "#737780" }}>셀 수</span>
@@ -424,6 +457,539 @@ function Sheets({ sessionId, s }: { sessionId: string; s: any }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ======== TAB: Footing (A-4 합계검증·주석대사 + A-5b 전기대사) ========
+const _V_COLORS: Record<string, [string, string]> = {
+  "일치": ["#3a5a2e", "#dcead2"],
+  "단수차": ["#7a4f00", "#ffecc7"],
+  "불일치": ["#930010", "#ffdad6"],
+  "미매칭": ["#930010", "#ffdad6"],
+};
+
+function fmtNum(v: any) {
+  if (typeof v === "number") {
+    const s = Math.abs(v).toLocaleString();
+    return v < 0 ? `(${s})` : s;
+  }
+  return v == null ? "" : String(v);
+}
+
+function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
+  sessionId: string; s: any; setErr: (m: string) => void;
+  runJob: (path: string, body?: any, method?: string) => Promise<any>;
+  initialSub?: "foot" | "prior";
+}) {
+  const [sub, setSub] = useState<"foot" | "prior">(initialSub || "foot");
+  const [filter, setFilter] = useState("문제만");
+  const [sel, setSel] = useState<number | null>(null);
+  const [levelEdits, setLevelEdits] = useState<Record<string, number>>({});
+  const [priorPath, setPriorPath] = useState("");
+  const foot = s.foot;
+  const recon = s.recon;
+
+  const subTab = (key: "foot" | "prior", label: string) => (
+    <span key={key} onClick={() => setSub(key)} style={{
+      font: `600 12px ${F_LABEL}`, padding: "6px 12px", borderRadius: 8,
+      cursor: "pointer",
+      color: sub === key ? "#001e40" : "#737780",
+      background: sub === key ? "#d5e3ff" : "transparent",
+    }}>{label}</span>
+  );
+
+  // ---- 헤더 바 (서브탭 + 요약 뱃지 + 액션) ----
+  const summary = foot?.summary;
+  const badges = summary ? [
+    ["일치", summary.match, "#3a5a2e", "#dcead2"],
+    ["단수차", summary.rounding, "#7a4f00", "#ffecc7"],
+    ["불일치", summary.mismatch, "#930010", "#ffdad6"],
+    ["주석 미매칭", summary.cross, "#930010", "#ffdad6"],
+  ] as [string, number, string, string][] : [];
+
+  const overridesToApply = Object.entries(levelEdits);
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", flex: 1, minHeight: 0,
+    }}>
+      <div style={{
+        flex: "none", display: "flex", alignItems: "center", flexWrap: "wrap",
+        rowGap: 8, gap: 8, padding: "12px 24px", background: "#fff",
+        borderBottom: "1px solid #c3c6d1",
+      }}>
+        {subTab("foot", "합계검증·주석대사")}
+        {subTab("prior", "전기대사 (A-5)")}
+        <div style={{ width: 1, height: 22, background: "#c3c6d1",
+          margin: "0 4px" }} />
+        {sub === "foot" && badges.map(([lb, n, fg, bg]) => (
+          <span key={lb} style={chip(fg, n ? bg : "#edeeef")}>
+            {lb} {n}</span>
+        ))}
+        {sub === "foot" && summary?.manual_overrides > 0 && (
+          <span style={chip("#001e40", "#d5e3ff")}>
+            수동 레벨 {summary.manual_overrides}</span>
+        )}
+        <div style={{ flex: 1 }} />
+        {sub === "foot" && (
+          <>
+            <GhostBtn onClick={() => runJob(
+              `/api/workbench/sessions/${sessionId}/foot`,
+              { excel: true }).then((d) => {
+                const p = d?.result?.ai_excel_path;
+                if (p) api("/api/fs/open", {
+                  method: "POST", body: JSON.stringify({ path: p }),
+                });
+              })}>
+              <Icon name="download" size={15} />AI_Footing 엑셀 내보내기
+            </GhostBtn>
+            <PrimaryBtn onClick={async () => {
+              if (overridesToApply.length) {
+                await runJob(
+                  `/api/workbench/sessions/${sessionId}/foot/levels`,
+                  { overrides: overridesToApply.map(([k, level]) => {
+                    const [sheet, row] = k.split("|");
+                    return { sheet, row: Number(row), level };
+                  }) }, "PUT");
+                setLevelEdits({});
+              } else {
+                await runJob(`/api/workbench/sessions/${sessionId}/foot`);
+              }
+            }}>
+              <Icon name="refresh" size={15} />
+              {foot ? (overridesToApply.length
+                ? `재검증 (레벨 ${overridesToApply.length}건 반영)` : "재검증")
+                : "Footing 검증 실행"}
+            </PrimaryBtn>
+          </>
+        )}
+      </div>
+
+      {sub === "foot" && !foot && (
+        <div style={{
+          padding: 24, font: `500 13px ${F_LABEL}`, color: "#737780",
+        }}>Footing 검증을 실행하면 합계검증·주석대사 findings와 레벨
+          오버라이드가 여기 표시됩니다.</div>
+      )}
+
+      {sub === "foot" && foot && (
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          {/* findings 리스트 */}
+          <div style={{
+            width: 340, flex: "none", background: "#fff",
+            borderRight: "1px solid #c3c6d1", display: "flex",
+            flexDirection: "column", minHeight: 0,
+          }}>
+            <div style={{
+              flex: "none", display: "flex", gap: 4, padding: "10px 12px",
+              borderBottom: "1px solid rgba(195,198,209,0.5)",
+              flexWrap: "wrap",
+            }}>
+              {["문제만", "전체", "일치", "단수차", "불일치", "미매칭"].map(
+                (f) => (
+                  <span key={f} onClick={() => setFilter(f)} style={{
+                    font: `600 11px ${F_LABEL}`, padding: "4px 9px",
+                    borderRadius: 8, cursor: "pointer",
+                    color: filter === f ? "#001e40" : "#737780",
+                    background: filter === f ? "#d5e3ff" : "#edeeef",
+                  }}>{f}</span>
+                ))}
+            </div>
+            <div style={{ flex: 1, overflow: "auto" }}>
+              {(foot.findings as any[])
+                .map((r, i) => ({ ...r, _i: i, _kind: "foot" }))
+                .concat((foot.notes as any[])
+                  .filter((n) => !n.found)
+                  .map((n, i) => ({
+                    _i: 10000 + i, _kind: "note", sheet: n.sheet,
+                    label: n.label, loc: `R${n.row}`, verdict: "미매칭",
+                    expected: n.value, actual: null, diff: null,
+                    refs: n.refs, period: n.period,
+                  })))
+                .filter((r) => filter === "전체"
+                  || (filter === "문제만" && r.verdict !== "일치")
+                  || r.verdict === filter)
+                .map((r) => {
+                  const [fg, bg] = _V_COLORS[r.verdict] ||
+                    ["#43474f", "#edeeef"];
+                  return (
+                    <div key={r._i} className="hoverable"
+                      onClick={() => setSel(r._i)} style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "10px 12px", cursor: "pointer",
+                        borderBottom: "1px solid rgba(195,198,209,0.35)",
+                        background: sel === r._i ? "#f3f4f5" : undefined,
+                      }}>
+                      <span style={{
+                        width: 4, alignSelf: "stretch", borderRadius: 2,
+                        background: fg, flex: "none",
+                      }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          font: `600 12px ${F_LABEL}`, color: "#191c1d",
+                          overflow: "hidden", textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}>{r.label}</div>
+                        <div style={{
+                          font: `500 11px ${F_LABEL}`, color: "#737780",
+                          marginTop: 2,
+                        }}>[{r.sheet}] {r.loc}
+                          {r._kind === "foot" &&
+                            ` · ${r.scope}/${r.direction}`}
+                          {r._kind === "note" && ` · 주석 ${r.refs}`}
+                        </div>
+                      </div>
+                      <span style={chip(fg, bg)}>{r.verdict}</span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* 상세 + 레벨 오버라이드 */}
+          <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
+            <FindingDetail foot={foot} sel={sel} />
+            <div style={{
+              display: "flex", alignItems: "baseline", gap: 10,
+              margin: "18px 0 8px",
+            }}>
+              <h2 style={{
+                margin: 0, font: `700 15px ${F_HEAD}`, color: "#191c1d",
+              }}>추론 레벨 (계층 오버라이드)</h2>
+              <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
+                수정 후 재검증 — 수동 지정 행은 뱃지로 구분</span>
+            </div>
+            <div style={{ overflowX: "auto", maxWidth: 760 }}>
+              <table style={{
+                width: "100%", borderCollapse: "collapse",
+                background: "#fff", border: "1px solid #c3c6d1",
+              }}>
+                <thead><tr>
+                  {["시트", "행", "라벨", "자동", "수동"].map((h, i) => (
+                    <th key={h} style={{
+                      textAlign: i >= 3 ? "center" : "left",
+                      font: `700 11px ${F_LABEL}`, color: "#737780",
+                      borderBottom: "1px solid #c3c6d1", padding: "7px 10px",
+                      background: "#f3f4f5",
+                    }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {(foot.levels as any[]).map((lv) => {
+                    const key = `${lv.sheet}|${lv.row}`;
+                    const cur = levelEdits[key] ?? lv.manual ?? "";
+                    return (
+                      <tr key={key}>
+                        <td style={_tdL}>{lv.sheet}</td>
+                        <td style={{ ..._tdL, fontFamily: MONO,
+                          fontSize: 11 }}>R{lv.row}</td>
+                        <td style={_tdL}>{lv.label}</td>
+                        <td style={{ ..._tdL, textAlign: "center",
+                          fontVariantNumeric: "tabular-nums" }}>
+                          L{lv.auto}</td>
+                        <td style={{ ..._tdL, textAlign: "center" }}>
+                          <span style={{
+                            display: "inline-flex", alignItems: "center",
+                            gap: 5,
+                          }}>
+                            {(lv.manual || levelEdits[key] != null) && (
+                              <span style={{
+                                font: `600 9px ${F_LABEL}`,
+                                color: "#001e40", background: "#d5e3ff",
+                                borderRadius: 4, padding: "2px 5px",
+                              }}>수동</span>
+                            )}
+                            <select value={cur} onChange={(e) =>
+                              setLevelEdits({
+                                ...levelEdits,
+                                [key]: Number(e.target.value),
+                              })} style={{
+                                font: `600 11px ${F_LABEL}`,
+                                color: "#43474f",
+                                border: "1px solid #c3c6d1",
+                                borderRadius: 4, padding: "2px 4px",
+                                background: "#fff", cursor: "pointer",
+                              }}>
+                              <option value="">자동</option>
+                              {[1, 2, 3, 4].map((n) => (
+                                <option key={n} value={n}>L{n}</option>
+                              ))}
+                            </select>
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sub === "prior" && (
+        <PriorSub sessionId={sessionId} recon={recon} runJob={runJob}
+          priorPath={priorPath} setPriorPath={setPriorPath} />
+      )}
+    </div>
+  );
+}
+
+const _tdL: React.CSSProperties = {
+  font: `500 12px var(--al-font-label)`, color: "#191c1d",
+  padding: "6px 10px", borderBottom: "1px solid rgba(195,198,209,0.4)",
+};
+
+function FindingDetail({ foot, sel }: { foot: any; sel: number | null }) {
+  if (sel == null) return null;
+  const r = sel < 10000 ? foot.findings[sel]
+    : foot.notes.filter((n: any) => !n.found)[sel - 10000];
+  if (!r) return null;
+  const isNote = sel >= 10000;
+  const diff = isNote ? null : r.diff;
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <h2 style={{
+        margin: "0 0 12px", font: `700 15px ${F_HEAD}`, color: "#191c1d",
+      }}>{r.label} <span style={{
+        font: `500 12px ${F_LABEL}`, color: "#737780",
+      }}>[{r.sheet}] {isNote ? `R${r.row}` : r.loc}</span></h2>
+      <Card style={{
+        padding: 20, display: "flex", flexDirection: "column", gap: 12,
+      }}>
+        {isNote ? (
+          <>
+            <Row2 k={`주석 ${r.refs} (${r.period})`} v={fmtNum(r.value)} />
+            <div style={{
+              background: "#ffdad6", borderRadius: 8, padding: "10px 12px",
+              font: `600 12px ${F_LABEL}`, color: "#930010",
+            }}>본문 값을 주석 {r.refs}에서 찾지 못했습니다 — 주석 시트에서
+              수동 확인</div>
+          </>
+        ) : (
+          <>
+            <Row2 k={`Σ자식 (${r.n_children}개)`} v={fmtNum(r.expected)} />
+            <Row2 k="기재값" v={fmtNum(r.actual)} top />
+            <div style={{
+              display: "flex", alignItems: "center",
+              justifyContent: "space-between",
+              background: r.verdict === "일치" ? "#dcead2" : "#ffdad6",
+              borderRadius: 8, padding: "10px 12px",
+            }}>
+              <span style={{
+                font: `600 12px ${F_LABEL}`,
+                color: r.verdict === "일치" ? "#3a5a2e" : "#930010",
+              }}>차이 ({r.verdict})</span>
+              <span style={{
+                font: `700 13px ${F_LABEL}`,
+                color: r.verdict === "일치" ? "#3a5a2e" : "#930010",
+                fontVariantNumeric: "tabular-nums",
+              }}>{fmtNum(diff)}</span>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function Row2({ k, v, top }: { k: string; v: string; top?: boolean }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center",
+      justifyContent: "space-between", font: `500 13px ${F_LABEL}`,
+      color: "#43474f",
+      borderTop: top ? "1px solid rgba(195,198,209,0.5)" : undefined,
+      paddingTop: top ? 12 : 0,
+    }}>
+      <span>{k}</span>
+      <span style={{
+        fontVariantNumeric: "tabular-nums", fontWeight: 600,
+        color: "#191c1d",
+      }}>{v}</span>
+    </div>
+  );
+}
+
+// ---- 전기대사 서브탭 (A-5b) ----
+function PriorSub({ sessionId, recon, runJob, priorPath, setPriorPath }: {
+  sessionId: string; recon: any; priorPath: string;
+  setPriorPath: (v: string) => void;
+  runJob: (path: string, body?: any) => Promise<any>;
+}) {
+  const [showNotes, setShowNotes] = useState(false);
+  const [falseOnly, setFalseOnly] = useState(true);
+
+  const run = () => runJob(`/api/workbench/sessions/${sessionId}/recon`,
+    { prior_path: priorPath || recon?.prior_path });
+
+  const pick = async () => {
+    const r = await api("/api/fs/pick", { method: "POST" });
+    if (r.path) setPriorPath(r.path);
+  };
+
+  const verdict = recon?.verdict;
+  const rows: any[] = recon
+    ? (showNotes ? recon.notes : recon.body) : [];
+  const shown = rows.filter((r) => !falseOnly || !r.true);
+  const otherFalse = recon
+    ? (showNotes ? recon.body : recon.notes)
+        .filter((r: any) => !r.true).length
+    : 0;
+  const emptyMsg = !falseOnly ? "행 없음"
+    : otherFalse > 0
+      ? `${showNotes ? "주석" : "본문"} 대사에는 FALSE 없음 — ` +
+        `${showNotes ? "본문" : "주석"} 대사에 FALSE ${otherFalse}건`
+      : "FALSE 없음 — 전수 일치";
+
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
+      <div style={{
+        display: "flex", gap: 8, alignItems: "center", marginBottom: 14,
+        maxWidth: 960,
+      }}>
+        <input value={priorPath} onChange={(e) =>
+          setPriorPath(e.target.value)}
+          placeholder={recon?.prior_path ||
+            "전기 .dsd/.xlsx 경로 (초도감사는 dart_explorer 캐시 파일)"}
+          style={{
+            flex: 1, font: `500 12px ${F_LABEL}`, padding: "8px 10px",
+            border: "1px solid #c3c6d1", borderRadius: 8,
+          }} />
+        <GhostBtn onClick={pick}>
+          <Icon name="folder_open" size={15} />찾기</GhostBtn>
+        <PrimaryBtn onClick={run}>
+          <Icon name="play_arrow" size={15} />
+          {recon ? "전기대사 재실행" : "전기대사 실행"}</PrimaryBtn>
+      </div>
+
+      {!recon && (
+        <div style={{ font: `500 13px ${F_LABEL}`, color: "#737780" }}>
+          전기 보고서 파일을 지정하고 실행하세요 — 당기 파일의 전기값과
+          전기 파일의 당기값을 전수 대조합니다.</div>
+      )}
+
+      {recon && (
+        <>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            background: verdict ? "#dcead2" : "#ffdad6",
+            color: verdict ? "#3a5a2e" : "#930010",
+            borderRadius: 8, padding: "12px 16px", maxWidth: 960,
+          }}>
+            <Icon name={verdict ? "check_circle" : "error"} size={22} />
+            <span style={{ font: `700 15px ${F_HEAD}` }}>
+              {verdict ? "TRUE — 전기대사 전수 일치" : "FALSE 존재"}</span>
+            <span style={{ font: `500 12px ${F_LABEL}`, opacity: 0.9 }}>
+              본문 {recon.stmt.true}/{recon.stmt.n} TRUE · 주석{" "}
+              {recon.notes_summary.true}/{recon.notes_summary.n} TRUE ·
+              제목 매칭 {recon.note_matched}/{recon.note_total}
+            </span>
+            <div style={{ flex: 1 }} />
+            <span style={recon.source === "opendart-cache"
+              ? chip("#4e6874", "#cbe7f5") : chip("#001e40", "#d5e3ff")}>
+              <Icon name={recon.source === "opendart-cache"
+                ? "cloud_done" : "computer"} size={13} />
+              {recon.source === "opendart-cache"
+                ? "전기 소스: OpenDART 캐시" : "전기 소스: 로컬 파일"}
+            </span>
+            <GhostBtn onClick={() => api("/api/fs/open", {
+              method: "POST",
+              body: JSON.stringify({ path: recon.excel_path }),
+            })}>
+              <Icon name="download" size={15} />엑셀 내보내기</GhostBtn>
+          </div>
+          <div style={{
+            font: `500 12px ${F_LABEL}`, color: "#43474f",
+            margin: "10px 2px 14px",
+          }}>{recon.guide}</div>
+
+          <div style={{
+            display: "flex", gap: 6, marginBottom: 8, alignItems: "center",
+          }}>
+            {[["본문", false], ["주석", true]].map(([lb, isNotes]) => (
+              <span key={String(lb)}
+                onClick={() => setShowNotes(isNotes as boolean)} style={{
+                  font: `600 11px ${F_LABEL}`, padding: "4px 10px",
+                  borderRadius: 8, cursor: "pointer",
+                  color: showNotes === isNotes ? "#001e40" : "#737780",
+                  background: showNotes === isNotes ? "#d5e3ff" : "#edeeef",
+                }}>{String(lb)} 대사
+                {" "}{isNotes ? recon.notes.length : recon.body.length}건
+              </span>
+            ))}
+            <span onClick={() => setFalseOnly(!falseOnly)} style={{
+              font: `600 11px ${F_LABEL}`, padding: "4px 10px",
+              borderRadius: 8, cursor: "pointer",
+              color: falseOnly ? "#930010" : "#737780",
+              background: falseOnly ? "#ffdad6" : "#edeeef",
+            }}>FALSE만 {falseOnly ? "표시 중" : "보기"}</span>
+            <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
+              {shown.length}건 표시</span>
+          </div>
+
+          <div style={{ overflowX: "auto", maxWidth: 1100 }}>
+            <table style={{
+              width: "100%", minWidth: 760, borderCollapse: "collapse",
+              background: "#fff", border: "1px solid #c3c6d1",
+            }}>
+              <thead><tr>
+                {[["시트", "left"], ["계정과목/행", "left"],
+                  ["당기보고서 전기값", "right"],
+                  ["전기보고서 당기값", "right"], ["판정", "center"],
+                  ["비고", "left"]].map(([h, a]) => (
+                  <th key={String(h)} style={{
+                    textAlign: a as any, font: `700 11px ${F_LABEL}`,
+                    color: "#737780", borderBottom: "1px solid #c3c6d1",
+                    padding: "8px 12px", background: "#f3f4f5",
+                    whiteSpace: "nowrap",
+                  }}>{String(h)}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {shown.slice(0, 300).map((r, i) => (
+                  <tr key={i} style={{
+                    background: r.true ? undefined
+                      : "rgba(255,218,214,0.35)",
+                  }}>
+                    <td style={{ ..._tdL, color: "#737780" }}>
+                      {r.sheet}{r.table ? ` 표${r.table}` : ""}</td>
+                    <td style={{ ..._tdL, whiteSpace: "nowrap",
+                      maxWidth: 300, overflow: "hidden",
+                      textOverflow: "ellipsis" }}>{r.label}</td>
+                    <td style={{ ..._tdL, textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      color: typeof r.cur === "number" && r.cur < 0
+                        ? "#ba1a1a" : "#191c1d" }}>{fmtNum(r.cur)}</td>
+                    <td style={{ ..._tdL, textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      color: typeof r.pri === "number" && r.pri < 0
+                        ? "#ba1a1a" : "#191c1d" }}>{fmtNum(r.pri)}</td>
+                    <td style={{ ..._tdL, textAlign: "center" }}>
+                      <span style={r.true
+                        ? chip("#3a5a2e", "#dcead2")
+                        : chip("#930010", "#ffdad6")}>
+                        {r.true ? "TRUE" : "FALSE"}</span></td>
+                    <td style={{ ..._tdL, color: "#737780" }}>{r.note}</td>
+                  </tr>
+                ))}
+                {shown.length > 300 && (
+                  <tr><td colSpan={6} style={{
+                    ..._tdL, color: "#737780",
+                  }}>외 {shown.length - 300}건 — 엑셀에서 전체 확인</td></tr>
+                )}
+                {!shown.length && (
+                  <tr><td colSpan={6} style={{
+                    ..._tdL, color: "#737780",
+                  }}>{emptyMsg}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

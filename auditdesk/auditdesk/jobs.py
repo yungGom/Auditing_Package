@@ -33,6 +33,11 @@ def connect():
     os.makedirs(os.path.dirname(_DB), exist_ok=True)
     con = sqlite3.connect(_DB, timeout=30)
     con.executescript(_SCHEMA)
+    for col in ("foot", "recon"):              # UI-2 마이그레이션
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
     return con
 
 
