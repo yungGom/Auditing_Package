@@ -115,11 +115,14 @@ class _MemberMatcher:
 
 def build_worksheet(dsd_path, out_path=None, report_type="annual",
                     induty=None, corpus_db=None, holdout_corp=None,
-                    include_notes=True, progress=None):
-    """회사 DSD → XBRL 전사 가이드 워크시트 (본문 F-1 + 주석 F-2).
+                    include_notes=True, succession=None, progress=None):
+    """회사 DSD → XBRL 전사 가이드 워크시트 (본문 F-1 + 주석 F-2 + 승계 F-3).
 
     holdout_corp: 게이트 검증용 — 해당 회사를 코퍼스 집계에서 제외(누수 방지).
     include_notes: 주석 워크시트(role 배정·표→차원 매핑) 포함 여부.
+    succession: SuccessionAssets(F-3) — 자기 기말 인스턴스 자산. 지정 시
+      element는 기말 사용분을 그대로 승계하고 D-3b는 신규 계정에만 작동.
+      D-4c 폐지(노랑) element는 경고 + 대체 후보 병기.
     """
     if report_type not in PERIOD_LABELS:
         raise ValueError(f"report_type은 {sorted(PERIOD_LABELS)} 중 하나")
@@ -135,7 +138,8 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
         overview = wb.active
         overview.title = "작성 개요"
 
-        stats = {"rows": 0, "mapped": 0, "extension": 0, "skipped": 0}
+        stats = {"rows": 0, "mapped": 0, "extension": 0, "skipped": 0,
+                 "inherited": 0, "new": 0, "deprecated": 0}
         sheet_summaries = []
         results_by_sheet = {}
 
@@ -209,15 +213,56 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                 if not vals and not label.strip():
                     stats["skipped"] += 1
                     continue
-                res = suggest(corpus, label, category, induty=induty)
                 row_vals = [vals.get(n) for n, _ in periods]
+
+                # F-3 승계: 기말 사용 element 그대로 — D-3b는 신규에만
+                inh = succession.inherit(label) if succession else None
+                if inh is not None:
+                    stats["inherited"] += 1
+                    stats["mapped"] += 1
+                    tc = succession.taxcheck_of(inh["element_id"]) or {}
+                    conf = f"승계 — 기말 사용 (팩트 {inh.get('n_facts', 0)})"
+                    if inh.get("sim", 1.0) < 1.0:
+                        conf += f" · 라벨 유사 {inh['sim']:.2f}"
+                    alts = ""
+                    if tc:
+                        conf += f" · D-4c {tc['status']}"
+                        if tc["status"] != "녹색":
+                            alts = tc["detail"]
+                    if tc.get("status") == "노랑":     # 폐지 → 대체 후보
+                        stats["deprecated"] += 1
+                        res = suggest(corpus, label, category, induty=induty)
+                        alts += "\n대체 후보:\n" + "\n".join(
+                            f"{i}. {c['element_id']} ({c['std_label']})"
+                            for i, c in enumerate(
+                                res.get("candidates", [])[:4], 1))
+                    ws.append([" " * indent + label.strip(), *row_vals,
+                               inh["element_id"].replace("_", ":", 1),
+                               inh.get("label_ko") or label.strip(),
+                               conf, alts, "☐"])
+                    if tc.get("status") == "노랑":
+                        for c in ws[ws.max_row]:
+                            c.fill = _WARN_FILL
+                    sheet_rows.append({"row": r, "label": label.strip(),
+                                       "top1": inh["element_id"],
+                                       "candidates": [], "route": "승계"})
+                    for j in range(len(labels)):
+                        cell = ws.cell(row=ws.max_row, column=2 + j)
+                        if isinstance(cell.value, (int, float)):
+                            cell.number_format = _NUMFMT
+                    continue
+
+                res = suggest(corpus, label, category, induty=induty)
+                if succession is not None:
+                    stats["new"] += 1
+                new_tag = "신규 계정 · " if succession is not None else ""
                 if res["verdict"] == "후보":
                     top = res["candidates"][0]
                     stats["mapped"] += 1
                     ws.append([" " * indent + label.strip(), *row_vals,
                                top["element_id"].replace("_", ":", 1),
                                top["std_label"],
-                               _confidence(top, induty),
+                               new_tag + _confidence(top, induty),
                                _alternatives(res["candidates"]), "☐"])
                     sheet_rows.append({"row": r, "label": label.strip(),
                                        "top1": top["element_id"],
@@ -257,7 +302,7 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                 assets = NoteAssets(db_path=corpus_db)
                 note_results = build_note_sheets(
                     wb, ctx, corpus, assets, induty=induty,
-                    progress=progress)
+                    succession=succession, progress=progress)
                 sheet_summaries.append(
                     ("주석 1~%d" % len(ctx.note_sheets), "주석",
                      len(ctx.note_sheets), len(note_results["unassigned"])))
@@ -266,7 +311,7 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                                 "dart_explorer corpus export 필요"}
 
         _write_overview(overview, dsd_path, report_type, stats,
-                        sheet_summaries)
+                        sheet_summaries, succession=succession)
         if out_path is None:
             out_path = re.sub(r"\.dsd$", "", dsd_path,
                               flags=re.I) + "_XBRL작성워크시트.xlsx"
@@ -275,12 +320,20 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
             "sheets": results_by_sheet, "notes": note_results}
 
 
-def _write_overview(ws, dsd_path, report_type, stats, sheet_summaries):
+def _write_overview(ws, dsd_path, report_type, stats, sheet_summaries,
+                    succession=None):
     ws.append(["XBRL 작성 워크시트 (전사 가이드)"])
     ws.cell(row=1, column=1).font = Font(bold=True, size=14)
     ws.append([f"원본 DSD: {os.path.basename(dsd_path)}"])
     ws.append([f"보고서 유형: {report_type} · 생성: "
                f"{datetime.date.today().isoformat()}"])
+    if succession is not None:
+        ws.append([f"승계 모드(F-3): 기말 자산 {os.path.basename(succession.source)}"
+                   f" — 승계 {stats['inherited']} / 신규 계정 {stats['new']}"
+                   f" / D-4c 폐지 경고 {stats['deprecated']}"
+                   + (f" (신버전 {succession.against} 대조)"
+                      if succession.against else " (택사노미 대조 생략)")])
+        ws.cell(row=ws.max_row, column=1).font = _BOLD
     ws.append([])
     ws.append(["⚠ 확정 ☐ 열이 전부 체크되기 전까지 이 워크시트는 '완성'이 "
                "아닙니다. element 추천은 실증·유사도 기반 후보이며 최종 "

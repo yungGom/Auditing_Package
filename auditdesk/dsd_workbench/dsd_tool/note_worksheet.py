@@ -272,15 +272,25 @@ ROUTE_MEMBER, ROUTE_ELEMENT, ROUTE_MANUAL = "member", "element", "manual"
 
 
 def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
-                      prefer_consol="별도", progress=None):
-    """extract 컨텍스트의 주석들 → 워크시트 시트 추가. 결과 dict 반환."""
+                      prefer_consol="별도", succession=None, progress=None):
+    """extract 컨텍스트의 주석들 → 워크시트 시트 추가. 결과 dict 반환.
+
+    succession(F-3): 자기 기말 자산 — role은 주석 번호·제목으로 결정적
+    승계, 행 element/member도 기말 사용분 우선. D-3b는 신규에만.
+    """
     results = {"roles": {}, "unassigned": [], "tables": [],
                "routes": collections.Counter(), "rows_detail": []}
     for sheet in ctx.note_sheets:
         src = ctx.wb[sheet]
         title = str(src.cell(1, 1).value or "")
+        inherited_role = succession.find_role(title) if succession else None
         cands = assets.assign_role(title, prefer_consol=prefer_consol)
-        assigned = cands[0] if cands and cands[0]["sim"] >= 0.4 else None
+        if inherited_role is not None:
+            assigned = {"code": inherited_role["code"],
+                        "definition": inherited_role["definition"],
+                        "sim": 1.0, "n_corps": 0, "inherited": True}
+        else:
+            assigned = cands[0] if cands and cands[0]["sim"] >= 0.4 else None
         results["roles"][sheet] = {"title": title, "assigned": assigned,
                                    "candidates": cands}
         if assigned is None:
@@ -293,6 +303,10 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
         # --- role 배정 블록 ---
         ws.append(["[role 배정]", "", "", "", "", "확정 ☐"])
         ws.cell(ws.max_row, 1).font = _BOLD
+        if inherited_role is not None:
+            ws.append(["→ 승계 (F-3)", inherited_role["code"],
+                       inherited_role["definition"][:60],
+                       "자기 기말 role 구성 그대로", "", "☐"])
         if cands:
             for i, c in enumerate(cands, 1):
                 mark = "→ 배정 제안" if (assigned and i == 1) else f"후보{i}"
@@ -420,7 +434,55 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
                     hit = row_matches.get(r)
                     detail = {"sheet": sheet, "table": ti, "row": r,
                               "label": label.strip(), "axis": best_axis,
-                              "member_id": None, "cand_ids": []}
+                              "member_id": None, "cand_ids": [],
+                              "inherited": False}
+
+                    # F-3 승계: 기말 사용 member/element 우선 (신규만 D-3b)
+                    if succession is not None:
+                        own_m = succession.inherit_member(label)
+                        own_e = succession.inherit(label)
+                        if own_m and (best_axis is not None or own_e is None):
+                            route, state = ROUTE_MEMBER, STATE_STANDARD
+                            detail["member_id"] = own_m["id"]
+                            detail["inherited"] = True
+                            warn = ("" if best_axis is not None else
+                                    " ⚠ 표 축 미확정 — 배치 확인")
+                            ws.append([label.strip(), "member",
+                                       own_m["id"].replace("_", ":", 1),
+                                       own_m.get("label_ko") or "",
+                                       "승계 — 기말 문맥 member" + warn,
+                                       STATE_STANDARD, "☐"])
+                            detail["route"] = route
+                            detail["state"] = state
+                            results["routes"][route] += 1
+                            results["rows_detail"].append(detail)
+                            continue
+                        if own_e is not None:
+                            route, state = ROUTE_ELEMENT, STATE_STANDARD
+                            detail["inherited"] = True
+                            detail["cand_ids"] = [own_e["element_id"]]
+                            tc = succession.taxcheck_of(
+                                own_e["element_id"]) or {}
+                            ev = (f"승계 — 기말 사용 "
+                                  f"(팩트 {own_e.get('n_facts', 0)})")
+                            if tc:
+                                ev += f" · D-4c {tc['status']}"
+                                if tc["status"] == "노랑":
+                                    ev += f" ⚠ {tc['detail']}"
+                            ws.append([label.strip(), "element",
+                                       own_e["element_id"].replace(
+                                           "_", ":", 1),
+                                       own_e.get("label_ko") or "",
+                                       ev, STATE_STANDARD, "☐"])
+                            if tc.get("status") == "노랑":
+                                for cc in ws[ws.max_row]:
+                                    cc.fill = _STATE_FILL[STATE_MANUAL]
+                            detail["route"] = route
+                            detail["state"] = state
+                            results["routes"][route] += 1
+                            results["rows_detail"].append(detail)
+                            continue
+
                     if hit:
                         # b. member 행 (축 배정된 표의 분류 행 —
                         #    채택 축 또는 고신뢰 보조 축)

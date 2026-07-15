@@ -334,3 +334,84 @@ def stats(db_path=None):
         "ORDER BY n DESC LIMIT 10").fetchall()
     con.close()
     return out
+
+
+# ---------------------------------------------------------------------------
+# F-3: 승계 자산 내보내기 (자기 기말 인스턴스 → JSON, 파일 교환 경계)
+# ---------------------------------------------------------------------------
+
+def export_succession_assets(folder, out_json=None, against=None,
+                             progress=None):
+    """자기 기말 XBRL 패키지 → 승계 자산 JSON (dsd_workbench가 읽음).
+
+    - elements: 팩트 있는 element 전수 (extract_package 스키마 —
+      element 선택·확장 정의·role 구성 그대로 승계의 원천)
+    - roles: pre.xml role 정의 목록 [{code, definition}]
+    - members: 인스턴스 문맥 explicitMember 전수 [{id, label_ko}]
+    - taxcheck: against(신버전 세대) 지정 시 D-4c 상태 —
+      {element_id: {status: 녹색|노랑|파랑|확장, detail}} (폐지 대체
+      후보는 dsd_workbench가 D-3b로 산출)
+    """
+    import glob as _glob
+    import json
+    import re as _re
+
+    pkg = TaxonomyPackage(folder)
+    rows = extract_package(folder)
+
+    roles = []
+    for _uri, definition, _pl in pkg.roles():
+        m = _re.match(r"^\[(D\d{6})\]", definition or "")
+        if m:
+            roles.append({"code": m.group(1), "definition": definition})
+
+    xbrldi = "http://xbrl.org/2006/xbrldi"
+    used_members = set()
+    for path in _glob.glob(os.path.join(folder, "*.xbrl")):
+        root = etree.parse(path).getroot()
+        for m in root.iter(f"{{{xbrldi}}}explicitMember"):
+            used_members.add((m.text or "").strip().replace(":", "_"))
+    members = [{"id": mid, "label_ko": pkg._label(pkg.labels_ko, mid)}
+               for mid in sorted(used_members)]
+
+    taxcheck = {}
+    if against:
+        from .taxonomy_diff import (parse_presentation_concepts,
+                                    resolve_version_dir)
+        new_concepts = parse_presentation_concepts(
+            resolve_version_dir(against), progress)
+        for r in rows:
+            eid = r["element_id"]
+            if eid.startswith("dart-gcd"):
+                continue
+            if r["is_ext"]:
+                taxcheck[eid] = {"status": "확장",
+                                 "detail": "당사 확장 element — 승계 유지"}
+            elif eid in new_concepts:
+                nl = new_concepts[eid]["label_ko"]
+                if (nl or "").strip() == (r["label_ko"] or "").strip():
+                    taxcheck[eid] = {"status": "녹색",
+                                     "detail": "그대로 사용 가능"}
+                else:
+                    taxcheck[eid] = {
+                        "status": "파랑",
+                        "detail": f"라벨 변경: '{r['label_ko']}' → '{nl}'"}
+            else:
+                taxcheck[eid] = {"status": "노랑",
+                                 "detail": "신버전에서 폐지 — 대체 후보 확인"}
+
+    data = {"source": os.path.abspath(folder), "against": against,
+            "elements": rows, "roles": roles, "members": members,
+            "taxcheck": taxcheck}
+    if out_json is None:
+        out_json = os.path.join(folder, "succession_assets.json")
+    with open(out_json, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    if progress:
+        progress(f"승계 자산: elements {len(rows)} / roles {len(roles)} / "
+                 f"members {len(members)} / taxcheck {len(taxcheck)}")
+    return {"out_json": out_json, "n_elements": len(rows),
+            "n_roles": len(roles), "n_members": len(members),
+            "taxcheck": {s: sum(1 for t in taxcheck.values()
+                                if t["status"] == s)
+                         for s in ("녹색", "노랑", "파랑", "확장")}}
