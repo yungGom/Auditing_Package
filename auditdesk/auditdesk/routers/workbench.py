@@ -43,8 +43,14 @@ def _session(sid):
             (sid,)).fetchone()
     if row is None:
         raise HTTPException(404, "세션 없음")
+    meta = json.loads(row[3] or "{}")
+    # editver 검증 여부는 저장 스냅샷이 아니라 현재 KNOWN_VERSIONS 표
+    # 기준으로 재판정 (batch_validate로 등재가 갱신되면 즉시 반영)
+    if meta.get("editver"):
+        from dsd_tool.version import is_known
+        meta["editver_known"] = bool(is_known(meta["editver"]))
     return {"session_id": row[0], "dsd_path": row[1], "created": row[2],
-            "meta": json.loads(row[3] or "{}"), "state": row[4],
+            "meta": meta, "state": row[4],
             "xlsx_path": row[5],
             "diff": json.loads(row[6]) if row[6] else None,
             "diff_options": json.loads(row[7]) if row[7] else None,
