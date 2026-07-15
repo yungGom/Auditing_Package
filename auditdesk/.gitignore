@@ -40,3 +40,8 @@ dart_explorer/taxonomies/
 
 # AI_Footing 예시 (실무 산출물 — 고객사명 포함, 커밋 금지)
 dsd_workbench/dsd_tool/fixtures/ai_footing/
+
+# AuditDesk 웹 앱 런타임/빌드 산출물
+auditdesk/data/
+auditdesk/static/
+webui/node_modules/

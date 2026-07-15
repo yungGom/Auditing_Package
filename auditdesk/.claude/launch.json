@@ -12,6 +12,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "dashboard"],
       "port": 8700
+    },
+    {
+      "name": "auditdesk",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "auditdesk"],
+      "port": 8710
     }
   ]
 }
