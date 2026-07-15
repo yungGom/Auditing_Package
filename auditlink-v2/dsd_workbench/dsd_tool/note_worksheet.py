@@ -75,21 +75,27 @@ class NoteAssets:
         #  소속 element 라벨에서 매칭)
         self.role_corps = collections.Counter()
         self.role_labels = {}
+        self.axis_corps = {}                   # 축 → D8 주석 실증 회사수
         path = db_path or DEFAULT_CORPUS
         if os.path.exists(path):
             con = sqlite3.connect(f"file:{path}?mode=ro", uri=True,
                                   timeout=30)
             seen = collections.defaultdict(set)
             label_freq = collections.defaultdict(collections.Counter)
-            for corp, roles, label in con.execute(
-                    "SELECT corp_code, roles, label_ko FROM usages "
+            axis_seen = collections.defaultdict(set)
+            for corp, roles, label, dims in con.execute(
+                    "SELECT corp_code, roles, label_ko, dims FROM usages "
                     "WHERE roles LIKE '%D8%' AND is_ext = 0"):
                 for code in (roles or "").split(","):
                     if code.startswith("D8"):
                         seen[code[:6]].add(corp)
                         if label:
                             label_freq[code[:6]][label] += 1
+                for ax in re.split(r"[|;]", dims or ""):
+                    if ax.endswith("Axis"):
+                        axis_seen[ax].add(corp)
             con.close()
+            self.axis_corps = {k: len(v) for k, v in axis_seen.items()}
             self.role_corps = {k: len(v) for k, v in seen.items()}
             # 특이 라벨만 유지: 여러 role에 두루 나오는 라벨(부문표의 온갖
             # 계정 등)은 role 식별 신호가 아님 — ≤2개 role 등장 라벨로 제한
@@ -166,6 +172,30 @@ class NoteAssets:
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top]
 
+    def global_axes(self):
+        """전 role 하이퍼큐브의 축 풀 (축 id로 member 합집합, 필터 축 제외).
+
+        2차 축 탐색용 — 배정 role에 표의 축이 등재되지 않은 경우
+        (실측: 범주별 금융상품 주석의 차입금 축, 재무위험관리의 통화 축).
+        """
+        if not hasattr(self, "_global_axes"):
+            merged = {}
+            for axes in self.hypercubes.values():
+                for a in axes:
+                    if any(f in a["axis"] for f in _FILTER_AXES):
+                        continue
+                    g = merged.setdefault(
+                        a["axis"], {"axis": a["axis"],
+                                    "axis_label": a["axis_label"],
+                                    "members": {}})
+                    for mid, lb in a["members"]:
+                        if mid.endswith("Member"):
+                            g["members"].setdefault(mid, lb)
+            self._global_axes = [
+                {**g, "members": sorted(g["members"].items())}
+                for g in merged.values()]
+        return self._global_axes
+
     def role_axes(self, code):
         """role의 행 축 후보 (필터 축 제외). 별도(…5) 미등재 시 연결(…0) 폴백."""
         axes = self.hypercubes.get(code)
@@ -197,8 +227,8 @@ def _classify_column(header_text):
     return "항목"
 
 
-def match_member(assets_axes, row_label):
-    """행 라벨 → member 후보 (배정 role의 축 한정). (axis, member, sim)."""
+def match_member(assets_axes, row_label, min_sim=0.5):
+    """행 라벨 → member 후보. (axis, member_id, member라벨, sim)."""
     qn = normalize(row_label)
     if not qn:
         return None
@@ -206,7 +236,7 @@ def match_member(assets_axes, row_label):
     for ax in assets_axes:
         for mid, lb in ax["members"]:
             sim = similarity(qn, row_label, lb)
-            if sim >= 0.5 and (best is None or sim > best[3]):
+            if sim >= min_sim and (best is None or sim > best[3]):
                 best = (ax["axis"], mid, lb, sim)
     return best
 
@@ -321,9 +351,55 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
                         row_matches[r] = hit
                 best_axis = axis_votes.most_common(1)[0][0] \
                     if axis_votes else None
+                axis_source = "role" if best_axis else None
+                if best_axis is None:
+                    # 2차 전역 축 탐색 (배정 role에 표의 축 미등재 대응) —
+                    # 이중 안전장치: 같은 축에 ≥2행 매칭 + 코퍼스 D8
+                    # 실증 있는 축만 채택 (우연 단일 매칭 배제)
+                    votes2 = collections.Counter()
+                    matches2 = {}
+                    for r in region[1:]:
+                        label = _label(src, r)
+                        if not label:
+                            continue
+                        hit = match_member(assets.global_axes(), label)
+                        if hit and assets.axis_corps.get(hit[0]):
+                            votes2[hit[0]] += 1
+                            matches2[r] = hit
+                    top2 = votes2.most_common(1)
+                    if top2 and top2[0][1] >= 2:
+                        best_axis = top2[0][0]
+                        axis_source = "global"
+                        row_matches = matches2
 
+                # 축 채택 후 행 재매칭 — 채택 축 우선. 미매칭 행은
+                # 고신뢰(≥0.7) 전역 보조 축 허용 (표가 차원 표로 확인된
+                # 경우에 한함 — 실측: 표 제2축·자매 축의 member 행)
+                if best_axis is not None:
+                    pool = role_axes if axis_source == "role" \
+                        else assets.global_axes()
+                    best_ax_only = [ax for ax in pool
+                                    if ax["axis"] == best_axis]
+                    row_matches = {}
+                    for r in region[1:]:
+                        label = _label(src, r)
+                        if not label:
+                            continue
+                        hit = match_member(best_ax_only, label)
+                        if hit is None:
+                            h2 = match_member(assets.global_axes(), label,
+                                              min_sim=0.7)
+                            if h2 and assets.axis_corps.get(h2[0]):
+                                hit = h2
+                        if hit:
+                            row_matches[r] = hit
+
+                _src_tag = ""
+                if axis_source == "global":
+                    _src_tag = (f" (전역 탐색 — 배정 role 외 축, 실증 "
+                                f"{assets.axis_corps.get(best_axis, 0)}사)")
                 ws.append([f"[표 {ti}] 행 축 제안: "
-                           f"{best_axis.split('_')[-1] if best_axis else '(축 매칭 없음 — 행은 element로)'}"])
+                           f"{best_axis.split('_')[-1] + _src_tag if best_axis else '(축 매칭 없음 — 행은 element로)'}"])
                 ws.cell(ws.max_row, 1).font = _BOLD
                 ws.append(["열 분류: " + ", ".join(
                     f"'{str(src.cell(header, c).value or '')[:12]}'"
@@ -345,13 +421,15 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
                     detail = {"sheet": sheet, "table": ti, "row": r,
                               "label": label.strip(), "axis": best_axis,
                               "member_id": None, "cand_ids": []}
-                    if hit and hit[0] == best_axis:
-                        # b. member 행 (축 배정된 표의 분류 행)
+                    if hit:
+                        # b. member 행 (축 배정된 표의 분류 행 —
+                        #    채택 축 또는 고신뢰 보조 축)
                         route, state = ROUTE_MEMBER, STATE_STANDARD
                         detail["member_id"] = hit[1]
+                        aux = "" if hit[0] == best_axis else " (보조 축)"
                         ws.append([label.strip(), "member",
                                    hit[1].replace("_", ":", 1), hit[2],
-                                   f"축 {best_axis.split('_')[-1][:28]} · "
+                                   f"축 {hit[0].split('_')[-1][:28]}{aux} · "
                                    f"유사도 {hit[3]:.2f}",
                                    STATE_STANDARD, "☐"])
                     else:
@@ -364,6 +442,10 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
                         # a. 항목 행 (D-3b 신호 있음) / c. 판단 불가
                         route = ROUTE_MANUAL if state == STATE_MANUAL \
                             else ROUTE_ELEMENT
+                        # 안전장치: 축 배정 실패 표의 행은 member일 가능성이
+                        # 남아 있음 — 잘못된 확신보다 명시된 불확실이 낫다
+                        warn = ("" if best_axis is not None else
+                                " ⚠ 표 구조 미확정 — member 가능성 확인")
                         if top is not None:
                             evidence = top["evidence"][:46]
                             if state == STATE_PREFER_STANDARD and exts:
@@ -371,12 +453,12 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
                                              f" {exts[0]['n_companies']}사")
                             ws.append([label.strip(), "element",
                                        top["element_id"].replace("_", ":", 1),
-                                       top["std_label"], evidence, state,
-                                       "☐"])
+                                       top["std_label"], evidence + warn,
+                                       state, "☐"])
                         else:
                             note = ("; ".join(
                                 f"확장 '{e['label'][:20]}' {e['n_companies']}사"
-                                for e in exts[:2]) or "신호 없음")
+                                for e in exts[:2]) or "신호 없음") + warn
                             ws.append([label.strip(),
                                        "수동 확인" if route == ROUTE_MANUAL
                                        else "element",
@@ -394,9 +476,9 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
                 ws.append([])
                 results["tables"].append({
                     "sheet": sheet, "table": ti, "axis": best_axis,
-                    "rows": n_rows,
-                    "member_matched": sum(1 for h in row_matches.values()
-                                          if h[0] == best_axis)})
+                    "axis_source": axis_source, "rows": n_rows,
+                    "member_matched": len(row_matches)
+                    if best_axis else 0})
         for col, w in (("A", 34), ("B", 10), ("C", 44), ("D", 30),
                        ("E", 44), ("F", 14), ("G", 8)):
             ws.column_dimensions[col].width = w

@@ -131,14 +131,43 @@ def test_gate3_routing_and_benchmark():
     assert set(rep["routes"]) <= {"member", "element", "manual"}
     assert rep["rows_total"] == sum(rep["routes"].values()) >= 400
 
-    # [2] 지표 산출 가능성 (수치 자체는 벤치마크 — 게이트 아님)
+    # [2] 지표 산출 가능성
     c = rep["classification"]
     assert c["n"] >= 100 and c["accuracy"] is not None
     assert rep["element"]["n"] >= 50
+    # [3] F-2b 확정 게이트: member 정밀도 100% (라우팅된 건은 전부 정답
+    # member id) + 매칭률 60%+ (분모 = 축 배정 표의 member 행)
+    m = rep["member"]
+    assert m["routed"] == m["hit"], "member 정밀도 100% 붕괴"
+    assert m["rate"] is not None and m["rate"] >= 0.60, \
+        f"member 매칭률 {m['rate']} < 60%"
     print(f"\n[F-2 벤치마크] 행 {rep['rows_total']} 라우팅 {rep['routes']} | "
           f"분류 정확도 {c['accuracy']:.1%} (기권 {c['abstain']}) | "
-          f"member {rep['member']['hit']}/{rep['member']['eligible']} | "
+          f"member {m['hit']}/{m['eligible']} (정밀도 100%) | "
           f"element Top-4 {rep['element']['top4']}/{rep['element']['n']}")
+
+
+@pytest.mark.skipif(not _ready, reason="삼성 페어 또는 표준 자산 없음")
+def test_gate4_unassigned_table_warning(tmp_path):
+    """F-2b 안전장치: 축 배정에 실패한 표의 행은 element 추천에
+    '⚠ 표 구조 미확정 — member 가능성 확인' 주의가 병기돼야 한다
+    (잘못된 확신보다 명시된 불확실 — 삼성 주석2 내용연수 표가 해당:
+    role 미배정 + 전역 탐색도 단일 행 매칭이라 이중 안전장치에 걸림)."""
+    from openpyxl import Workbook
+    from dsd_tool.mapping import MappingCorpus
+    from dsd_tool.note_worksheet import build_note_sheets
+
+    xlsx = str(tmp_path / "s.xlsx")
+    extract(_SAMSUNG_DSD, xlsx)
+    ctx = FootingContext(xlsx)
+    ctx.note_sheets = ["2"]                    # 주석2만 (suggest 비용 절약)
+    wb = Workbook()
+    res = build_note_sheets(wb, ctx, MappingCorpus(), NoteAssets())
+    ws = wb["주석2"]
+    text = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
+    assert any("⚠ 표 구조 미확정" in t for t in text), "안전장치 주의 없음"
+    # 라우팅 전수성 (침묵 누락 0)
+    assert sum(res["routes"].values()) == len(res["rows_detail"]) > 0
 
 
 @pytest.mark.skipif(not _ready, reason="삼성 페어 또는 표준 자산 없음")
