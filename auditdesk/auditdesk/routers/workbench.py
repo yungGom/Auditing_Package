@@ -87,11 +87,14 @@ def create_session(body: dict):
     sid = uuid.uuid4().hex[:10]
     with jobs.connect() as con:
         con.execute(
-            "INSERT INTO sessions VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO sessions "
+            "(id, dsd_path, created, meta, state, xlsx_path, diff, "
+            "diff_options, repack, foot, recon) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (sid, os.path.abspath(dsd_path),
              datetime.datetime.now().isoformat(timespec="seconds"),
              json.dumps(meta, ensure_ascii=False), "생성됨",
-             None, None, None, None))
+             None, None, None, None, None, None))
     return {"session_id": sid, "meta": meta}
 
 
