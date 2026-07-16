@@ -235,6 +235,8 @@ def taxcheck(body: dict):
         raise HTTPException(400, f"전기 패키지 폴더 없음: {prior}")
     if not against:
         raise HTTPException(400, "against_version 필요")
+    # UI 계약: 승격 감지(수십 분)는 기본 생략 — 별도 실행 버튼으로 요청
+    skip_promotions = bool(body.get("skip_promotions", True))
     os.makedirs(_WORKDIR, exist_ok=True)
     out = os.path.join(_WORKDIR, f"taxcheck_{uuid.uuid4().hex[:6]}.xlsx")
 
@@ -242,6 +244,7 @@ def taxcheck(body: dict):
         progress("신버전 택사노미 대조 중…")
         from dart_explorer.xbrl.taxonomy_diff import run_taxcheck
         res = run_taxcheck(prior, against, out_path=out,
+                           skip_promotions=skip_promotions,
                            progress=lambda m: progress(m))
         groups = {"green": [], "yellow": [], "blue": [], "ext": []}
         for r in res["rows"]:
@@ -261,7 +264,9 @@ def taxcheck(body: dict):
             "green": res["green"], "yellow": res["yellow"],
             "blue": res["blue"], "ext": len(groups["ext"])},
             **groups,
-            "promotions": len(res.get("promotions") or [])}
+            "skip_promotions": skip_promotions,
+            "promotions": len(res.get("promotions") or [])
+            if not skip_promotions else None}
 
     return {"job_id": jobs.submit("taxcheck", _run)}
 

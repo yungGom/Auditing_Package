@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import Home from "./Home";
 import Session from "./Session";
 import StatusPage from "./StatusPage";
+import { SearchScreen, SettingsScreen, XbrlScreen } from "./Explorer";
 import {
   DimScreen, MappingScreen, TaxoScreen, TreeScreen, WorksheetScreen,
 } from "./Studio";
@@ -13,6 +14,7 @@ export type Route = {
 };
 
 const STUDIO_SCREENS = ["taxo", "mapping", "worksheet", "dimtable", "tree"];
+const EXPLORER_SCREENS = ["search", "xbrl", "settings"];
 
 const TITLES: Record<string, [string, string]> = {
   home: ["AuditDesk", "홈 — 시즌 여정"],
@@ -23,6 +25,9 @@ const TITLES: Record<string, [string, string]> = {
   worksheet: ["XBRL Studio", "작성 워크시트"],
   dimtable: ["XBRL Studio", "차원 표 뷰어"],
   tree: ["XBRL Studio", "트리 뷰"],
+  search: ["DART Explorer", "공시 검색"],
+  xbrl: ["DART Explorer", "XBRL 파이프라인"],
+  settings: ["DART Explorer", "설정"],
 };
 
 function NavItem({ icon, label, active, chip: chipEl, onClick }: {
@@ -71,7 +76,8 @@ function parseHash(): Route {
   const h = window.location.hash.replace(/^#\/?/, "");
   const [a, b, c] = h.split("/");
   if (a === "session" && b) return { screen: "session", sessionId: b, tab: c };
-  if (a === "status" || STUDIO_SCREENS.includes(a)) return { screen: a };
+  if (a === "status" || STUDIO_SCREENS.includes(a) ||
+      EXPLORER_SCREENS.includes(a)) return { screen: a };
   return { screen: "home" };
 }
 
@@ -86,6 +92,8 @@ function writeHash(r: Route) {
 export default function App() {
   const [route, setRouteRaw] = useState<Route>(parseHash);
   const [sessionLabel, setSessionLabel] = useState<string | null>(null);
+  const [xbrlPreset, setXbrlPreset] = useState<
+    { corp: string; year: number; report: string } | null>(null);
   const setRoute = (r: Route) => { writeHash(r); setRouteRaw(r); };
   React.useEffect(() => {
     const onHash = () => setRouteRaw(parseHash());
@@ -95,11 +103,14 @@ export default function App() {
 
   const [title, sub] = TITLES[route.screen] || TITLES.home;
   // 신뢰 뱃지 — 모듈별 (참조 구현 그대로)
-  const trust = STUDIO_SCREENS.includes(route.screen)
-    ? { icon: "lock", label: "분석·작성은 로컬 — 코퍼스는 공개데이터",
-        colors: { color: "#3a5a2e", background: "#dcead2" } }
-    : { icon: "lock", label: "로컬 전용 — 외부 전송 없음",
-        colors: { color: "#001e40", background: "#d5e3ff" } };
+  const trust = EXPLORER_SCREENS.includes(route.screen)
+    ? { icon: "public", label: "OpenDART 수신 전용",
+        colors: { color: "#4e6874", background: "#cbe7f5" } }
+    : STUDIO_SCREENS.includes(route.screen)
+      ? { icon: "lock", label: "분석·작성은 로컬 — 코퍼스는 공개데이터",
+          colors: { color: "#3a5a2e", background: "#dcead2" } }
+      : { icon: "lock", label: "로컬 전용 — 외부 전송 없음",
+          colors: { color: "#001e40", background: "#d5e3ff" } };
 
   const openSession = (sessionId: string, label?: string, tab?: string) => {
     if (label) setSessionLabel(label);
@@ -168,13 +179,12 @@ export default function App() {
         <div style={{ marginBottom: 14 }}>
           <SectionHead label="DART EXPLORER" tag="수신 전용"
             tagFg="#4e6874" tagBg="#cbe7f5" />
-          {[["search", "공시 검색"], ["cloud_download", "XBRL 파이프라인"],
-            ["settings", "설정"]].map(([ic, lb]) => (
-            <NavItem key={lb} icon={ic} label={lb}
-              chip={<span style={{
-                font: `600 9px ${F_LABEL}`, color: "#737780",
-                background: "#e1e3e4", borderRadius: 4, padding: "2px 6px",
-              }}>UI-4</span>} />
+          {[["search", "공시 검색", "search"],
+            ["cloud_download", "XBRL 파이프라인", "xbrl"],
+            ["settings", "설정", "settings"]].map(([ic, lb, key]) => (
+            <NavItem key={key} icon={ic} label={lb}
+              active={route.screen === key}
+              onClick={() => setRoute({ screen: key })} />
           ))}
         </div>
 
@@ -230,6 +240,17 @@ export default function App() {
           {route.screen === "worksheet" && <WorksheetScreen />}
           {route.screen === "dimtable" && <DimScreen />}
           {route.screen === "tree" && <TreeScreen />}
+          {route.screen === "search" && (
+            <SearchScreen goXbrl={(corp, year, report) => {
+              setXbrlPreset({ corp, year, report });
+              setRoute({ screen: "xbrl" });
+            }} />
+          )}
+          {route.screen === "xbrl" && (
+            <XbrlScreen key={JSON.stringify(xbrlPreset)}
+              preset={xbrlPreset} />
+          )}
+          {route.screen === "settings" && <SettingsScreen />}
         </main>
       </div>
     </div>

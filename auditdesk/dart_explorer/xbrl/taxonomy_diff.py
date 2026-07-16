@@ -282,8 +282,12 @@ def _load_mapping_corpus(mapping_db):
 
 
 def run_taxcheck(xbrl_folder, against, mapping_db=None, out_path=None,
-                 progress=None):
-    """전기 XBRL 사용 element 전수 ↔ 신버전 대조. "당기 착수 전 체크리스트"."""
+                 skip_promotions=False, progress=None):
+    """전기 XBRL 사용 element 전수 ↔ 신버전 대조. "당기 착수 전 체크리스트".
+
+    skip_promotions: 승격 감지(신설 전수 × 코퍼스 대조 — 수십 분) 생략.
+    UI 계약: 기본 생략 + 별도 실행. CLI 기본은 종전대로 실행.
+    """
     from .dimension_table import XbrlInstance
     from .taxonomy import TaxonomyPackage
 
@@ -327,7 +331,7 @@ def run_taxcheck(xbrl_folder, against, mapping_db=None, out_path=None,
              "blue": sum(1 for r in rows if r["status"] == "파랑")}
 
     promotions = []
-    old_baseline = _auto_old_baseline(new_path)
+    old_baseline = None if skip_promotions else _auto_old_baseline(new_path)
     if old_baseline and corpus is not None:
         if progress:
             progress(f"승격 감지용 구버전 자동 채택: {old_baseline}")

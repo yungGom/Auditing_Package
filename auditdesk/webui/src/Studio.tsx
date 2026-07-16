@@ -414,8 +414,15 @@ export function TaxoScreen() {
           </select>
           <PrimaryBtn onClick={() => run("/api/studio/taxcheck", {
             prior_package: pkg, against_version: against,
+            skip_promotions: true,
           })}>
             <Icon name="fact_check" size={15} />대조 실행</PrimaryBtn>
+          <GhostBtn onClick={() => run("/api/studio/taxcheck", {
+            prior_package: pkg, against_version: against,
+            skip_promotions: false,
+          })}>
+            <Icon name="trending_up" size={15} />+승격 감지 (수십 분)
+          </GhostBtn>
         </div>
 
         {result && (
@@ -432,6 +439,15 @@ export function TaxoScreen() {
                 파랑(라벨변경) {result.counts.blue}</span>
               <span style={chip("#43474f", "#edeeef")}>
                 확장(회사고유) {result.counts.ext}</span>
+              {result.promotions != null && (
+                <span style={chip("#4e6874", "#cbe7f5")}>
+                  승격 감지 {result.promotions}</span>
+              )}
+              {result.skip_promotions && (
+                <span style={{
+                  font: `500 11px ${F_LABEL}`, color: "#737780",
+                }}>승격 감지 생략됨 — 별도 실행 버튼</span>
+              )}
               <div style={{ flex: 1 }} />
               <GhostBtn onClick={() => api("/api/fs/open", {
                 method: "POST",

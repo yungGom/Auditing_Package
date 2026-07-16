@@ -25,23 +25,32 @@ _REAL_FILES = sorted(glob.glob(os.path.join(_REAL_DIR, "*.dsd")))
 
 @pytest.mark.skipif(not _REAL_FILES, reason="실제 DSD 없음")
 def test_editver_extraction_all_real_files():
+    """실파일 전체 editver 추출 — 등재 버전이면 통과.
+
+    (구버전 테스트는 '5.049' 하드코딩 — 2026-07-15 뷰티스킨 5.106
+    실물 확보·정식 등재 후 낡은 가정이 됨. 이제 등재표가 기준.)
+    """
     for path in _REAL_FILES:
         with open(path, "rb") as f:
             info = read_version_info(f.read())
-        assert info["editver"] == "5.049", os.path.basename(path)
+        assert info["editver"], os.path.basename(path)
+        assert is_known(info["editver"]), \
+            f"{os.path.basename(path)}: 미등재 editver {info['editver']}"
         assert info["schema"] == "dart4.xsd"
-        assert info["docver"] in ("4.1", "3.5")
+        # docver 관찰값 목록 (editver와 별개 — 4.1=구형, 3.5=6.0 변환본,
+        # 6.0=편집기 5.106 산출본에서 관찰)
+        assert info["docver"] in ("4.1", "3.5", "6.0")
 
 
 @pytest.mark.skipif(not _REAL_FILES, reason="실제 DSD 없음")
 def test_editver_in_extract_info_and_meta_sheet(tmp_path):
     xlsx = str(tmp_path / "v.xlsx")
     info = extract(_REAL_FILES[0], xlsx)
-    assert info["editver"] == "5.049"
+    assert info["editver"] and is_known(info["editver"])
     assert info["editver_known"] is True   # KNOWN_VERSIONS.md에 등재됨
     meta = {r[0]: r[1] for r in
             load_workbook(xlsx)["_META"].iter_rows(values_only=True)}
-    assert meta["editver"] == "5.049"
+    assert meta["editver"] == info["editver"]
     assert meta["schema"] == "dart4.xsd"
 
 

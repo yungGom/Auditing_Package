@@ -13,7 +13,8 @@ for p in (os.path.join(_ROOT, "dsd_workbench"), _ROOT):
         sys.path.insert(0, p)
 
 from . import jobs                              # noqa: E402
-from .routers import fs, jobs_api, status, studio, workbench  # noqa: E402
+from .routers import (explorer, fs, jobs_api, status, studio,  # noqa: E402
+                      workbench)
 
 app = FastAPI(title="AuditDesk", docs_url="/api/docs")
 jobs.startup_recover()
@@ -21,6 +22,8 @@ jobs.startup_recover()
 app.include_router(workbench.router, prefix="/api/workbench",
                    tags=["workbench"])
 app.include_router(studio.router, prefix="/api/studio", tags=["studio"])
+app.include_router(explorer.router, prefix="/api/explorer",
+                   tags=["explorer"])
 app.include_router(jobs_api.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(status.router, prefix="/api/status", tags=["status"])
 app.include_router(fs.router, prefix="/api/fs", tags=["fs"])

@@ -169,6 +169,13 @@
       "status": "통과",
       "note": "게이트 ①매핑 확정 E2E: 계정 20건 입력 → 추천 생성(job) → 브라우저에서 추천 카드 20건 전건 확정 클릭 → 확정 기록 조회(element·moonyong·타임스탬프 전건) ②차원표 화면 = xlsx 산출: 삼성 D31 렌더 → 그리드 JSON vs xlsx 독립 재독 560셀 전수 대조 불일치 0 (화면은 산출 xlsx 재독 구조 — 어긋날 수 없음). 추가: 작성 워크시트 전 모드 활성(new/inherit × annual/half/q1/q3) — 승계 모드 실측 본문 118행=승계 107·신규 11·D-4c 폐지 0, '승계 — 기말 사용(팩트 N)' 근거 노출. 택사노미 체크: 삼성 전기 대조 녹293/노5/파126 = D-4 게이트 기록과 일치, 폐지 5건에 RecCard 대체 후보. RecCard 상태 4종(recommend/confirmed/extension/standard) Design v2 스펙 그대로 + 근거 뱃지(실증/유사도/동업종/유사확장) + 확정 기록(잠금). 트리 뷰 D210000 60행·확장 표시. 화면 상태는 서버 최근 job 결과에서 복원(서버=진실 원천). 스크린샷 5매(Edge headless 대체 — UI-1과 동일 사유)",
       "date": "2026-07-16"
+    },
+    {
+      "patch": "UI-4",
+      "title": "DART Explorer (검색·fetch·파이프라인·코퍼스·설정)",
+      "status": "통과",
+      "note": "게이트(브라우저 E2E): 신원종합개발 실검색 — 자동완성(corpCode 캐시 일치, 상장 017000) → 결과 3행 중 캐시본(FY2025)에만 ✓캐시 뱃지 → 행에서 XBRL 파이프라인 이동(corp 프리셋) → 스텝퍼 4단(접수번호 검색→XBRL 수신→압축 해제→팩트 추출) 완주, 2,801팩트 결과 카드. 구성: /api/explorer(corps 자동완성·search cached 판정·fetch·xbrl 스텝 progress 중계·corpus stats/build(재개)·settings·cache DELETE confirm 필수), 설정 화면(API 키 감지/캐시 크기·비우기/일 사용량 바/코퍼스 카드+갱신 확인 다이얼로그). 지시 반영: taxcheck skip_promotions 계약 추가 — UI 기본 생략+'+승격 감지(수십 분)' 별도 버튼(run_taxcheck 파라미터, CLI 기본 동작 유지). 선행 확인: 오매칭 수정 하류 전부 인스턴스 직독(D-3a·D-4c·F-1/F-3·A-5b) — 영향 없음, 전체 pytest 202 통과(test_version 5.049 하드코딩 2건은 5.106 등재 반영으로 교정, docver 6.0 관찰 추가) + batch_validate G1/G2 14/14. 스크린샷 3매(Edge headless 대체)",
+      "date": "2026-07-16"
     }
   ]
 }
