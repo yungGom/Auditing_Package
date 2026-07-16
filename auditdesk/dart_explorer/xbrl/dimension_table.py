@@ -387,6 +387,15 @@ class _Section:
 
     # --- 값 조회 -----------------------------------------------------------
     def _dims_match(self, ctx, combo):
+        # 섹션 외 축이 붙은 문맥은 다른 표(예: 자본변동표 축)의 팩트 —
+        # 유입 차단. 실측 결함: 평면 PL 섹션(축 0)에서 CE 축 문맥의
+        # ProfitLoss=0 팩트가 첫 매치로 잡혀 당기순이익이 0으로 렌더됨
+        # (진짜 값 45.2조는 무차원 문맥에 실존). 미매칭은 빈칸 —
+        # 0 변환은 어디에도 없음(0은 회계적으로 유의미한 실값만).
+        allowed = set(self.axis_ids)
+        allowed.add(FILTER_AXIS)
+        if any(a not in allowed for a in ctx["dims"]):
+            return False
         proj = {a: ctx["dims"].get(a) for a in self.axis_ids}
         want = {a: None for a in self.axis_ids}
         want.update(combo)
