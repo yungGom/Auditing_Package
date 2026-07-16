@@ -3,17 +3,26 @@ import React, { useState } from "react";
 import Home from "./Home";
 import Session from "./Session";
 import StatusPage from "./StatusPage";
+import {
+  DimScreen, MappingScreen, TaxoScreen, TreeScreen, WorksheetScreen,
+} from "./Studio";
 import { chip, F_HEAD, F_LABEL, Icon } from "./ui";
 
-export type Route =
-  | { screen: "home" }
-  | { screen: "status" }
-  | { screen: "session"; sessionId: string; tab?: string };
+export type Route = {
+  screen: string; sessionId?: string; tab?: string;
+};
+
+const STUDIO_SCREENS = ["taxo", "mapping", "worksheet", "dimtable", "tree"];
 
 const TITLES: Record<string, [string, string]> = {
   home: ["AuditDesk", "홈 — 시즌 여정"],
   session: ["DSD Workbench", "세션 상세"],
   status: ["상태", "E-0"],
+  taxo: ["XBRL Studio", "택사노미 체크"],
+  mapping: ["XBRL Studio", "매핑 확정"],
+  worksheet: ["XBRL Studio", "작성 워크시트"],
+  dimtable: ["XBRL Studio", "차원 표 뷰어"],
+  tree: ["XBRL Studio", "트리 뷰"],
 };
 
 function NavItem({ icon, label, active, chip: chipEl, onClick }: {
@@ -61,16 +70,17 @@ function SectionHead({ label, tag, tagFg, tagBg }: {
 function parseHash(): Route {
   const h = window.location.hash.replace(/^#\/?/, "");
   const [a, b, c] = h.split("/");
-  if (a === "status") return { screen: "status" };
   if (a === "session" && b) return { screen: "session", sessionId: b, tab: c };
+  if (a === "status" || STUDIO_SCREENS.includes(a)) return { screen: a };
   return { screen: "home" };
 }
 
 function writeHash(r: Route) {
   window.location.hash =
     r.screen === "home" ? "/" :
-    r.screen === "status" ? "/status" :
-    `/session/${r.sessionId}${r.tab ? "/" + r.tab : ""}`;
+    r.screen === "session"
+      ? `/session/${r.sessionId}${r.tab ? "/" + r.tab : ""}`
+      : `/${r.screen}`;
 }
 
 export default function App() {
@@ -84,11 +94,12 @@ export default function App() {
   }, []);
 
   const [title, sub] = TITLES[route.screen] || TITLES.home;
-  // 신뢰 뱃지 — Workbench/홈 = 로컬 전용
-  const trust = {
-    icon: "lock", label: "로컬 전용 — 외부 전송 없음",
-    colors: { color: "#001e40", background: "#d5e3ff" },
-  };
+  // 신뢰 뱃지 — 모듈별 (참조 구현 그대로)
+  const trust = STUDIO_SCREENS.includes(route.screen)
+    ? { icon: "lock", label: "분석·작성은 로컬 — 코퍼스는 공개데이터",
+        colors: { color: "#3a5a2e", background: "#dcead2" } }
+    : { icon: "lock", label: "로컬 전용 — 외부 전송 없음",
+        colors: { color: "#001e40", background: "#d5e3ff" } };
 
   const openSession = (sessionId: string, label?: string, tab?: string) => {
     if (label) setSessionLabel(label);
@@ -144,14 +155,14 @@ export default function App() {
         <div style={{ marginBottom: 14 }}>
           <SectionHead label="XBRL STUDIO" tag="로컬 분석"
             tagFg="#3a5a2e" tagBg="#dcead2" />
-          {[["fact_check", "택사노미 체크"], ["join_inner", "매핑 확정"],
-            ["edit_note", "작성 워크시트"], ["pivot_table_chart", "차원 표 뷰어"],
-            ["account_tree", "트리 뷰"]].map(([ic, lb]) => (
-            <NavItem key={lb} icon={ic} label={lb}
-              chip={<span style={{
-                font: `600 9px ${F_LABEL}`, color: "#737780",
-                background: "#e1e3e4", borderRadius: 4, padding: "2px 6px",
-              }}>UI-3</span>} />
+          {[["fact_check", "택사노미 체크", "taxo"],
+            ["join_inner", "매핑 확정", "mapping"],
+            ["edit_note", "작성 워크시트", "worksheet"],
+            ["pivot_table_chart", "차원 표 뷰어", "dimtable"],
+            ["account_tree", "트리 뷰", "tree"]].map(([ic, lb, key]) => (
+            <NavItem key={key} icon={ic} label={lb}
+              active={route.screen === key}
+              onClick={() => setRoute({ screen: key })} />
           ))}
         </div>
         <div style={{ marginBottom: 14 }}>
@@ -211,9 +222,14 @@ export default function App() {
           {route.screen === "home" && <Home openSession={openSession} />}
           {route.screen === "status" && <StatusPage />}
           {route.screen === "session" && (
-            <Session key={route.sessionId} sessionId={route.sessionId}
+            <Session key={route.sessionId} sessionId={route.sessionId!}
               initialTab={route.tab} />
           )}
+          {route.screen === "taxo" && <TaxoScreen />}
+          {route.screen === "mapping" && <MappingScreen />}
+          {route.screen === "worksheet" && <WorksheetScreen />}
+          {route.screen === "dimtable" && <DimScreen />}
+          {route.screen === "tree" && <TreeScreen />}
         </main>
       </div>
     </div>
