@@ -128,6 +128,20 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
         raise ValueError(f"report_type은 {sorted(PERIOD_LABELS)} 중 하나")
     corpus = MappingCorpus(
         corpus_db, exclude_corps={holdout_corp} if holdout_corp else None)
+    # '편집기 검색어' 소스 단일화 (D-2c) — 금감원 배포 엑셀 리졸버 우선,
+    # 자산 없으면 종전(코퍼스 standard_labels) 폴백
+    try:
+        from .taxonomy_labels import get_resolver
+        _labels = get_resolver()
+    except FileNotFoundError:
+        _labels = None
+
+    def _editor_query(element_id, fallback):
+        if _labels is not None:
+            res = _labels.resolve(element_id)
+            if res["standard"] and res["ko"]:
+                return res["ko"]
+        return fallback
 
     with tempfile.TemporaryDirectory(prefix="xbrl_ws_") as tmp:
         xlsx = os.path.join(tmp, "extract.xlsx")
@@ -238,7 +252,9 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                                 res.get("candidates", [])[:4], 1))
                     ws.append([" " * indent + label.strip(), *row_vals,
                                inh["element_id"].replace("_", ":", 1),
-                               inh.get("label_ko") or label.strip(),
+                               _editor_query(inh["element_id"],
+                                             inh.get("label_ko")
+                                             or label.strip()),
                                conf, alts, "☐"])
                     if tc.get("status") == "노랑":
                         for c in ws[ws.max_row]:
@@ -261,7 +277,8 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                     stats["mapped"] += 1
                     ws.append([" " * indent + label.strip(), *row_vals,
                                top["element_id"].replace("_", ":", 1),
-                               top["std_label"],
+                               _editor_query(top["element_id"],
+                                             top["std_label"]),
                                new_tag + _confidence(top, induty),
                                _alternatives(res["candidates"]), "☐"])
                     sheet_rows.append({"row": r, "label": label.strip(),

@@ -13,6 +13,9 @@ extract 시 이 목록에 없는 editver를 만나면 경고가 출력된다.
 
 ## 수동 메모
 
+- 금감원 택소노미 배포 엑셀(D-2c 레이블 리졸버 자산): assets/taxonomy/1__DART_Taxonomy_20260630_배포용.xlsx — 버전 '26.06.30 (Concepts 9,451 · Label Link ko). 다운로드 코드 없음 — 갱신은 사용자가 파일 교체 (수신 허용·송신 금지). gitignore 대상(대용량 바이너리).
+
+
 - 5.106은 2026-07-15 실물 확보(뷰티스킨 FY2025 별도 DSD)로 G2 검증·등재 완료. 5.107은 아직 픽스처 미확보 — 해당 버전 DSD 확보 시 fixtures/real에 넣고 batch_validate 재실행.
 - docver는 문서 버전(4.1=구형, 3.5=DART 6.0 변환본, 6.0=편집기 5.106 산출본에서 관찰)으로 editver와 별개. 6.0 변환본도 editver는 5.049로 동일(docver만 3.5로 바뀜) — 별도 세대가 아니라 같은 editver의 다른 직렬화.
 

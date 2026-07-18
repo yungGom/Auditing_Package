@@ -35,6 +35,7 @@ _MEMBER_SEPARATE = "ifrs-full_SeparateMember"
 
 _BOLD = Font(bold=True)
 _HDR_FILL = PatternFill("solid", start_color="D9E1F2")
+_EXT_FILL = PatternFill("solid", start_color="FFDAD6")   # 확장요소 표시
 _CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 _NUMFMT = "#,##0;[RED](#,##0)"              # 음수 = 빨간 괄호
 _NUMFMT_DEC = "#,##0.00;[RED](#,##0.00)"
@@ -458,7 +459,7 @@ def _hdr(ws, r, c, value):
     return cell
 
 
-def _render_section_flat(ws, sec: _Section, r):
+def _render_section_flat(ws, sec: _Section, r, track=None):
     """축 0개: 행=element, 열=기간 (실측 일자 기반 라벨)."""
     ref_date = sec.parent.ref_date
     cols = list(dict.fromkeys(
@@ -478,14 +479,22 @@ def _render_section_flat(ws, sec: _Section, r):
     r += 1
     for row, concept in sec.rows:
         ws.cell(row=r, column=1, value="    " * row["depth"] + row["ko"])
+        if track is not None:
+            track["rows"].append((r, concept))
         for j, c in enumerate(cols):
             _write_cell(ws, r, 2 + j, sec.cell(concept, c, {}))
         r += 1
     return r + 1
 
 
-def _render_section_dim(ws, sec: _Section, r):
+def _render_section_dim(ws, sec: _Section, r, track=None):
     """축 1~2개: 기간 블록 × (member 조합 + [합계])."""
+    if track is not None:
+        for ax in sec.axes:                    # 열 축·구성요소 → 소표 대상
+            track["columns"].setdefault(ax["axis"], [])
+            for m in ax["members"]:
+                if m not in track["columns"][ax["axis"]]:
+                    track["columns"][ax["axis"]].append(m)
     for block in sec.blocks:
         ws.cell(row=r, column=1, value=sec.block_label(block)).font = _BOLD
         r += 1
@@ -528,6 +537,8 @@ def _render_section_dim(ws, sec: _Section, r):
         for row, concept in sec.rows:
             ws.cell(row=r, column=1,
                     value="    " * row["depth"] + row["ko"])
+            if track is not None:
+                track["rows"].append((r, concept))
             for j, combo in enumerate(combos):
                 _write_cell(ws, r, 2 + j, sec.cell(concept, block, combo))
             _write_cell(ws, r, 2 + len(combos),
@@ -591,8 +602,81 @@ def _assign_sheet_names(entries):
     return names
 
 
-def render_dimension_tables(folder, out_path=None, role_filter=None):
-    """패키지 폴더 → Role별 차원 표 엑셀. 요약 dict 반환."""
+def _load_labels():
+    """D-2c 레이블 리졸버 (dsd_tool 공용 모듈 — 자산 없으면 None)."""
+    try:
+        from dsd_tool.taxonomy_labels import get_resolver
+        return get_resolver()
+    except (ImportError, FileNotFoundError):
+        return None
+
+
+def _enrich_sheet(ws, track, labels):
+    """시트에 편집기 3열([한글 표준레이블][영문명][ID]) + 충전율 + 열 요소 소표.
+
+    렌더 내부 QName 사용 — 화면 라벨 문자열 역매칭 금지 (D-2c).
+    표준 미수록(회사 확장요소)은 '확장' 표시 — 미매칭≠0, 빈칸 금지.
+    """
+    col0 = ws.max_column + 2
+    for c, h in enumerate(["한글 표준레이블", "영문명", "ID"]):
+        _hdr(ws, 2, col0 + c, h)
+    n_std = n_ext = 0
+
+    def _fill(r, concept):
+        nonlocal n_std, n_ext
+        res = labels.resolve(concept)
+        if res["standard"]:
+            n_std += 1
+            ws.cell(row=r, column=col0, value=res["ko"])
+        else:
+            n_ext += 1
+            cell = ws.cell(row=r, column=col0, value="확장")
+            cell.font = _BOLD
+            cell.fill = _EXT_FILL
+        ws.cell(row=r, column=col0 + 1, value=res["en"])
+        ws.cell(row=r, column=col0 + 2, value=res["qname"])
+
+    for r, concept in track["rows"]:
+        _fill(r, concept)
+
+    # 열 축의 member(축 포함) — 시트 하단 '열 요소' 소표
+    if track["columns"]:
+        r = ws.max_row + 2
+        ws.cell(row=r, column=1, value="[열 요소] 축·구성요소 "
+                "(열 축은 위 표의 열 헤더 — 편집기 입력값은 아래 3열)"
+                ).font = _BOLD
+        r += 1
+        _hdr(ws, r, 1, "열 요소 (렌더 라벨)")
+        for c, h in enumerate(["한글 표준레이블", "영문명", "ID"]):
+            _hdr(ws, r, col0 + c, h)
+        r += 1
+        for axis, members in track["columns"].items():
+            for concept in [axis] + members:
+                res = labels.resolve(concept)
+                ws.cell(row=r, column=1,
+                        value=("  " if concept != axis else "") +
+                        (res["ko"] or res["en"]))
+                _fill(r, concept)
+                r += 1
+
+    ws.cell(row=2, column=1,
+            value=f"편집기 열 충전율: 표준 {n_std} / 확장 {n_ext} / "
+                  f"전체 {n_std + n_ext}").font = _BOLD
+    for c in range(3):
+        ws.column_dimensions[get_column_letter(col0 + c)].width = \
+            (34, 40, 44)[c]
+    return {"std": n_std, "ext": n_ext}
+
+
+def render_dimension_tables(folder, out_path=None, role_filter=None,
+                            labels="auto"):
+    """패키지 폴더 → Role별 차원 표 엑셀. 요약 dict 반환.
+
+    labels: D-2c 편집기 3열 충전 — "auto"(자산 있으면 충전) | None(끔)
+    | LabelResolver 인스턴스.
+    """
+    if labels == "auto":
+        labels = _load_labels()
     pkg = TaxonomyPackage(folder)
     inst = XbrlInstance(folder)
     cube = HypercubeDef(folder)
@@ -618,22 +702,25 @@ def render_dimension_tables(folder, out_path=None, role_filter=None):
         # 추적성 보존: role 코드 + 정의 전문 (definition에 "[Dxxxxxx] ..." 포함)
         ws.append([definition])
         ws.cell(row=1, column=1).font = _BOLD
+        track = {"rows": [], "columns": {}} if labels else None
         r = 3
         for sec in table.sections:
             if sec.axes:
-                r = _render_section_dim(ws, sec, r)
+                r = _render_section_dim(ws, sec, r, track)
             else:
-                r = _render_section_flat(ws, sec, r)
+                r = _render_section_flat(ws, sec, r, track)
+        fill = _enrich_sheet(ws, track, labels) if labels else None
         ws.column_dimensions["A"].width = 52
         for ci in range(2, 14):
             ws.column_dimensions[get_column_letter(ci)].width = 17
-        ws.freeze_panes = "B2"
+        ws.freeze_panes = "B3"
         rendered.append({
             "definition": definition,
             "sheet": sheet_name,
             "sections": len(table.sections),
             "axes": max((len(s.axes) for s in table.sections), default=0),
             "rows": sum(len(s.rows) for s in table.sections),
+            **({"label_fill": fill} if fill else {}),
         })
     if out_path is None:
         out_path = os.path.join(folder, "차원표.xlsx")

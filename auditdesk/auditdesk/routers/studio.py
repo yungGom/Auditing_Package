@@ -35,7 +35,7 @@ def _con():
     return con
 
 
-def _grid_from_xlsx(path, max_rows=400, max_cols=14):
+def _grid_from_xlsx(path, max_rows=400, max_cols=20):
     """산출 xlsx → 시트별 셀 그리드 (화면 = 파일 보장용 재독)."""
     from openpyxl import load_workbook
     wb = load_workbook(path, read_only=True)
@@ -337,6 +337,95 @@ def worksheet(body: dict):
         }
 
     return {"job_id": jobs.submit("worksheet", _run)}
+
+
+# --------------------------------------------------------------------------
+# V-1: DSD ↔ XBRL 인스턴스 대사 — 조립층
+# (인스턴스 파싱·승계 자산 준비 = dart_explorer, 대사 = dsd_tool.xbrl_recon)
+# --------------------------------------------------------------------------
+
+def _decided_map():
+    """F-1 확정 기록 → {정규화 계정명: element_id} (최신 확정 우선)."""
+    from dsd_tool.mapping import normalize
+    out = {}
+    with _con() as con:
+        for payload, idx, decided in con.execute(
+                "SELECT m.payload, d.account_idx, d.decided "
+                "FROM mapping_decisions d JOIN mappings m "
+                "ON m.id = d.mapping_id ORDER BY d.decided_at"):
+            items = json.loads(payload).get("items", [])
+            dec = json.loads(decided)
+            if 0 <= idx < len(items) and dec.get("element"):
+                out[normalize(items[idx]["account"])] = dec["element"]
+    return out
+
+
+@router.post("/xbrl-recon", status_code=202)
+def xbrl_recon_route(body: dict):
+    session_id = body.get("session_id") or ""
+    package = body.get("package_dir") or ""
+    tolerance = body.get("tolerance")
+    if not os.path.isdir(package):
+        raise HTTPException(400, f"XBRL 패키지 폴더 없음: {package}")
+    with jobs.connect() as con:
+        row = con.execute(
+            "SELECT dsd_path, xlsx_path, meta FROM sessions WHERE id=?",
+            (session_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "세션 없음")
+    dsd_path, xlsx_path, meta = row[0], row[1], json.loads(row[2] or "{}")
+    if not xlsx_path or not os.path.exists(xlsx_path):
+        raise HTTPException(409, "extract 미실행 — 먼저 추출하세요")
+    # OpenDART 래핑 수신물 경고 (meta.xml 없음 → editver 미검출)
+    warning = None
+    if not meta.get("editver"):
+        warning = ("⚠ OpenDART 래핑 수신물 — 주석 분할 부정확, 참고용 "
+                   "(B-2 구조대조 §2 · UI-5 주의사항 준용)")
+
+    def _run(progress):
+        progress("인스턴스 파싱 중… (XbrlInstance)")
+        from dart_explorer.xbrl.corpus import _element_roles
+        from dart_explorer.xbrl.dimension_table import XbrlInstance
+        inst = XbrlInstance(package)
+        facts = {}
+        for eid, fl in inst.facts.items():
+            facts[eid] = [{
+                "value": f["value"], "decimals": f.get("decimals"),
+                "type": f["ctx"]["type"], "start": f["ctx"].get("start"),
+                "end": f["ctx"].get("end"),
+                "dims": dict(f["ctx"].get("dims") or {}),
+            } for f in fl]
+        roles = _element_roles(package)
+        body_elements = {e for e, rs in roles.items()
+                        if any(r[:2] in ("D2", "D3", "D4", "D5", "D6")
+                               for r in rs)}
+        # F-3 승계 자산 (없으면 내보내기)
+        sj = os.path.join(package, "succession_assets.json")
+        if not os.path.exists(sj):
+            progress("승계 자산 내보내기…")
+            from dart_explorer.xbrl.corpus import export_succession_assets
+            export_succession_assets(package)
+        from dsd_tool.succession import load_assets
+        succession = load_assets(sj)
+        progress("DSD ↔ 인스턴스 대사 중…")
+        from dsd_tool.xbrl_recon import xbrl_recon
+        os.makedirs(_WORKDIR, exist_ok=True)
+        out = os.path.join(_WORKDIR,
+                           f"XBRL대사_{session_id}_{uuid.uuid4().hex[:6]}"
+                           ".xlsx")
+        res = xbrl_recon(
+            xlsx_path, facts, inst.doc_period_end,
+            decided=_decided_map(), succession=succession,
+            body_elements=body_elements, tolerance=tolerance,
+            out_path=out, source_warning=warning,
+            progress=lambda m: progress(m))
+        res["package"] = package
+        with jobs.connect() as con:
+            con.execute("UPDATE sessions SET recon=recon WHERE id=?",
+                        (session_id,))
+        return res
+
+    return {"job_id": jobs.submit("xbrl-recon", _run)}
 
 
 # --------------------------------------------------------------------------
