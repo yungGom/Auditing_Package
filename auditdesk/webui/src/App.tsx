@@ -94,6 +94,7 @@ export default function App() {
   const [sessionLabel, setSessionLabel] = useState<string | null>(null);
   const [xbrlPreset, setXbrlPreset] = useState<
     { corp: string; year: number; report: string } | null>(null);
+  const [worksheetDsd, setWorksheetDsd] = useState<string | null>(null);
   const setRoute = (r: Route) => { writeHash(r); setRouteRaw(r); };
   React.useEffect(() => {
     const onHash = () => setRouteRaw(parseHash());
@@ -237,13 +238,19 @@ export default function App() {
           )}
           {route.screen === "taxo" && <TaxoScreen />}
           {route.screen === "mapping" && <MappingScreen />}
-          {route.screen === "worksheet" && <WorksheetScreen />}
+          {route.screen === "worksheet" && (
+            <WorksheetScreen key={worksheetDsd || "ws"}
+              presetDsd={worksheetDsd} />
+          )}
           {route.screen === "dimtable" && <DimScreen />}
           {route.screen === "tree" && <TreeScreen />}
           {route.screen === "search" && (
             <SearchScreen goXbrl={(corp, year, report) => {
               setXbrlPreset({ corp, year, report });
               setRoute({ screen: "xbrl" });
+            }} goWorksheet={(dsdPath) => {
+              setWorksheetDsd(dsdPath);
+              setRoute({ screen: "worksheet" });
             }} />
           )}
           {route.screen === "xbrl" && (

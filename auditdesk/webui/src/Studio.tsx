@@ -73,6 +73,30 @@ function PathInput({ value, onChange, placeholder, width }: {
   );
 }
 
+// 최근 수신 패키지 드롭다운 (explorer 캐시 목록 — 경로 복사 제거)
+function PackagePicker({ onPick }: { onPick: (path: string) => void }) {
+  const [pkgs, setPkgs] = useState<any[]>([]);
+  useEffect(() => {
+    api("/api/explorer/packages").then((r) =>
+      setPkgs(r.packages)).catch(() => {});
+  }, []);
+  if (!pkgs.length) return null;
+  return (
+    <select defaultValue="" data-testid="pkg-picker"
+      onChange={(e) => { if (e.target.value) onPick(e.target.value); }}
+      style={{
+        font: `500 12px ${F_LABEL}`, border: "1px solid #c3c6d1",
+        borderRadius: 8, padding: "8px 10px", background: "#fff",
+        maxWidth: 260,
+      }}>
+      <option value="">최근 수신 패키지…</option>
+      {pkgs.map((p) => (
+        <option key={p.path} value={p.path}>{p.name}</option>
+      ))}
+    </select>
+  );
+}
+
 function fmtCell(v: any) {
   if (typeof v === "number") {
     const s = Math.abs(v).toLocaleString();
@@ -513,10 +537,12 @@ export function TaxoScreen() {
 // ==========================================================================
 // 작성 워크시트 (F-1/F-2/F-3 전 모드)
 // ==========================================================================
-export function WorksheetScreen() {
+export function WorksheetScreen({ presetDsd }: {
+  presetDsd?: string | null;
+}) {
   const { result, job, err, setErr, run } =
     useStudioJob("worksheet");
-  const [dsd, setDsd] = useState("");
+  const [dsd, setDsd] = useState(presetDsd || "");
   const [report, setReport] = useState("annual");
   const [mode, setMode] = useState<"new" | "inherit">("new");
   const [inheritPkg, setInheritPkg] = useState("");
@@ -660,6 +686,7 @@ export function DimScreen() {
         padding: "12px 24px", background: "#fff",
         borderBottom: "1px solid #c3c6d1",
       }}>
+        <PackagePicker onPick={setPkg} />
         <PathInput value={pkg} onChange={setPkg}
           placeholder="XBRL 패키지 폴더 (dart_explorer 캐시)" />
         <PathInput value={role} onChange={setRole} width={160}
@@ -730,6 +757,7 @@ export function TreeScreen() {
         padding: "12px 24px", background: "#fff",
         borderBottom: "1px solid #c3c6d1",
       }}>
+        <PackagePicker onPick={setPkg} />
         <PathInput value={pkg} onChange={setPkg}
           placeholder="XBRL 패키지 폴더 또는 taxonomies 버전 폴더" />
         <PathInput value={role} onChange={setRole} width={160}

@@ -229,6 +229,31 @@ def extract(dsd_path: str, out_path: str = None,
         for ci in range(2, 10):
             sw.ws.column_dimensions[get_column_letter(ci)].width = 14
 
+    # --- 원문 통합 시트 (스펙 7.5 P3 — ACCIO 장점 흡수) ------------------------
+    # 전체 내용을 세로로 이어붙인 참조 전용 뷰. _MAP에는 포함하지 않는다 —
+    # 편집·역변환 대상이 아니므로 여기서 값을 고쳐도 repack에 반영되지
+    # 않는다(diff는 _MAP 항목만 순회). "사용안내" 다음(index 1)에 배치.
+    data_sheet_names = [n for n in wb.sheetnames if n != "사용안내"]
+    verbatim = wb.create_sheet("원문", 1)
+    out_row = 1
+    for name in data_sheet_names:
+        src = wb[name]
+        verbatim.cell(row=out_row, column=1,
+                      value=f"[[ {name} ]]").font = _BOLD
+        out_row += 1
+        for row in src.iter_rows():
+            for cell in row:
+                if cell.value is None or cell.column > 12:
+                    continue
+                tgt = verbatim.cell(row=out_row + cell.row - 1,
+                                    column=cell.column)
+                tgt.value = cell.value
+                tgt.number_format = cell.number_format
+        out_row += src.max_row + 2
+    verbatim.column_dimensions["A"].width = 45
+    for ci in range(2, 10):
+        verbatim.column_dimensions[get_column_letter(ci)].width = 16
+
     # --- _MAP / _META -----------------------------------------------------------
     ms = wb.create_sheet(MAP_SHEET)
     ms.append(MAP_HEADER)

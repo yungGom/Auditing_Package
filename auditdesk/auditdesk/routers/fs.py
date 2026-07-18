@@ -39,3 +39,28 @@ def pick():
         return json.loads(out.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
         return {"path": None, "error": out.stderr[-300:]}
+
+
+_SAVE_SCRIPT = r"""
+import json, sys
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
+path = filedialog.asksaveasfilename(
+    title="저장 위치 선택", initialfile=sys.argv[1] if len(sys.argv) > 1 else "",
+    defaultextension=".dsd",
+    filetypes=[("DSD", "*.dsd"), ("모든 파일", "*.*")])
+print(json.dumps({"path": path or None}))
+"""
+
+
+@router.post("/save-pick")
+def save_pick(body: dict = None):
+    """OS 저장 위치 대화상자 — 제안 파일명 지정 가능."""
+    suggest = (body or {}).get("suggest") or ""
+    out = subprocess.run([sys.executable, "-c", _SAVE_SCRIPT, suggest],
+                         capture_output=True, text=True, timeout=300)
+    try:
+        return json.loads(out.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"path": None, "error": out.stderr[-300:]}

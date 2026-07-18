@@ -53,3 +53,21 @@ def extract_to_excel(document_zip_path: str, xlsx_path: str,
                            "_wrapped_contents.zip")
     wrap_as_contents(inner, wrapped)
     return extract(wrapped, xlsx_path)
+
+
+def fetch_and_wrap(cli, corp_code: str, rcept_no: str) -> str:
+    """document.xml 수신(영구 캐시 경유) + DSD 형식 래핑. wrapped 경로 반환.
+
+    UI-5 동선 통합용 — [DSD 저장]·[엑셀로 변환] 공용 (원본이 곧 DSD:
+    래핑 결과는 contents.xml 단일 ZIP이라 dsd_tool extract가 그대로
+    읽는다. 단, meta.xml이 없어 편집기 왕복 대상은 아니다 — 클래스
+    docstring의 '읽기 전용 수신물' 원칙 그대로).
+    """
+    data, _zpath = cli.fetch_binary(
+        "document.xml", {"rcept_no": rcept_no},
+        f"document/{corp_code}/{rcept_no}.zip")
+    out_dir = os.path.join(cli.cache.root, "document", corp_code)
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{rcept_no}.dsd")
+    wrap_as_contents(unwrap_document(data), out_path)
+    return out_path

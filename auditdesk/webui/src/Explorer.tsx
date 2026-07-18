@@ -11,20 +11,136 @@ const REPORT_CHIPS: [string, string][] = [
   ["q3", "분기(3Q)"],
 ];
 
+function ActBtn({ label, icon, onClick, ghost, testid }: {
+  label: string; icon: string; onClick: () => void; ghost?: boolean;
+  testid?: string;
+}) {
+  return (
+    <button className="hoverable" onClick={onClick} data-testid={testid}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        font: `600 11px ${F_LABEL}`,
+        color: ghost ? "#43474f" : "#001e40",
+        background: ghost ? "#fff" : "#d5e3ff",
+        border: ghost ? "1px solid #c3c6d1" : "none",
+        borderRadius: 8, padding: "5px 9px", cursor: "pointer",
+      }}>
+      <Icon name={icon} size={13} />{label}</button>
+  );
+}
+
 // ==========================================================================
 // 공시 검색
 // ==========================================================================
-export function SearchScreen({ goXbrl }: {
+export function SearchScreen({ goXbrl, goWorksheet }: {
   goXbrl: (corp: string, year: number, report: string) => void;
+  goWorksheet: (dsdPath: string) => void;
 }) {
   const [q, setQ] = useState("");
   const [sug, setSug] = useState<any[]>([]);
   const [picked, setPicked] = useState<any>(null);
   const [type, setType] = useState<string | null>("annual");
+  const [induty, setInduty] = useState("");
+  const [peer, setPeer] = useState(false);
+  const [peerInfo, setPeerInfo] = useState<any>(null);
   const [res, setRes] = useState<any>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [job, setJob] = useState<Job | null>(null);
+  const [notice, setNotice] = useState("");
   const debounce = useRef<any>(null);
+
+  // 액션 공통: job 실행 → 결과 반환 (진행은 상단 배너)
+  const runAction = async (path: string, body: any) => {
+    setErr("");
+    setNotice("");
+    try {
+      const r = await api(path, {
+        method: "POST", body: JSON.stringify(body),
+      });
+      const done = await pollJob(r.job_id, setJob);
+      setJob(null);
+      if (done.state === "error") {
+        setErr(done.error_detail?.detail || "실패");
+        return null;
+      }
+      return done.result;
+    } catch (e: any) {
+      setJob(null);
+      setErr(e.message);
+      return null;
+    }
+  };
+
+  const openFile = (p: string) => api("/api/fs/open", {
+    method: "POST", body: JSON.stringify({ path: p }),
+  });
+
+  // [DSD 저장] — 저장 위치 사용자 선택 (원본이 곧 DSD)
+  const actSaveDsd = async (d: any) => {
+    const pick = await api("/api/fs/save-pick", {
+      method: "POST",
+      body: JSON.stringify({
+        suggest: `${d.corp_name}_${d.rcept_no}.dsd` }),
+    });
+    if (!pick.path) return;
+    const r = await runAction("/api/explorer/dsd", {
+      corp_code: d.corp_code || res.corp_code, rcept_no: d.rcept_no,
+      save_to: pick.path,
+    });
+    if (r) setNotice(`DSD 저장됨: ${r.dsd_path}`);
+  };
+
+  // [엑셀로 변환] — 검색에서 클릭 2번 안에 편집용 엑셀 (ACCIO 대응)
+  const actToExcel = async (d: any) => {
+    const r = await runAction("/api/explorer/to-excel", {
+      corp_code: d.corp_code || res.corp_code, rcept_no: d.rcept_no,
+    });
+    if (r) {
+      setNotice(`편집용 엑셀 생성 — 셀 ${r.cells?.toLocaleString()} · ` +
+        `주석 ${r.notes} (파일을 열었습니다)`);
+      openFile(r.xlsx_path);
+    }
+  };
+
+  // [차원표 엑셀] — 주석 번호별 택사노미+숫자 산출물 직행
+  const actDimtable = async (d: any) => {
+    const rep = d.report_nm?.includes("반기") ? "half"
+      : d.report_nm?.includes("분기") ? "q1" : "annual";
+    const r = await runAction("/api/explorer/dimtable-from-search", {
+      corp_code: d.corp_code || res.corp_code, rcept_no: d.rcept_no,
+      report: rep,
+    });
+    if (r) {
+      setNotice(`차원표 생성 — 시트: ${(r.sheets || []).slice(0, 8)
+        .join(", ")}${(r.sheets || []).length > 8 ? " …" : ""} ` +
+        `(파일을 열었습니다)`);
+      openFile(r.xlsx_path);
+    }
+  };
+
+  // [워크시트] — DSD 수신(캐시) 후 Studio 작성 워크시트로 경로 프리셋 이동
+  const actWorksheet = async (d: any) => {
+    const r = await runAction("/api/explorer/dsd", {
+      corp_code: d.corp_code || res.corp_code, rcept_no: d.rcept_no,
+    });
+    if (r) goWorksheet(r.dsd_path);
+  };
+
+  // 동종업계 토글 — 최근 세션 회사의 업종 프리셋
+  const togglePeer = async () => {
+    if (!peer) {
+      const p = await api("/api/explorer/peer-induty").catch(() => null);
+      if (p?.induty) {
+        setInduty(p.induty);
+        setPeerInfo(p);
+      }
+      setPeer(true);
+    } else {
+      setPeer(false);
+      setPeerInfo(null);
+    }
+  };
 
   // 딥링크: #/search/<회사명> — 진입 시 자동 검색 (헤드리스 증빙 겸용)
   useEffect(() => {
@@ -37,6 +153,9 @@ export function SearchScreen({ goXbrl }: {
           const r = await api(`/api/explorer/search?corp=${
             encodeURIComponent(name)}&type=annual`);
           setRes(r);
+          // 자동완성 억제 (딥링크는 이미 확정된 회사)
+          setPicked({ corp_code: r.corp_code, corp_name: name });
+          setSug([]);
         } catch { /* 자동 검색 실패는 무시 */ }
       })();
     }
@@ -56,9 +175,12 @@ export function SearchScreen({ goXbrl }: {
     setErr("");
     setBusy(true);
     try {
-      const corp = picked?.corp_code || q;
-      const r = await api(`/api/explorer/search?corp=${
-        encodeURIComponent(corp)}${type ? `&type=${type}` : ""}`);
+      const corp = peer ? "" : (picked?.corp_code || q);
+      const params = new URLSearchParams();
+      if (corp) params.set("corp", corp);
+      if (type) params.set("type", type);
+      if (induty && (peer || corp)) params.set("induty", induty);
+      const r = await api(`/api/explorer/search?${params.toString()}`);
       setRes(r);
     } catch (e: any) {
       setErr(e.message);
@@ -137,6 +259,26 @@ export function SearchScreen({ goXbrl }: {
                 background: type === k ? "#d5e3ff" : "#edeeef",
               }}>{lb}</span>
           ))}
+          <div style={{ width: 1, height: 18, background: "#c3c6d1" }} />
+          <span style={{ font: `600 11px ${F_LABEL}`, color: "#737780" }}>
+            업종코드</span>
+          <input value={induty} onChange={(e) => setInduty(e.target.value)}
+            placeholder="예: 264" style={{
+              width: 70, font: `500 12px ${F_LABEL}`, padding: "4px 8px",
+              border: "1px solid #c3c6d1", borderRadius: 8,
+              fontVariantNumeric: "tabular-nums",
+            }} />
+          <span data-testid="peer-toggle" onClick={togglePeer} style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            font: `600 11px ${F_LABEL}`, padding: "4px 10px",
+            borderRadius: 8, cursor: "pointer",
+            color: peer ? "#4e6874" : "#737780",
+            background: peer ? "#cbe7f5" : "#edeeef",
+          }}>
+            <Icon name="group" size={13} />동종업계 보기
+            {peer && peerInfo?.company &&
+              ` (${peerInfo.company} 업종 ${induty})`}
+          </span>
           <div style={{ flex: 1 }} />
           {res?.induty && (
             <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
@@ -144,6 +286,24 @@ export function SearchScreen({ goXbrl }: {
           )}
         </div>
       </Card>
+
+      {job && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10, marginTop: 12,
+          padding: "10px 14px", background: "#d5e3ff", borderRadius: 8,
+          font: `600 12px ${F_LABEL}`, color: "#001e40",
+        }}>
+          <Icon name="progress_activity" size={16} />
+          {job.kind} — {job.progress?.message || job.state}
+        </div>
+      )}
+      {notice && (
+        <div style={{
+          font: `500 12px ${F_LABEL}`, color: "#3a5a2e",
+          background: "#dcead2", borderRadius: 8, padding: "10px 12px",
+          marginTop: 12, wordBreak: "break-all",
+        }}>{notice}</div>
+      )}
 
       <ErrorBanner msg={err} />
 
@@ -199,17 +359,20 @@ export function SearchScreen({ goXbrl }: {
                   textAlign: "right", padding: "9px 14px",
                   borderBottom: "1px solid rgba(195,198,209,0.4)",
                 }}>
-                  <button className="hoverable" onClick={() => {
-                    const m = (d.report_nm || "").match(/\((\d{4})\./);
-                    const y = m ? Number(m[1]) : new Date().getFullYear();
-                    const rep = d.report_nm?.includes("반기") ? "half"
-                      : d.report_nm?.includes("분기") ? "q1" : "annual";
-                    goXbrl(res.corp_code, y, rep);
-                  }} style={{
-                    font: `600 11px ${F_LABEL}`, color: "#001e40",
-                    background: "#d5e3ff", border: "none", borderRadius: 8,
-                    padding: "5px 10px", cursor: "pointer",
-                  }}>XBRL 파이프라인</button>
+                  <span style={{
+                    display: "inline-flex", gap: 5, whiteSpace: "nowrap",
+                  }}>
+                    <ActBtn label="DSD 저장" icon="download"
+                      onClick={() => actSaveDsd(d)} ghost />
+                    <ActBtn label="엑셀로 변환" icon="table_view"
+                      testid="act-excel"
+                      onClick={() => actToExcel(d)} />
+                    <ActBtn label="차원표 엑셀" icon="pivot_table_chart"
+                      testid="act-dim"
+                      onClick={() => actDimtable(d)} />
+                    <ActBtn label="워크시트" icon="edit_note"
+                      onClick={() => actWorksheet(d)} ghost />
+                  </span>
                 </td>
               </tr>
             ))}

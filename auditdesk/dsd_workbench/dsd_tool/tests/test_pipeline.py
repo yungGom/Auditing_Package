@@ -132,8 +132,15 @@ def _make(tmp_path):
 def test_g1_extract(tmp_path):
     dsd, info = _make(tmp_path)
     wb = load_workbook(info["out_path"])
-    assert wb.sheetnames == ["사용안내", "표지", "BS", "PL", "CE", "CF",
-                             "1", "2", "3", "외부감사", "_MAP", "_META"]
+    assert wb.sheetnames == ["사용안내", "원문", "표지", "BS", "PL", "CE",
+                             "CF", "1", "2", "3", "외부감사", "_MAP",
+                             "_META"]
+    # 원문 통합 시트 (스펙 7.5 P3) — 참조용, _MAP 미포함이라 편집 불가
+    verbatim = wb["원문"]
+    vtext = "\n".join(str(c.value) for row in verbatim.iter_rows()
+                      for c in row if c.value)
+    assert "[[ BS ]]" in vtext and "[[ 3 ]]" in vtext
+    assert 1234567 in [c.value for row in verbatim.iter_rows() for c in row]
     assert wb[MAP_SHEET].sheet_state == "hidden"
     assert info["mapped_cells"] > 30
     # 숫자 셀은 진짜 숫자로 저장 (ACCIO 한계 극복)

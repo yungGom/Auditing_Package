@@ -46,8 +46,11 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
                      company_name=None):
     """foot() 결과 → AI_Footing_{회사명}.xlsx 독립 파일. 요약 dict 반환."""
     wb = load_workbook(xlsx_path)
+    # extract()가 이미 참조용 "원문" 시트를 만들어 두지만(스펙 7.5 P3),
+    # 여기서 만드는 원문은 오류 하이라이트까지 포함한 상위 호환판이라
+    # 소스 목록에서 제외하고 아래에서 새로 만들어 교체한다.
     data_sheets = [s for s in wb.sheetnames
-                   if s not in (MAP_SHEET, META_SHEET, FOOT_SHEET)]
+                   if s not in (MAP_SHEET, META_SHEET, FOOT_SHEET, "원문")]
 
     # --- 오류 집계 (시트별) -------------------------------------------------
     foot_err = {}
@@ -95,6 +98,8 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
 
     # --- 원문 시트 (전체 통합 뷰 — 시트 내용 세로 연결) ----------------------
     src_order = list(data_sheets)
+    if "원문" in wb.sheetnames:                     # extract판 → 교체
+        wb.remove(wb["원문"])
     ws_all = wb.create_sheet("원문", 0)
     out_row = 1
     for sheet in src_order:
