@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/home.tsx","./src/session.tsx","./src/statuspage.tsx","./src/api.ts","./src/main.tsx","./src/ui.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/explorer.tsx","./src/home.tsx","./src/reccard.tsx","./src/session.tsx","./src/statuspage.tsx","./src/studio.tsx","./src/api.ts","./src/main.tsx","./src/ui.tsx"],"version":"5.9.3"}

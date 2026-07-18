@@ -106,7 +106,8 @@ export default function Session({ sessionId, initialTab }: {
         <div style={{ display: "flex", gap: 2 }}>
           {tabs.map((t) => {
             const active = tab === t.key ||
-              (t.key === "footing" && tab === "prior");
+              (t.key === "footing" &&
+               (tab === "prior" || tab === "xrecon"));
             return (
             <div key={t.key} data-testid={`tab-${t.key}`}
               onClick={() => setTab(t.key)} style={{
@@ -151,9 +152,11 @@ export default function Session({ sessionId, initialTab }: {
           goChange={() => setTab("change")} />
       )}
       {tab === "sheets" && <Sheets sessionId={sessionId} s={s} />}
-      {(tab === "footing" || tab === "prior") && (
+      {(tab === "footing" || tab === "prior" || tab === "xrecon") && (
         <FootingTab sessionId={sessionId} s={s} runJob={runJob}
-          setErr={setErr} initialSub={tab === "prior" ? "prior" : "foot"} />
+          setErr={setErr}
+          initialSub={tab === "prior" ? "prior"
+            : tab === "xrecon" ? "xrecon" : "foot"} />
       )}
       {tab === "change" && (
         <ChangeReview sessionId={sessionId} s={s} setErr={setErr}
@@ -480,9 +483,10 @@ function fmtNum(v: any) {
 function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
   sessionId: string; s: any; setErr: (m: string) => void;
   runJob: (path: string, body?: any, method?: string) => Promise<any>;
-  initialSub?: "foot" | "prior";
+  initialSub?: "foot" | "prior" | "xrecon";
 }) {
-  const [sub, setSub] = useState<"foot" | "prior">(initialSub || "foot");
+  const [sub, setSub] = useState<"foot" | "prior" | "xrecon">(
+    initialSub || "foot");
   const [filter, setFilter] = useState("문제만");
   const [sel, setSel] = useState<number | null>(null);
   const [levelEdits, setLevelEdits] = useState<Record<string, number>>({});
@@ -490,7 +494,7 @@ function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
   const foot = s.foot;
   const recon = s.recon;
 
-  const subTab = (key: "foot" | "prior", label: string) => (
+  const subTab = (key: "foot" | "prior" | "xrecon", label: string) => (
     <span key={key} onClick={() => setSub(key)} style={{
       font: `600 12px ${F_LABEL}`, padding: "6px 12px", borderRadius: 8,
       cursor: "pointer",
@@ -521,6 +525,7 @@ function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
       }}>
         {subTab("foot", "합계검증·주석대사")}
         {subTab("prior", "전기대사 (A-5)")}
+        {subTab("xrecon", "XBRL 대사 (V-1)")}
         <div style={{ width: 1, height: 22, background: "#c3c6d1",
           margin: "0 4px" }} />
         {sub === "foot" && badges.map(([lb, n, fg, bg]) => (
@@ -731,6 +736,220 @@ function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
       {sub === "prior" && (
         <PriorSub sessionId={sessionId} recon={recon} runJob={runJob}
           priorPath={priorPath} setPriorPath={setPriorPath} />
+      )}
+      {sub === "xrecon" && (
+        <XbrlReconSub sessionId={sessionId} runJob={runJob} />
+      )}
+    </div>
+  );
+}
+
+// ---- XBRL 대사 서브탭 (V-1) — DSD ↔ 인스턴스 태깅 검증 ----
+function XbrlReconSub({ sessionId, runJob }: {
+  sessionId: string;
+  runJob: (path: string, body?: any) => Promise<any>;
+}) {
+  const [pkg, setPkg] = useState("");
+  const [tol, setTol] = useState("");
+  const [result, setResult] = useState<any>(null);
+  const [falseOnly, setFalseOnly] = useState(true);
+  const [pkgs, setPkgs] = useState<any[]>([]);
+
+  useEffect(() => {
+    api("/api/explorer/packages").then((r) =>
+      setPkgs(r.packages)).catch(() => {});
+    api("/api/jobs?kind=xbrl-recon").then((r) => {
+      const last = (r.jobs || []).find((j: any) =>
+        j.state === "done" && j.result);
+      if (last) setResult((c: any) => c ?? last.result);
+    }).catch(() => {});
+  }, []);
+
+  const run = async () => {
+    const done = await runJob("/api/studio/xbrl-recon", {
+      session_id: sessionId, package_dir: pkg,
+      tolerance: tol ? Number(tol) : undefined,
+    });
+    if (done?.state === "done") setResult(done.result);
+  };
+
+  const c = result?.counts || {};
+  const allRows: any[] = result
+    ? Object.entries(result.rows || {}).flatMap(([sheet, rows]: any) =>
+        rows.map((r: any) => ({ ...r, sheet })))
+    : [];
+  const shown = allRows.filter((r) => !falseOnly || r.true === false);
+
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
+      <div style={{
+        display: "flex", gap: 8, alignItems: "center", marginBottom: 14,
+        maxWidth: 1100, flexWrap: "wrap",
+      }}>
+        {pkgs.length > 0 && (
+          <select defaultValue="" onChange={(e) => {
+            if (e.target.value) setPkg(e.target.value);
+          }} style={{
+            font: `500 12px ${F_LABEL}`, border: "1px solid #c3c6d1",
+            borderRadius: 8, padding: "8px 10px", background: "#fff",
+            maxWidth: 240,
+          }}>
+            <option value="">최근 수신 패키지…</option>
+            {pkgs.map((p) => (
+              <option key={p.path} value={p.path}>{p.name}</option>
+            ))}
+          </select>
+        )}
+        <input value={pkg} onChange={(e) => setPkg(e.target.value)}
+          placeholder="XBRL 패키지 폴더 (같은 회사 인스턴스)"
+          style={{
+            flex: 1, minWidth: 280, font: `500 12px ${F_LABEL}`,
+            padding: "8px 10px", border: "1px solid #c3c6d1",
+            borderRadius: 8,
+          }} />
+        <input value={tol} onChange={(e) => setTol(e.target.value)}
+          placeholder="오차(원, 비우면 자동)" style={{
+            width: 150, font: `500 12px ${F_LABEL}`, padding: "8px 10px",
+            border: "1px solid #c3c6d1", borderRadius: 8,
+            fontVariantNumeric: "tabular-nums",
+          }} />
+        <PrimaryBtn onClick={run}>
+          <Icon name="rule" size={15} />
+          {result ? "재실행" : "XBRL 대사 실행"}</PrimaryBtn>
+      </div>
+
+      {!result && (
+        <div style={{ font: `500 13px ${F_LABEL}`, color: "#737780" }}>
+          같은 회사의 XBRL 인스턴스와 DSD 본문 값을 대조합니다 —
+          태깅이 공시 본문과 일치하는지 제출 직전 최종 검증 (매핑은
+          F-1 확정 → F-3 승계 재사용, 신규 추론 없음).</div>
+      )}
+
+      {result && (
+        <>
+          {result.source_warning && (
+            <div style={{
+              font: `500 12px ${F_LABEL}`, color: "#7a4f00",
+              background: "#ffecc7", borderRadius: 8, padding: "9px 12px",
+              marginBottom: 10, maxWidth: 1100,
+            }}>{result.source_warning}</div>
+          )}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            flexWrap: "wrap",
+            background: result.false === 0 ? "#dcead2" : "#ffdad6",
+            color: result.false === 0 ? "#3a5a2e" : "#930010",
+            borderRadius: 8, padding: "12px 16px", maxWidth: 1100,
+          }}>
+            <Icon name={result.false === 0 ? "check_circle" : "error"}
+              size={20} />
+            <span style={{ font: `700 14px ${F_HEAD}` }}>
+              대조율 {result.matched}/{result.total} (
+              {((result.match_rate || 0) * 100).toFixed(1)}%)</span>
+            <span style={chip("#3a5a2e", "#dcead2")}>
+              일치 {c["일치"]}</span>
+            <span style={chip("#930010", "#ffdad6")}>
+              값 상이 {c["값 상이"]}</span>
+            <span style={chip("#930010", "#ffdad6")}>
+              태깅 누락 {c["태깅 누락"]}</span>
+            <span style={chip("#4e6874", "#cbe7f5")}>
+              인스턴스에만 {result.only_instance}</span>
+            <span style={chip("#43474f", "#edeeef")}>
+              매핑 없음 {c["매핑 없음"]}</span>
+            <div style={{ flex: 1 }} />
+            <span style={{ font: `500 11px ${F_LABEL}`, opacity: 0.85 }}>
+              허용오차 {result.tolerance}</span>
+            {result.out_path && (
+              <GhostBtn onClick={() => api("/api/fs/open", {
+                method: "POST",
+                body: JSON.stringify({ path: result.out_path }),
+              })}>
+                <Icon name="download" size={15} />엑셀 다운로드</GhostBtn>
+            )}
+          </div>
+
+          <div style={{
+            display: "flex", gap: 6, margin: "12px 0 8px",
+            alignItems: "center",
+          }}>
+            <span onClick={() => setFalseOnly(!falseOnly)} style={{
+              font: `600 11px ${F_LABEL}`, padding: "4px 10px",
+              borderRadius: 8, cursor: "pointer",
+              color: falseOnly ? "#930010" : "#737780",
+              background: falseOnly ? "#ffdad6" : "#edeeef",
+            }}>FALSE만 {falseOnly ? "표시 중" : "보기"}</span>
+            <span style={{
+              font: `500 11px ${F_LABEL}`, color: "#737780",
+            }}>{shown.length}건 표시 · 스코프 본문(BS/PL/CF — CE 제외)
+            </span>
+          </div>
+
+          <div style={{ overflowX: "auto", maxWidth: 1250 }}>
+            <table style={{
+              width: "100%", minWidth: 900, borderCollapse: "collapse",
+              background: "#fff", border: "1px solid #c3c6d1",
+            }}>
+              <thead><tr>
+                {[["시트", "left"], ["행 라벨", "left"],
+                  ["DSD 값(원)", "right"], ["element", "left"],
+                  ["근거", "left"], ["인스턴스 팩트", "right"],
+                  ["차이", "right"], ["판정", "center"]].map(([h, a]) => (
+                  <th key={String(h)} style={{
+                    textAlign: a as any, font: `700 11px ${F_LABEL}`,
+                    color: "#737780", borderBottom: "1px solid #c3c6d1",
+                    padding: "8px 12px", background: "#f3f4f5",
+                    whiteSpace: "nowrap",
+                  }}>{String(h)}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {shown.slice(0, 300).map((r, i) => (
+                  <tr key={i} style={{
+                    background: r.true === false
+                      ? "rgba(255,218,214,0.35)" : undefined,
+                  }}>
+                    <td style={{ ..._tdL, color: "#737780" }}>
+                      {r.sheet}</td>
+                    <td style={{ ..._tdL, whiteSpace: "nowrap",
+                      maxWidth: 260, overflow: "hidden",
+                      textOverflow: "ellipsis" }}>{r.label}</td>
+                    <td style={{ ..._tdL, textAlign: "right",
+                      fontVariantNumeric: "tabular-nums" }}>
+                      {fmtNum(r.won)}</td>
+                    <td style={{ ..._tdL, fontFamily: MONO, fontSize: 11,
+                      maxWidth: 280, overflow: "hidden",
+                      textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {(r.element || "").replace("_", ":")}</td>
+                    <td style={{ ..._tdL, color: "#737780" }}>
+                      {r.map_src}</td>
+                    <td style={{ ..._tdL, textAlign: "right",
+                      fontVariantNumeric: "tabular-nums" }}>
+                      {fmtNum(r.fact)}</td>
+                    <td style={{ ..._tdL, textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      color: r.true === false ? "#ba1a1a" : "#191c1d" }}>
+                      {fmtNum(r.diff)}</td>
+                    <td style={{ ..._tdL, textAlign: "center" }}>
+                      <span style={r.true === true
+                        ? chip("#3a5a2e", "#dcead2")
+                        : r.true === false
+                          ? chip("#930010", "#ffdad6")
+                          : chip("#43474f", "#edeeef")}>
+                        {r.verdict}</span></td>
+                  </tr>
+                ))}
+                {!shown.length && (
+                  <tr><td colSpan={8} style={{
+                    ..._tdL, color: "#737780",
+                  }}>{falseOnly
+                    ? "FALSE 없음 — 태깅·본문 전수 일치"
+                    : "행 없음"}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

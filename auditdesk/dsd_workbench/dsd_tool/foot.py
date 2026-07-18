@@ -226,6 +226,30 @@ class FootingContext:
                         v = _num(ws, r, right)
                     seq.append((r, v))
                 periods.append((name, seq))
+        elif len(amount_cols) == 2:
+            # 단층 2열 (OpenDART 원본 등 — '제43(당)기말'/'제42(전)기말').
+            # 헤더 표기로 당/전 판별, 미표기면 좌=당기 관례.
+            def _period_of(c):
+                h = str(ws.cell(row=header, column=c).value or "")
+                h = h.replace(" ", "")
+                if "당" in h and "전" not in h:
+                    return "당기"
+                if "전" in h and "당" not in h:
+                    return "전기"
+                return None
+            names = [_period_of(c) for c in amount_cols]
+            if names[0] is None and names[1] is None:
+                names = ["당기", "전기"]
+            if sorted(n for n in names if n) == \
+                    sorted(set(n for n in names if n)) and all(names):
+                for name, c in zip(names, amount_cols):
+                    periods.append(
+                        (name, [(r, _num(ws, r, c)) for r in data_rows]))
+            else:                               # 판별 불가 → colN 폴백
+                for c in amount_cols:
+                    seq = [(r, _num(ws, r, c)) for r in data_rows]
+                    if sum(1 for _, v in seq if v is not None) >= 3:
+                        periods.append((f"col{c}", seq))
         else:
             for c in amount_cols:
                 seq = [(r, _num(ws, r, c)) for r in data_rows]
