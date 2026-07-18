@@ -1,0 +1,6 @@
+# dart_explorer — 공개 공시 검색·수집 (OpenDART 수신 전용)
+# 네트워크는 "공개 데이터 수신"에만 사용. 고객사 데이터 송신 금지 (지시서 §0).
+requests>=2.31
+lxml>=4.9          # xbrl_extract/xbrl_diff
+pandas>=2.0        # xbrl 산출 엑셀
+openpyxl>=3.1

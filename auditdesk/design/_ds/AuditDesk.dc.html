@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/auditlink-design-system-8cf89275-4d1a-4ef3-9c98-e0fa89a53680/colors_and_type.css">
+  <link rel="stylesheet" href="_ds/auditlink-design-system-8cf89275-4d1a-4ef3-9c98-e0fa89a53680/fonts/fonts.css">
+  <script src="_ds/auditlink-design-system-8cf89275-4d1a-4ef3-9c98-e0fa89a53680/_ds_bundle.js"></script>
+  <style>
+    html,body{margin:0;padding:0;height:100%;}
+    a{color:#001e40;text-decoration:none;}
+    a:hover{color:#003366;text-decoration:underline;}
+    ::-webkit-scrollbar{width:10px;height:10px;}
+    ::-webkit-scrollbar-thumb{background:#c3c6d1;border-radius:8px;border:2px solid #f8f9fa;}
+    ::-webkit-scrollbar-track{background:transparent;}
+  </style>
+</helmet>
+
+<div style="display:flex;height:100vh;overflow:hidden;background:#f8f9fa;font-family:var(--al-font-label)">
+
+  <!-- ======================= SIDEBAR ======================= -->
+  <nav style="width:248px;flex:none;background:#f3f4f5;border-right:1px solid #c3c6d1;display:flex;flex-direction:column;padding:14px 10px 10px">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 6px 14px;border-bottom:1px solid #c3c6d1;margin-bottom:12px">
+      <div style="width:30px;height:30px;border-radius:8px;background:#001e40;display:flex;align-items:center;justify-content:center">
+        <span class="material-symbols-outlined" style="color:#fff;font-size:20px;font-variation-settings:'FILL' 1">table_view</span>
+      </div>
+      <div style="display:flex;flex-direction:column">
+        <span style="font:700 17px var(--al-font-headline);color:#001e40;letter-spacing:-0.02em;line-height:1.1">AuditDesk</span>
+        <span style="font:600 9px var(--al-font-label);color:#737780;letter-spacing:0.05em">DSD · DART TOOLKIT</span>
+      </div>
+    </div>
+
+    <sc-for list="{{ navSections }}" as="sec" hint-placeholder-count="2">
+      <div style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0 8px 6px">
+          <span style="font:700 10px var(--al-font-label);letter-spacing:0.06em;color:#737780">{{ sec.label }}</span>
+          <span style="{{ sec.tagStyle }}">{{ sec.tag }}</span>
+        </div>
+        <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="3">
+          <div style="{{ it.style }}" style-hover="background:#edeeef;color:#191c1d" onClick="{{ it.onClick }}">
+            <span class="material-symbols-outlined" style="font-size:19px">{{ it.icon }}</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ it.label }}</span>
+            <sc-if value="{{ it.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ it.chipStyle }}">{{ it.chip }}</span></sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+
+    <div style="flex:1"></div>
+    <div style="border-top:1px solid #c3c6d1;padding-top:8px">
+      <div style="{{ statusNavStyle }}" style-hover="background:#edeeef;color:#191c1d" onClick="{{ goStatus }}">
+        <span class="material-symbols-outlined" style="font-size:19px">monitor_heart</span>
+        <span style="flex:1">상태</span>
+        <span style="font:600 9px var(--al-font-label);color:#737780;background:#e1e3e4;border-radius:4px;padding:2px 6px">E-0</span>
+      </div>
+      <div style="padding:8px 12px 2px;font:500 10px var(--al-font-label);color:#737780">v0.9.2 · 로컬 실행 (localhost:8710)</div>
+    </div>
+  </nav>
+
+  <!-- ======================= MAIN ======================= -->
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+    <!-- Header -->
+    <header style="height:56px;flex:none;display:flex;align-items:center;gap:12px;padding:0 24px;background:rgba(255,255,255,0.8);backdrop-filter:blur(12px);border-bottom:1px solid #c3c6d1;position:relative;z-index:5">
+      <h1 style="margin:0;font:700 18px var(--al-font-headline);color:#191c1d;letter-spacing:-0.01em">{{ headerTitle }}</h1>
+      <span style="font:500 12px var(--al-font-label);color:#737780">{{ headerSub }}</span>
+      <div style="flex:1"></div>
+      <div style="{{ trustStyle }}">
+        <span class="material-symbols-outlined" style="font-size:15px">{{ trustIcon }}</span>
+        <span>{{ trustLabel }}</span>
+      </div>
+    </header>
+
+    <!-- Content scroll -->
+    <main style="flex:1;overflow:auto;min-height:0">
+
+      <!-- ============ SCREEN: 작업 목록 ============ -->
+      <sc-if value="{{ isWorklist }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Workbench 작업 목록" style="padding:24px;max-width:1080px">
+          <div style="border:2px dashed #c3c6d1;border-radius:12px;background:#fff;padding:40px 24px;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer" style-hover="border-color:#001e40;background:#f3f4f5">
+            <span class="material-symbols-outlined" style="font-size:36px;color:#737780">upload_file</span>
+            <div style="font:600 15px var(--al-font-label);color:#191c1d">DSD 파일을 끌어다 놓거나 클릭하여 선택</div>
+            <div style="font:500 12px var(--al-font-label);color:#737780">.dsd / .xml — 파일은 이 PC를 벗어나지 않습니다</div>
+          </div>
+
+          <div style="display:flex;align-items:baseline;gap:8px;margin:28px 0 12px">
+            <h2 style="margin:0;font:700 15px var(--al-font-headline);color:#191c1d">최근 세션</h2>
+            <span style="font:500 12px var(--al-font-label);color:#737780">3건</span>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+            <sc-for list="{{ sessions }}" as="s" hint-placeholder-count="3">
+              <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:10px;cursor:pointer" style-hover="border-color:#737780" onClick="{{ s.onOpen }}">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <span class="material-symbols-outlined" style="font-size:22px;color:#48626e;margin-top:2px">description</span>
+                  <div style="min-width:0;flex:1">
+                    <div style="font:600 13px var(--al-font-label);color:#191c1d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.file }}</div>
+                    <div style="font:500 12px var(--al-font-label);color:#43474f;margin-top:2px">{{ s.company }} · FY2025</div>
+                  </div>
+                  <span style="{{ s.statusStyle }}">{{ s.status }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <span style="{{ s.editverStyle }}">
+                    <span class="material-symbols-outlined" style="font-size:13px">{{ s.editverIcon }}</span>{{ s.editver }}</span>
+                  <span style="font:500 11px var(--al-font-label);color:#737780">{{ s.meta }}</span>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(195,198,209,0.5);padding-top:8px">
+                  <span style="font:500 11px var(--al-font-label);color:#737780">마지막 작업 {{ s.last }}</span>
+                  <span style="font:600 12px var(--al-font-label);color:#001e40;display:flex;align-items:center;gap:2px">열기<span class="material-symbols-outlined" style="font-size:15px">chevron_right</span></span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ SCREEN: 세션 상세 ============ -->
+      <sc-if value="{{ isSession }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="세션 상세" style="display:flex;flex-direction:column;height:100%">
+          <!-- session strip + tabs -->
+          <div style="flex:none;background:#fff;border-bottom:1px solid #c3c6d1;padding:14px 24px 0">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+              <span class="material-symbols-outlined" style="font-size:20px;color:#48626e">description</span>
+              <span style="font:700 15px var(--al-font-headline);color:#191c1d">한빛전자_FY2025_DSD.xml</span>
+              <span style="font:500 12px var(--al-font-label);color:#737780">㈜한빛전자 · 제12기</span>
+              <span style="display:inline-flex;align-items:center;gap:4px;font:600 11px var(--al-font-label);color:#7a4f00;background:#ffecc7;border-radius:4px;padding:3px 8px">수정중</span>
+              <div style="flex:1"></div>
+              <span style="font:500 11px var(--al-font-label);color:#737780">SHA1 <code style="font-family:ui-monospace,Consolas,monospace;font-size:11px;background:#edeeef;border-radius:4px;padding:1px 6px">7bc2…41f9</code></span>
+            </div>
+            <div style="display:flex;gap:2px">
+              <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+                <div style="{{ t.style }}" style-hover="color:#191c1d" onClick="{{ t.onClick }}">
+                  <span>{{ t.label }}</span>
+                  <sc-if value="{{ t.count }}" hint-placeholder-val="{{ false }}"><span style="{{ t.countStyle }}">{{ t.count }}</span></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- ======== TAB: 개요 ======== -->
+          <sc-if value="{{ tabOverview }}" hint-placeholder-val="{{ false }}">
+            <div data-screen-label="세션 개요" style="padding:24px;max-width:1080px;display:flex;flex-direction:column;gap:16px">
+              <!-- pipeline stepper -->
+              <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:20px">
+                <div style="font:700 13px var(--al-font-headline);color:#191c1d;margin-bottom:16px">작업 파이프라인</div>
+                <div style="display:flex;align-items:center;gap:0">
+                  <sc-for list="{{ pipeSteps }}" as="p" hint-placeholder-count="5">
+                    <div style="display:flex;align-items:center;flex:1;min-width:0">
+                      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:none">
+                        <div style="{{ p.dotStyle }}"><span class="material-symbols-outlined" style="font-size:16px">{{ p.icon }}</span></div>
+                        <span style="{{ p.labelStyle }}">{{ p.label }}</span>
+                      </div>
+                      <sc-if value="{{ p.hasLine }}" hint-placeholder-val="{{ true }}"><div style="{{ p.lineStyle }}"></div></sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:20px">
+                  <button style="display:inline-flex;align-items:center;gap:6px;font:600 13px var(--al-font-label);color:#001e40;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:8px 14px;cursor:pointer" style-hover="background:#f3f4f5">
+                    <span class="material-symbols-outlined" style="font-size:17px">open_in_new</span>엑셀 열기</button>
+                  <button style="display:inline-flex;align-items:center;gap:6px;font:600 13px var(--al-font-label);color:#fff;background:linear-gradient(90deg,#001e40,#003366);border:none;border-radius:8px;padding:8px 14px;cursor:pointer" style-hover="opacity:0.9" onClick="{{ goChangeTab }}">
+                    <span class="material-symbols-outlined" style="font-size:17px">rule</span>편집 완료 — 변경 검토</button>
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 320px;gap:16px">
+                <!-- file meta -->
+                <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:20px">
+                  <div style="font:700 13px var(--al-font-headline);color:#191c1d;margin-bottom:14px">파일 메타</div>
+                  <div style="display:grid;grid-template-columns:110px 1fr;row-gap:10px;font:500 12px var(--al-font-label)">
+                    <span style="color:#737780">원본 경로</span><span style="color:#191c1d;font-family:ui-monospace,Consolas,monospace;font-size:11px">D:\감사\한빛전자\FY2025\한빛전자_FY2025_DSD.xml</span>
+                    <span style="color:#737780">SHA1</span><span style="color:#191c1d;font-family:ui-monospace,Consolas,monospace;font-size:11px">7bc2e08a41f9c3d55b6a02e9d1c74f8830aa41f9</span>
+                    <span style="color:#737780">editver</span><span style="color:#191c1d;display:flex;align-items:center;gap:6px">DART-Editor 5.2.1 <span style="display:inline-flex;align-items:center;gap:3px;font:600 10px var(--al-font-label);color:#3a5a2e;background:#dcead2;border-radius:4px;padding:2px 6px"><span class="material-symbols-outlined" style="font-size:12px">check</span>검증됨</span></span>
+                    <span style="color:#737780">셀 수</span><span style="color:#191c1d;font-variant-numeric:tabular-nums">21,480</span>
+                    <span style="color:#737780">주석 수</span><span style="color:#191c1d;font-variant-numeric:tabular-nums">47</span>
+                    <span style="color:#737780">&amp;cr;-only 셀</span><span style="color:#191c1d;font-variant-numeric:tabular-nums">319</span>
+                  </div>
+                </div>
+                <!-- options -->
+                <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:20px">
+                  <div style="font:700 13px var(--al-font-headline);color:#191c1d;margin-bottom:14px">repack 옵션</div>
+                  <div style="display:flex;flex-direction:column;gap:12px">
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <div>
+                        <div style="font:600 12px var(--al-font-label);color:#191c1d">&amp;cr; 정리</div>
+                        <div style="font:500 11px var(--al-font-label);color:#737780">&amp;cr;만 남은 셀 319개를 빈 셀로 정리</div>
+                      </div>
+                      <div style="{{ crToggleStyle }}" onClick="{{ toggleCr }}"><div style="{{ crKnobStyle }}"></div></div>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <div>
+                        <div style="font:600 12px var(--al-font-label);color:#191c1d">주석번호 정리</div>
+                        <div style="font:500 11px var(--al-font-label);color:#737780">본문↔주석 참조 번호 32건 재정렬</div>
+                      </div>
+                      <div style="{{ noteToggleStyle }}" onClick="{{ toggleNote }}"><div style="{{ noteKnobStyle }}"></div></div>
+                    </div>
+                    <sc-if value="{{ optWarning }}" hint-placeholder-val="{{ false }}">
+                      <div style="font:500 11px var(--al-font-label);color:#930010;background:#ffdad6;border-radius:8px;padding:8px 10px">옵션 해제 시 DART 편집기에서 표시 오류가 발생할 수 있습니다. 해제 사유를 이력에 기록합니다.</div>
+                    </sc-if>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ======== TAB: 시트 뷰 ======== -->
+          <sc-if value="{{ tabSheets }}" hint-placeholder-val="{{ false }}">
+            <div data-screen-label="시트 뷰" style="display:flex;flex:1;min-height:0">
+              <div style="width:180px;flex:none;background:#fff;border-right:1px solid #c3c6d1;overflow:auto;padding:12px 8px">
+                <div style="font:700 10px var(--al-font-label);letter-spacing:0.06em;color:#737780;padding:0 8px 8px">시트</div>
+                <sc-for list="{{ sheetTree }}" as="sh" hint-placeholder-count="8">
+                  <div style="{{ sh.style }}" style-hover="background:#edeeef" onClick="{{ sh.onClick }}">{{ sh.name }}</div>
+                </sc-for>
+              </div>
+              <div style="flex:1;overflow:auto;padding:20px 24px">
+                <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
+                  <h2 style="margin:0;font:700 15px var(--al-font-headline);color:#191c1d">{{ sheetTitle }}</h2>
+                  <span style="font:500 11px var(--al-font-label);color:#737780">{{ sheetUnit }}</span>
+                  <div style="flex:1"></div>
+                  <span style="display:inline-flex;align-items:center;gap:5px;font:500 11px var(--al-font-label);color:#43474f;background:#edeeef;border-radius:4px;padding:3px 8px"><span class="material-symbols-outlined" style="font-size:13px">visibility</span>읽기 전용 — 편집은 엑셀에서</span>
+                </div>
+                <sc-if value="{{ sheetHasData }}" hint-placeholder-val="{{ true }}">
+                  <table style="width:100%;max-width:860px;border-collapse:collapse;margin-top:10px;background:#fff;border:1px solid #c3c6d1;border-radius:8px">
+                    <thead>
+                      <tr>
+                        <sc-for list="{{ sheetCols }}" as="c" hint-placeholder-count="4">
+                          <th style="{{ c.style }}">{{ c.label }}</th>
+                        </sc-for>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <sc-for list="{{ sheetRows }}" as="r" hint-placeholder-count="10">
+                        <tr>
+                          <td style="{{ r.nameStyle }}">{{ r.name }}</td>
+                          <td style="{{ r.noteStyle }}">{{ r.note }}</td>
+                          <td style="{{ r.c1Style }}">{{ r.c1 }}</td>
+                          <td style="{{ r.c2Style }}">{{ r.c2 }}</td>
+                        </tr>
+                      </sc-for>
+                    </tbody>
+                  </table>
+                </sc-if>
+                <sc-if value="{{ sheetNoData }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top:24px;font:500 13px var(--al-font-label);color:#737780">이 시트는 텍스트 중심 시트입니다 — 내용은 엑셀에서 확인하십시오.</div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ======== TAB: Footing ======== -->
+          <sc-if value="{{ tabFooting }}" hint-placeholder-val="{{ false }}">
+            <div data-screen-label="Footing" style="display:flex;flex-direction:column;flex:1;min-height:0">
+              <div style="flex:none;display:flex;align-items:center;gap:8px;padding:12px 24px;background:#fff;border-bottom:1px solid #c3c6d1">
+                <sc-for list="{{ footSummary }}" as="b" hint-placeholder-count="4">
+                  <span style="{{ b.style }}"><span style="{{ b.dotStyle }}"></span>{{ b.label }}</span>
+                </sc-for>
+                <div style="flex:1"></div>
+                <div style="{{ priorBtnStyle }}" style-hover="background:#f3f4f5" onClick="{{ togglePrior }}">
+                  <span class="material-symbols-outlined" style="font-size:16px">{{ priorIcon }}</span>{{ priorLabel }}</div>
+                <button style="display:inline-flex;align-items:center;gap:5px;font:600 12px var(--al-font-label);color:#fff;background:linear-gradient(90deg,#001e40,#003366);border:none;border-radius:8px;padding:7px 12px;cursor:pointer" style-hover="opacity:0.9">
+                  <span class="material-symbols-outlined" style="font-size:15px">refresh</span>재검증</button>
+              </div>
+
+              <div style="display:flex;flex:1;min-height:0">
+                <!-- findings list -->
+                <div style="width:320px;flex:none;background:#fff;border-right:1px solid #c3c6d1;display:flex;flex-direction:column;min-height:0">
+                  <div style="flex:none;display:flex;gap:4px;padding:10px 12px;border-bottom:1px solid rgba(195,198,209,0.5)">
+                    <sc-for list="{{ findFilters }}" as="f" hint-placeholder-count="4">
+                      <span style="{{ f.style }}" onClick="{{ f.onClick }}">{{ f.label }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="flex:1;overflow:auto">
+                    <sc-for list="{{ findings }}" as="fd" hint-placeholder-count="6">
+                      <div style="{{ fd.style }}" style-hover="background:#f3f4f5" onClick="{{ fd.onClick }}">
+                        <span style="{{ fd.sevStyle }}"></span>
+                        <div style="flex:1;min-width:0">
+                          <div style="font:600 12px var(--al-font-label);color:#191c1d">{{ fd.title }}</div>
+                          <div style="font:500 11px var(--al-font-label);color:#737780;margin-top:2px">{{ fd.loc }}</div>
+                        </div>
+                        <span style="{{ fd.diffStyle }}">{{ fd.diff }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <sc-if value="{{ priorMode }}" hint-placeholder-val="{{ false }}">
+                    <div style="flex:none;border-top:1px solid #c3c6d1;padding:12px">
+                      <div style="font:700 10px var(--al-font-label);letter-spacing:0.06em;color:#737780;margin-bottom:8px">전기대사 — 당기 전기열 ↔ 전기 당기열</div>
+                      <sc-for list="{{ priorFindings }}" as="pf" hint-placeholder-count="2">
+                        <div style="display:flex;align-items:center;gap:8px;padding:6px 4px;font:500 11px var(--al-font-label);color:#43474f">
+                          <span style="{{ pf.dotStyle }}"></span>
+                          <span style="flex:1">{{ pf.label }}</span>
+                          <span style="{{ pf.valStyle }}">{{ pf.val }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ priorOff }}" hint-placeholder-val="{{ true }}">
+                    <div style="flex:none;border-top:1px solid #c3c6d1;padding:10px 12px;display:flex;align-items:center;gap:6px;font:600 12px var(--al-font-label);color:#001e40;cursor:pointer" style-hover="background:#f3f4f5" onClick="{{ togglePrior }}">
+                      <span class="material-symbols-outlined" style="font-size:17px">add</span>전기 파일 연결 — 전기대사 실행
+                    </div>
+                  </sc-if>
+                </div>
+
+                <!-- sheet with highlights -->
+                <div style="flex:1;overflow:auto;padding:20px 24px">
+                  <sc-if value="{{ footIsTable }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+                      <h2 style="margin:0;font:700 15px var(--al-font-headline);color:#191c1d">{{ footSheetTitle }}</h2>
+                      <span style="font:500 11px var(--al-font-label);color:#737780">{{ footSheetUnit }}</span>
+                    </div>
+                    <table style="width:100%;max-width:900px;border-collapse:collapse;background:#fff;border:1px solid #c3c6d1">
+                      <thead>
+                        <tr>
+                          <sc-for list="{{ footCols }}" as="c" hint-placeholder-count="5">
+                            <th style="{{ c.style }}">{{ c.label }}</th>
+                          </sc-for>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <sc-for list="{{ footRows }}" as="r" hint-placeholder-count="10">
+                          <tr>
+                            <td style="{{ r.nameStyle }}">{{ r.name }}</td>
+                            <td style="{{ r.noteStyle }}">{{ r.note }}</td>
+                            <td style="{{ r.c1Style }}">
+                              <span>{{ r.c1 }}</span>
+                              <sc-if value="{{ r.diff }}" hint-placeholder-val="{{ false }}"><span style="{{ r.diffStyle }}">{{ r.diff }}</span></sc-if>
+                            </td>
+                            <td style="{{ r.c2Style }}">{{ r.c2 }}</td>
+                            <td style="{{ r.lvlCellStyle }}">
+                              <sc-if value="{{ r.isTotal }}" hint-placeholder-val="{{ false }}">
+                                <div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">
+                                  <sc-if value="{{ r.manual }}" hint-placeholder-val="{{ false }}"><span style="font:600 9px var(--al-font-label);color:#001e40;background:#d5e3ff;border-radius:4px;padding:2px 5px">수동</span></sc-if>
+                                  <select value="{{ r.level }}" onChange="{{ r.onLevel }}" style="font:600 11px var(--al-font-label);color:#43474f;border:1px solid #c3c6d1;border-radius:4px;padding:2px 4px;background:#fff;cursor:pointer">
+                                    <option value="L1">L1</option><option value="L2">L2</option><option value="L3">L3</option>
+                                  </select>
+                                </div>
+                              </sc-if>
+                            </td>
+                          </tr>
+                        </sc-for>
+                      </tbody>
+                    </table>
+                    <div style="font:500 11px var(--al-font-label);color:#737780;margin-top:10px">추론 레벨은 자동 추천값입니다 — 수정 후 재검증을 실행하십시오. 수동 지정된 행은 뱃지로 구분됩니다.</div>
+                  </sc-if>
+                  <sc-if value="{{ footIsRecon }}" hint-placeholder-val="{{ false }}">
+                    <div style="max-width:560px">
+                      <h2 style="margin:0 0 12px;font:700 15px var(--al-font-headline);color:#191c1d">{{ reconTitle }}</h2>
+                      <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:20px;display:flex;flex-direction:column;gap:12px">
+                        <div style="display:flex;align-items:center;justify-content:space-between;font:500 13px var(--al-font-label);color:#43474f">
+                          <span>{{ reconA }}</span>
+                          <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#191c1d">{{ reconAVal }}</span>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;font:500 13px var(--al-font-label);color:#43474f;border-top:1px solid rgba(195,198,209,0.5);padding-top:12px">
+                          <span>{{ reconB }}</span>
+                          <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#191c1d">{{ reconBVal }}</span>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;background:#ffdad6;border-radius:8px;padding:10px 12px">
+                          <span style="font:600 12px var(--al-font-label);color:#930010">차이</span>
+                          <span style="font:700 13px var(--al-font-label);color:#930010;font-variant-numeric:tabular-nums">{{ reconDiff }}</span>
+                        </div>
+                        <div style="display:flex;gap:8px">
+                          <button style="font:600 12px var(--al-font-label);color:#001e40;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:7px 12px;cursor:pointer" style-hover="background:#f3f4f5" onClick="{{ openReconSheet }}">주석 시트 열기</button>
+                          <button style="font:600 12px var(--al-font-label);color:#43474f;background:#edeeef;border:none;border-radius:8px;padding:7px 12px;cursor:pointer" style-hover="background:#e1e3e4">미매칭 사유 기록</button>
+                        </div>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ======== TAB: 변경검토 ======== -->
+          <sc-if value="{{ tabChange }}" hint-placeholder-val="{{ true }}">
+            <div data-screen-label="변경검토" style="display:flex;flex-direction:column;flex:1;min-height:0">
+              <div style="flex:none;display:flex;align-items:center;gap:10px;padding:12px 24px;background:#fff;border-bottom:1px solid #c3c6d1">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#43474f">rule</span>
+                <span style="font:600 13px var(--al-font-label);color:#191c1d">repack 전 승인 게이트</span>
+                <span style="font:500 12px var(--al-font-label);color:#737780">수정 12 · &amp;cr; 정리 319 · 번호 정리 32 — dry-run 결과</span>
+                <div style="flex:1"></div>
+                <span style="font:500 12px var(--al-font-label);color:#43474f;font-variant-numeric:tabular-nums">{{ selSummary }}</span>
+              </div>
+
+              <div style="flex:1;overflow:auto;padding:16px 24px 90px">
+                <sc-for list="{{ changeGroups }}" as="g" hint-placeholder-count="3">
+                  <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;margin-bottom:12px;overflow:hidden">
+                    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;background:#f3f4f5" style-hover="background:#edeeef" onClick="{{ g.onToggle }}">
+                      <span class="material-symbols-outlined" style="font-size:18px;color:#737780">{{ g.chev }}</span>
+                      <input type="checkbox" checked="{{ g.allChecked }}" onChange="{{ g.onToggleAll }}" onClick="{{ stop }}" style="width:15px;height:15px;accent-color:#001e40;cursor:pointer">
+                      <span style="{{ g.tagStyle }}">{{ g.tag }}</span>
+                      <span style="font:600 13px var(--al-font-label);color:#191c1d">{{ g.label }}</span>
+                      <span style="font:500 12px var(--al-font-label);color:#737780;font-variant-numeric:tabular-nums">{{ g.countLabel }}</span>
+                    </div>
+                    <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+                      <table style="width:100%;border-collapse:collapse">
+                        <thead>
+                          <tr>
+                            <th style="width:36px;border-bottom:1px solid #c3c6d1;padding:6px 8px 6px 16px"></th>
+                            <th style="text-align:left;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:6px 8px;width:90px">시트</th>
+                            <th style="text-align:left;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:6px 8px;width:70px">셀</th>
+                            <th style="text-align:right;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:6px 8px">변경 전</th>
+                            <th style="width:34px;border-bottom:1px solid #c3c6d1"></th>
+                            <th style="text-align:right;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:6px 16px 6px 8px">변경 후</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="5">
+                            <tr style="{{ r.rowStyle }}">
+                              <td style="padding:6px 8px 6px 16px;border-bottom:1px solid rgba(195,198,209,0.4)"><input type="checkbox" checked="{{ r.checked }}" onChange="{{ r.onToggle }}" style="width:14px;height:14px;accent-color:#001e40;cursor:pointer"></td>
+                              <td style="font:500 12px var(--al-font-label);color:#43474f;padding:6px 8px;border-bottom:1px solid rgba(195,198,209,0.4)">{{ r.sheet }}</td>
+                              <td style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#43474f;padding:6px 8px;border-bottom:1px solid rgba(195,198,209,0.4)">{{ r.cell }}</td>
+                              <td style="{{ r.beforeStyle }}">{{ r.before }}</td>
+                              <td style="text-align:center;border-bottom:1px solid rgba(195,198,209,0.4)"><span class="material-symbols-outlined" style="font-size:14px;color:#737780">arrow_forward</span></td>
+                              <td style="{{ r.afterStyle }}">{{ r.after }}</td>
+                            </tr>
+                          </sc-for>
+                          <sc-if value="{{ g.more }}" hint-placeholder-val="{{ false }}">
+                            <tr><td colspan="6" style="font:500 11px var(--al-font-label);color:#737780;padding:8px 16px">{{ g.more }}</td></tr>
+                          </sc-if>
+                        </tbody>
+                      </table>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+
+              <!-- fixed CTA bar -->
+              <div style="flex:none;position:sticky;bottom:0;display:flex;align-items:center;gap:12px;padding:12px 24px;background:rgba(255,255,255,0.92);backdrop-filter:blur(8px);border-top:1px solid #c3c6d1">
+                <span style="font:500 12px var(--al-font-label);color:#737780">출력: <code style="font-family:ui-monospace,Consolas,monospace;font-size:11px;background:#edeeef;border-radius:4px;padding:1px 6px">한빛전자_FY2025_DSD_repack.xml</code></span>
+                <div style="flex:1"></div>
+                <button style="font:600 13px var(--al-font-label);color:#43474f;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:9px 16px;cursor:pointer" style-hover="background:#f3f4f5" onClick="{{ goOverviewTab }}">취소</button>
+                <button style="display:inline-flex;align-items:center;gap:6px;font:600 13px var(--al-font-label);color:#fff;background:linear-gradient(90deg,#001e40,#003366);border:none;border-radius:8px;padding:9px 18px;cursor:pointer" style-hover="opacity:0.9" onClick="{{ runRepack }}">
+                  <span class="material-symbols-outlined" style="font-size:17px">play_arrow</span>repack 실행 ({{ selCount }}건)</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ======== TAB: 이력 ======== -->
+          <sc-if value="{{ tabHistory }}" hint-placeholder-val="{{ false }}">
+            <div data-screen-label="이력" style="padding:24px;max-width:900px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+                <span style="font:500 12px var(--al-font-label);color:#737780">history.sqlite — 감사조서 증빙용 실행 기록</span>
+                <div style="flex:1"></div>
+                <button style="display:inline-flex;align-items:center;gap:5px;font:600 12px var(--al-font-label);color:#001e40;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:7px 12px;cursor:pointer" style-hover="background:#f3f4f5">
+                  <span class="material-symbols-outlined" style="font-size:15px">download</span>내보내기: 엑셀</button>
+              </div>
+              <sc-for list="{{ historyItems }}" as="h" hint-placeholder-count="3">
+                <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;margin-bottom:10px;overflow:hidden">
+                  <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer" style-hover="background:#f3f4f5" onClick="{{ h.onToggle }}">
+                    <span class="material-symbols-outlined" style="font-size:18px;color:#737780">{{ h.chev }}</span>
+                    <span style="{{ h.opStyle }}">{{ h.op }}</span>
+                    <span style="font:600 12px var(--al-font-label);color:#191c1d;font-variant-numeric:tabular-nums">{{ h.time }}</span>
+                    <span style="font:500 12px var(--al-font-label);color:#43474f">{{ h.summary }}</span>
+                    <div style="flex:1"></div>
+                    <span style="font:500 11px var(--al-font-label);color:#737780">SHA1 <span style="font-family:ui-monospace,Consolas,monospace">{{ h.sha }}</span></span>
+                  </div>
+                  <sc-if value="{{ h.open }}" hint-placeholder-val="{{ false }}">
+                    <div style="border-top:1px solid rgba(195,198,209,0.5);padding:12px 16px 14px 46px">
+                      <div style="font:500 11px var(--al-font-label);color:#737780;margin-bottom:8px">옵션: {{ h.opts }}</div>
+                      <sc-for list="{{ h.cells }}" as="c" hint-placeholder-count="3">
+                        <div style="display:flex;gap:12px;font:500 11px var(--al-font-label);color:#43474f;padding:3px 0;font-variant-numeric:tabular-nums">
+                          <span style="width:70px;color:#737780">{{ c.sheet }}</span>
+                          <span style="width:50px;font-family:ui-monospace,Consolas,monospace">{{ c.cell }}</span>
+                          <span>{{ c.change }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ============ SCREEN: 공시 검색 ============ -->
+      <sc-if value="{{ isSearch }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="DART 공시 검색" style="padding:24px;max-width:1080px">
+          <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;gap:10px">
+              <div style="flex:1;display:flex;align-items:center;gap:8px;border:1px solid #c3c6d1;border-radius:8px;padding:9px 12px;background:#fff">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#737780">search</span>
+                <span style="font:500 13px var(--al-font-label);color:#191c1d">한빛전자</span>
+                <span style="font:500 11px var(--al-font-label);color:#737780;background:#d5e3ff;border-radius:4px;padding:2px 6px;color:#001e40">corpCode 캐시 일치</span>
+              </div>
+              <select style="font:500 13px var(--al-font-label);color:#43474f;border:1px solid #c3c6d1;border-radius:8px;padding:0 12px;background:#fff;cursor:pointer">
+                <option>당기 (2025.01–12)</option><option>전기 (2024)</option><option>직접 입력</option>
+              </select>
+              <button style="font:600 13px var(--al-font-label);color:#fff;background:linear-gradient(90deg,#001e40,#003366);border:none;border-radius:8px;padding:0 18px;cursor:pointer" style-hover="opacity:0.9">검색</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font:600 11px var(--al-font-label);color:#737780;margin-right:2px">보고서 유형</span>
+              <sc-for list="{{ reportChips }}" as="ch" hint-placeholder-count="4">
+                <span style="{{ ch.style }}" onClick="{{ ch.onClick }}">{{ ch.label }}</span>
+              </sc-for>
+              <div style="flex:1"></div>
+              <span style="font:500 11px var(--al-font-label);color:#737780">업종코드: 264 (전자부품)</span>
+            </div>
+          </div>
+
+          <table style="width:100%;border-collapse:collapse;margin-top:16px;background:#fff;border:1px solid #c3c6d1">
+            <thead>
+              <tr>
+                <th style="text-align:left;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:9px 14px">회사</th>
+                <th style="text-align:left;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:9px 10px">보고서명</th>
+                <th style="text-align:left;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:9px 10px;width:100px">접수일</th>
+                <th style="text-align:left;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:9px 10px;width:150px">rcept_no</th>
+                <th style="text-align:right;font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:9px 14px;width:220px">액션</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ dartResults }}" as="d" hint-placeholder-count="4">
+                <tr style-hover="background:#f8f9fa">
+                  <td style="font:600 12px var(--al-font-label);color:#191c1d;padding:9px 14px;border-bottom:1px solid rgba(195,198,209,0.4)">{{ d.company }}</td>
+                  <td style="font:500 12px var(--al-font-label);color:#43474f;padding:9px 10px;border-bottom:1px solid rgba(195,198,209,0.4)">
+                    <span>{{ d.report }}</span>
+                    <sc-if value="{{ d.cached }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:3px;font:600 10px var(--al-font-label);color:#3a5a2e;background:#dcead2;border-radius:4px;padding:2px 6px;margin-left:6px"><span class="material-symbols-outlined" style="font-size:11px">check</span>캐시</span></sc-if>
+                  </td>
+                  <td style="font:500 12px var(--al-font-label);color:#43474f;padding:9px 10px;border-bottom:1px solid rgba(195,198,209,0.4);font-variant-numeric:tabular-nums">{{ d.date }}</td>
+                  <td style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#737780;padding:9px 10px;border-bottom:1px solid rgba(195,198,209,0.4)">{{ d.rcept }}</td>
+                  <td style="text-align:right;padding:9px 14px;border-bottom:1px solid rgba(195,198,209,0.4)">
+                    <span style="display:inline-flex;gap:6px">
+                      <button style="font:600 11px var(--al-font-label);color:#43474f;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:5px 10px;cursor:pointer" style-hover="background:#f3f4f5">{{ d.dlLabel }}</button>
+                      <button style="font:600 11px var(--al-font-label);color:#001e40;background:#d5e3ff;border:none;border-radius:8px;padding:5px 10px;cursor:pointer" style-hover="opacity:0.85" onClick="{{ d.onXbrl }}">XBRL 파이프라인</button>
+                    </span>
+                  </td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </sc-if>
+
+      <!-- ============ SCREEN: XBRL 파이프라인 ============ -->
+      <sc-if value="{{ isXbrl }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="XBRL 파이프라인" style="padding:24px;max-width:900px;display:flex;flex-direction:column;gap:16px">
+          <!-- input card -->
+          <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:20px">
+            <div style="display:flex;align-items:flex-end;gap:12px">
+              <div style="flex:1">
+                <div style="font:600 11px var(--al-font-label);color:#737780;margin-bottom:5px">회사</div>
+                <div style="border:1px solid #c3c6d1;border-radius:8px;padding:8px 12px;font:500 13px var(--al-font-label);color:#191c1d">㈜한빛전자 <span style="color:#737780;font-size:11px">corp_code 00382910</span></div>
+              </div>
+              <div style="width:140px">
+                <div style="font:600 11px var(--al-font-label);color:#737780;margin-bottom:5px">사업연도</div>
+                <div style="border:1px solid #c3c6d1;border-radius:8px;padding:8px 12px;font:500 13px var(--al-font-label);color:#191c1d;font-variant-numeric:tabular-nums">2025</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding-bottom:6px">
+                <div style="{{ xbrlToggleStyle }}" onClick="{{ toggleXbrlPrior }}"><div style="{{ xbrlKnobStyle }}"></div></div>
+                <span style="font:500 12px var(--al-font-label);color:#43474f">버전대사: 전기 2024</span>
+              </div>
+              <button style="display:inline-flex;align-items:center;gap:6px;font:600 13px var(--al-font-label);color:#fff;background:linear-gradient(90deg,#001e40,#003366);border:none;border-radius:8px;padding:9px 16px;cursor:pointer" style-hover="opacity:0.9">
+                <span class="material-symbols-outlined" style="font-size:16px">play_arrow</span>실행</button>
+            </div>
+          </div>
+
+          <!-- log stepper -->
+          <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:20px">
+            <div style="font:700 13px var(--al-font-headline);color:#191c1d;margin-bottom:14px">실행 로그 — 2026-07-10 09:31</div>
+            <div style="display:flex;flex-direction:column;gap:0">
+              <sc-for list="{{ xbrlSteps }}" as="x" hint-placeholder-count="5">
+                <div style="display:flex;gap:12px">
+                  <div style="display:flex;flex-direction:column;align-items:center;flex:none;width:22px">
+                    <div style="{{ x.dotStyle }}"><span class="material-symbols-outlined" style="font-size:13px">{{ x.icon }}</span></div>
+                    <sc-if value="{{ x.hasLine }}" hint-placeholder-val="{{ true }}"><div style="width:2px;flex:1;background:#c3c6d1;min-height:14px"></div></sc-if>
+                  </div>
+                  <div style="padding-bottom:14px">
+                    <span style="font:600 12px var(--al-font-label);color:#191c1d">{{ x.label }}</span>
+                    <span style="font:500 11px var(--al-font-label);color:#737780;margin-left:8px;font-variant-numeric:tabular-nums">{{ x.detail }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- result card -->
+          <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:20px">
+            <div style="display:flex;align-items:center;gap:24px">
+              <div><div class="al-stat-number" style="font-size:28px">8,214</div><div style="font:500 11px var(--al-font-label);color:#737780;margin-top:3px">추출 팩트</div></div>
+              <div style="width:1px;height:36px;background:#c3c6d1"></div>
+              <div><div class="al-stat-number" style="font-size:28px">312</div><div style="font:500 11px var(--al-font-label);color:#737780;margin-top:3px">버전대사 계정</div></div>
+              <div style="width:1px;height:36px;background:#c3c6d1"></div>
+              <div><div class="al-stat-number" style="font-size:28px;color:#930010">4</div><div style="font:500 11px var(--al-font-label);color:#737780;margin-top:3px">전기값 상이</div></div>
+              <div style="flex:1"></div>
+              <button style="display:inline-flex;align-items:center;gap:5px;font:600 12px var(--al-font-label);color:#001e40;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:8px 12px;cursor:pointer" style-hover="background:#f3f4f5"><span class="material-symbols-outlined" style="font-size:15px">table</span>산출 엑셀 열기</button>
+              <button style="display:inline-flex;align-items:center;gap:5px;font:600 12px var(--al-font-label);color:#43474f;background:#edeeef;border:none;border-radius:8px;padding:8px 12px;cursor:pointer" style-hover="background:#e1e3e4"><span class="material-symbols-outlined" style="font-size:15px">folder_open</span>폴더 열기</button>
+            </div>
+            <!-- Phase D slot -->
+            <div style="display:flex;gap:2px;border-top:1px solid rgba(195,198,209,0.5);margin-top:16px;padding-top:12px;align-items:center">
+              <sc-for list="{{ phaseDTabs }}" as="pd" hint-placeholder-count="3">
+                <span style="font:600 12px var(--al-font-label);color:#c3c6d1;padding:6px 12px;cursor:not-allowed">{{ pd }}</span>
+              </sc-for>
+              <span style="font:600 10px var(--al-font-label);color:#737780;background:#edeeef;border-radius:4px;padding:3px 8px;margin-left:4px">Phase D 예정</span>
+            </div>
+          </div>
+
+          <!-- failure states -->
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font:700 10px var(--al-font-label);letter-spacing:0.06em;color:#737780">상태 표시 예</div>
+            <div style="display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:12px 14px">
+              <span class="material-symbols-outlined" style="font-size:18px;color:#43474f">info</span>
+              <span style="font:500 12px var(--al-font-label);color:#43474f">이 회사는 해당 연도 XBRL을 제출하지 않았습니다 — 원본 공시 다운로드로 대신 진행하십시오.</span>
+              <div style="flex:1"></div>
+              <button style="font:600 11px var(--al-font-label);color:#001e40;background:#d5e3ff;border:none;border-radius:8px;padding:5px 10px;cursor:pointer">공시 검색으로</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;background:#ffdad6;border:1px solid #ffdad6;border-radius:8px;padding:12px 14px">
+              <span class="material-symbols-outlined" style="font-size:18px;color:#930010">key_off</span>
+              <span style="font:500 12px var(--al-font-label);color:#930010">OpenDART API 키가 설정되지 않았습니다 — 설정에서 .env 파일을 확인하십시오.</span>
+              <div style="flex:1"></div>
+              <button style="font:600 11px var(--al-font-label);color:#930010;background:#fff;border:1px solid #930010;border-radius:8px;padding:5px 10px;cursor:pointer" onClick="{{ goSettings }}">설정 열기</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;background:#ffecc7;border:1px solid #ffecc7;border-radius:8px;padding:12px 14px">
+              <span class="material-symbols-outlined" style="font-size:18px;color:#7a4f00">warning</span>
+              <span style="font:500 12px var(--al-font-label);color:#7a4f00">일 사용량 한도 근접 — 오늘 18,940 / 20,000 요청. 캐시 우선 모드로 전환합니다.</span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ SCREEN: 설정 ============ -->
+      <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Explorer 설정" style="padding:24px;max-width:640px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:18px;display:flex;align-items:center;gap:12px">
+            <span class="material-symbols-outlined" style="font-size:20px;color:#3a5a2e">key</span>
+            <div style="flex:1">
+              <div style="font:600 13px var(--al-font-label);color:#191c1d">OpenDART API 키</div>
+              <div style="font:500 11px var(--al-font-label);color:#737780;margin-top:2px">.env에서 감지됨 — 키 값은 표시하지 않습니다</div>
+            </div>
+            <span style="display:inline-flex;align-items:center;gap:4px;font:600 11px var(--al-font-label);color:#3a5a2e;background:#dcead2;border-radius:4px;padding:3px 8px"><span class="material-symbols-outlined" style="font-size:13px">check</span>설정됨</span>
+          </div>
+          <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:18px;display:flex;align-items:center;gap:12px">
+            <span class="material-symbols-outlined" style="font-size:20px;color:#48626e">database</span>
+            <div style="flex:1">
+              <div style="font:600 13px var(--al-font-label);color:#191c1d">공시 캐시</div>
+              <div style="font:500 11px var(--al-font-label);color:#737780;margin-top:2px;font-variant-numeric:tabular-nums">14건 · 2.4 GB · D:\AuditDesk\cache</div>
+            </div>
+            <button style="font:600 12px var(--al-font-label);color:#ba1a1a;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:7px 12px;cursor:pointer" style-hover="background:rgba(186,26,26,0.06)">비우기</button>
+          </div>
+          <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:18px;display:flex;align-items:center;gap:12px">
+            <span class="material-symbols-outlined" style="font-size:20px;color:#48626e">speed</span>
+            <div style="flex:1">
+              <div style="font:600 13px var(--al-font-label);color:#191c1d">일 사용량</div>
+              <div style="font:500 11px var(--al-font-label);color:#737780;margin-top:2px;font-variant-numeric:tabular-nums">137 / 20,000 요청 (2026-07-10)</div>
+            </div>
+            <div style="width:160px;height:6px;background:#e1e3e4;border-radius:9999px;overflow:hidden"><div style="width:1%;min-width:4px;height:100%;background:linear-gradient(90deg,#001e40,#003366)"></div></div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ SCREEN: 상태 ============ -->
+      <sc-if value="{{ isStatus }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="상태" style="padding:24px;max-width:640px">
+          <div style="background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;font:500 13px var(--al-font-label);color:#43474f">
+              <span>DSD Workbench</span><span style="font-variant-numeric:tabular-nums">세션 3 · 미완료 findings 6</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;font:500 13px var(--al-font-label);color:#43474f;border-top:1px solid rgba(195,198,209,0.5);padding-top:10px">
+              <span>DART Explorer</span><span style="font-variant-numeric:tabular-nums">캐시 14건 · 오늘 137 요청</span>
+            </div>
+          </div>
+          <div style="font:500 12px var(--al-font-label);color:#737780;margin-top:12px">E-0 대시보드 승격 예정 자리 — 상세 지표는 이후 단계에서 설계합니다.</div>
+        </div>
+      </sc-if>
+
+    </main>
+  </div>
+
+  <!-- ============ MODAL: repack 완료 ============ -->
+  <sc-if value="{{ modalOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:50" onClick="{{ closeModal }}">
+      <div style="width:480px;background:#fff;border-radius:16px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);padding:24px" onClick="{{ stop }}">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span class="material-symbols-outlined" style="font-size:24px;color:#3a5a2e">check_circle</span>
+          <h2 style="margin:0;font:700 17px var(--al-font-headline);color:#191c1d">repack 완료</h2>
+        </div>
+        <p style="margin:0 0 14px;font:500 12px var(--al-font-label);color:#737780">{{ modalCount }}건 반영 · 4.2초 · 이력에 기록됨</p>
+        <div style="background:#f3f4f5;border-radius:8px;padding:10px 12px;margin-bottom:14px">
+          <div style="font:500 11px var(--al-font-label);color:#737780">출력 파일</div>
+          <div style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#191c1d;margin-top:3px">D:\감사\한빛전자\FY2025\한빛전자_FY2025_DSD_repack.xml</div>
+          <div style="font:500 11px var(--al-font-label);color:#737780;margin-top:4px">SHA1 <span style="font-family:ui-monospace,Consolas,monospace">e3f1a02b…c99a</span></div>
+        </div>
+        <div style="font:700 11px var(--al-font-label);letter-spacing:0.05em;color:#737780;margin-bottom:8px">DART 편집기 확인 체크리스트</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
+          <sc-for list="{{ checklist }}" as="c" hint-placeholder-count="3">
+            <label style="display:flex;align-items:center;gap:9px;font:500 12px var(--al-font-label);color:#43474f;cursor:pointer">
+              <input type="checkbox" style="width:14px;height:14px;accent-color:#001e40">{{ c }}</label>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button style="font:600 13px var(--al-font-label);color:#43474f;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:8px 14px;cursor:pointer" style-hover="background:#f3f4f5" onClick="{{ closeModal }}">닫기</button>
+          <button style="display:inline-flex;align-items:center;gap:6px;font:600 13px var(--al-font-label);color:#fff;background:linear-gradient(90deg,#001e40,#003366);border:none;border-radius:8px;padding:8px 14px;cursor:pointer" style-hover="opacity:0.9" onClick="{{ closeModal }}">
+            <span class="material-symbols-outlined" style="font-size:16px">folder_open</span>폴더 열기</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;표준&quot;,&quot;조밀&quot;],&quot;default&quot;:&quot;표준&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;표&quot;},&quot;negativeParens&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;표&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'session', tab: 'change',
+    sheet: 'BS',
+    findFilter: 'all', selFinding: 'f1',
+    priorMode: false,
+    levels: {},
+    openGroups: { edit: true, cr: false, num: false },
+    excluded: {},
+    modal: false, modalCount: 0,
+    optCr: true, optNote: true,
+    xbrlPrior: true,
+    openHist: { h1: false, h2: false },
+    reportTypes: { biz: true, half: false, qtr: false, audit: true }
+  };
+
+  // ---------- static data ----------
+  get sheetsData() {
+    const T = true;
+    return {
+      BS: { title: '재무상태표', unit: '(단위: 천원)', cols: ['과목', '주석', '제12(당)기', '제11(전)기'], rows: [
+        { k: 'bs1', name: 'Ⅰ. 유동자산', note: '', c1: '1,842,317,455', c2: '1,714,206,882', total: T, ind: 0 },
+        { k: 'bs2', name: '현금및현금성자산', note: '4', c1: '412,880,113', c2: '385,113,406', ind: 1 },
+        { k: 'bs3', name: '단기금융상품', note: '4', c1: '210,500,000', c2: '180,000,000', ind: 1 },
+        { k: 'bs4', name: '매출채권', note: '5, 28', c1: '618,442,101', c2: '590,281,337', ind: 1 },
+        { k: 'bs5', name: '재고자산', note: '7', c1: '512,391,244', c2: '478,120,003', ind: 1 },
+        { k: 'bs6', name: '기타유동자산', note: '', c1: '88,103,997', c2: '80,692,136', ind: 1 },
+        { k: 'bs7', name: 'Ⅱ. 비유동자산', note: '', c1: '2,401,882,545', c2: '2,268,414,118', total: T, ind: 0 },
+        { k: 'bs8', name: '유형자산', note: '10', c1: '1,588,204,332', c2: '1,502,118,220', ind: 1 },
+        { k: 'bs9', name: '무형자산', note: '11', c1: '214,881,213', c2: '208,441,900', ind: 1 },
+        { k: 'bs10', name: '이연법인세자산', note: '22', c1: '88,797,000', c2: '84,854,000', ind: 1 },
+        { k: 'bs11', name: '기타비유동자산', note: '', c1: '510,000,000', c2: '473,000,000', ind: 1 },
+        { k: 'bs12', name: '자산총계', note: '', c1: '4,244,201,000', c2: '3,982,621,000', total: T, ind: 0, hl: 'red', diff: '+1,000' }
+      ]},
+      PL: { title: '손익계산서', unit: '(단위: 천원)', cols: ['과목', '주석', '제12(당)기', '제11(전)기'], rows: [
+        { k: 'pl1', name: 'Ⅰ. 매출액', note: '24', c1: '5,214,881,204', c2: '4,882,113,559', total: T, ind: 0 },
+        { k: 'pl2', name: 'Ⅱ. 매출원가', note: '25', c1: '-3,988,120,441', c2: '-3,741,220,118', ind: 0 },
+        { k: 'pl3', name: 'Ⅲ. 매출총이익', note: '', c1: '1,226,760,763', c2: '1,140,893,441', total: T, ind: 0 },
+        { k: 'pl4', name: 'Ⅳ. 판매비와관리비', note: '26', c1: '-812,441,557', c2: '-758,102,340', ind: 0, hl: 'amber', diff: '-1' },
+        { k: 'pl5', name: 'Ⅴ. 영업이익', note: '', c1: '414,319,206', c2: '382,791,101', total: T, ind: 0 },
+        { k: 'pl6', name: '금융수익', note: '27', c1: '22,113,004', c2: '18,940,113', ind: 1 },
+        { k: 'pl7', name: '금융비용', note: '27', c1: '-31,884,220', c2: '-28,113,404', ind: 1 },
+        { k: 'pl8', name: 'Ⅵ. 법인세비용차감전순이익', note: '', c1: '404,547,990', c2: '373,617,810', total: T, ind: 0 },
+        { k: 'pl9', name: '법인세비용', note: '22', c1: '-98,113,772', c2: '-92,506,905', ind: 1 },
+        { k: 'pl10', name: 'Ⅶ. 당기순이익', note: '', c1: '306,434,218', c2: '281,110,905', total: T, ind: 0 }
+      ]},
+      CF: { title: '현금흐름표', unit: '(단위: 천원)', cols: ['과목', '주석', '제12(당)기', '제11(전)기'], rows: [
+        { k: 'cf1', name: 'Ⅰ. 영업활동현금흐름', note: '30', c1: '512,208,113', c2: '471,882,004', total: T, ind: 0, hl: 'amber', diff: '+1' },
+        { k: 'cf2', name: '당기순이익', note: '', c1: '306,434,218', c2: '281,110,905', ind: 1 },
+        { k: 'cf3', name: '조정', note: '', c1: '288,441,020', c2: '262,113,558', ind: 1 },
+        { k: 'cf4', name: '자산·부채의 변동', note: '', c1: '-82,667,125', c2: '-71,342,459', ind: 1 },
+        { k: 'cf5', name: 'Ⅱ. 투자활동현금흐름', note: '', c1: '-301,442,880', c2: '-288,104,220', total: T, ind: 0 },
+        { k: 'cf6', name: 'Ⅲ. 재무활동현금흐름', note: '', c1: '-183,101,226', c2: '-164,881,003', total: T, ind: 0 },
+        { k: 'cf7', name: 'Ⅳ. 현금및현금성자산의 증가', note: '', c1: '27,664,007', c2: '18,896,781', total: T, ind: 0 },
+        { k: 'cf8', name: 'Ⅴ. 기초 현금및현금성자산', note: '', c1: '385,113,406', c2: '366,216,625', ind: 1 },
+        { k: 'cf9', name: 'Ⅵ. 기말 현금및현금성자산', note: '', c1: '412,880,113', c2: '385,113,406', total: T, ind: 0 }
+      ]},
+      '주석12': { title: '주석 12. 유형자산', unit: '(단위: 천원)', cols: ['구분', '', '당기말 장부금액', '전기말 장부금액'], rows: [
+        { k: 'n1', name: '토지', note: '', c1: '388,204,110', c2: '380,110,204', ind: 1 },
+        { k: 'n2', name: '건물', note: '', c1: '512,881,004', c2: '498,220,113', ind: 1 },
+        { k: 'n3', name: '기계장치', note: '', c1: '421,777,205', c2: '404,556,890', ind: 1 },
+        { k: 'n4', name: '건설중인자산', note: '', c1: '265,342,013', c2: '219,231,013', ind: 1 },
+        { k: 'n5', name: '합계', note: '', c1: '1,588,204,332', c2: '1,502,118,220', total: T, ind: 0, hl: 'amber', diff: '-1' }
+      ]}
+    };
+  }
+
+  get findingsData() {
+    return [
+      { id: 'f1', sev: 'red', title: '자산총계 — 합계 불일치', loc: 'BS · D23', diff: '+1,000', sheet: 'BS' },
+      { id: 'f2', sev: 'amber', title: '판매비와관리비 — 단수차', loc: 'PL · D19', diff: '-1', sheet: 'PL' },
+      { id: 'f3', sev: 'amber', title: '영업활동현금흐름 — 단수차', loc: 'CF · C31', diff: '+1', sheet: 'CF' },
+      { id: 'f4', sev: 'amber', title: '유형자산 합계 — 단수차', loc: '주석12 · E24', diff: '-1', sheet: '주석12' },
+      { id: 'f5', sev: 'gray', title: '매출채권 ↔ 주석5 대사 미매칭', loc: '주석5 ↔ BS C8', diff: '1', recon: { title: '대사: 매출채권 (BS) ↔ 주석 5', a: 'BS C8 — 매출채권', av: '618,442,101', b: '주석5 — 매출채권 합계', bv: '618,442,102', d: '1' } },
+      { id: 'f6', sev: 'gray', title: '우발부채 ↔ 주석18 대사 미매칭', loc: '주석18 ↔ 외부감사', diff: '—', recon: { title: '대사: 우발부채 (주석 18) ↔ 외부감사 시트', a: '주석18 — 지급보증 합계', av: '45,000,000', b: '외부감사 시트 — 지급보증', bv: '값 없음', d: '대응값 누락' } }
+    ];
+  }
+
+  get changeData() {
+    return {
+      edit: [
+        { sheet: 'BS', cell: 'D23', before: '4,244,201,000', after: '4,244,200,000', num: true },
+        { sheet: 'PL', cell: 'D19', before: '812,441,556', after: '812,441,557', num: true },
+        { sheet: 'CF', cell: 'C31', before: '512,208,112', after: '512,208,113', num: true },
+        { sheet: '주석5', cell: 'C12', before: '618,442,102', after: '618,442,101', num: true },
+        { sheet: '주석12', cell: 'E24', before: '1,588,204,331', after: '1,588,204,332', num: true },
+        { sheet: '주석22', cell: 'D8', before: '98,113,771', after: '98,113,772', num: true },
+        { sheet: 'CE', cell: 'B8', before: '기타포괄손익', after: '기타포괄손익누계액' },
+        { sheet: '주석2', cell: 'B14', before: '2025년 12월 31일로 종료되는', after: '2025년 12월 31일에 종료되는' },
+        { sheet: '주석26', cell: 'C18', before: '45,881,204', after: '45,881,205', num: true },
+        { sheet: '주석28', cell: 'B4', before: '특수관계자와의 거래', after: '특수관계자 거래' },
+        { sheet: '표지', cell: 'B12', before: '제 12 기', after: '제12기' },
+        { sheet: '주석7', cell: 'D22', before: '512,391,243', after: '512,391,244', num: true }
+      ],
+      cr: [
+        { sheet: 'BS', cell: 'E4', before: '&cr;', after: '(빈 셀)' },
+        { sheet: 'BS', cell: 'E9', before: '&cr;', after: '(빈 셀)' },
+        { sheet: 'PL', cell: 'F11', before: '&cr;', after: '(빈 셀)' },
+        { sheet: 'CF', cell: 'E20', before: '&cr;', after: '(빈 셀)' },
+        { sheet: '주석4', cell: 'G7', before: '&cr;', after: '(빈 셀)' },
+        { sheet: '주석10', cell: 'F31', before: '&cr;', after: '(빈 셀)' }
+      ],
+      num: [
+        { sheet: 'BS', cell: 'C4', before: '주4', after: '주5' },
+        { sheet: 'BS', cell: 'C8', before: '주5, 28', after: '주6, 28' },
+        { sheet: 'PL', cell: 'C6', before: '주26', after: '주27' },
+        { sheet: 'CF', cell: 'C2', before: '주30', after: '주31' }
+      ]
+    };
+  }
+
+  // ---------- style helpers ----------
+  chip(fg, bg) {
+    return 'display:inline-flex;align-items:center;gap:4px;font:600 11px var(--al-font-label);color:' + fg + ';background:' + bg + ';border-radius:4px;padding:3px 8px';
+  }
+  toggleStyle(on) {
+    return 'width:34px;height:20px;border-radius:9999px;background:' + (on ? '#001e40' : '#c3c6d1') + ';position:relative;cursor:pointer;transition:background 200ms;flex:none';
+  }
+  knobStyle(on) {
+    return 'width:16px;height:16px;border-radius:9999px;background:#fff;position:absolute;top:2px;left:' + (on ? '16px' : '2px') + ';transition:left 200ms;box-shadow:0 1px 2px rgba(0,0,0,0.2)';
+  }
+  fmtNum(s) {
+    const parens = this.props.negativeParens ?? true;
+    if (typeof s === 'string' && s.startsWith('-')) {
+      return { t: parens ? '(' + s.slice(1) + ')' : s, neg: true };
+    }
+    return { t: s, neg: false };
+  }
+  numCellStyle(neg, extra) {
+    const pad = (this.props.density === '조밀') ? '4px 12px' : '7px 12px';
+    return 'text-align:right;font:500 12px var(--al-font-label);font-variant-numeric:tabular-nums;padding:' + pad + ';border-bottom:1px solid rgba(195,198,209,0.4);color:' + (neg ? '#ba1a1a' : '#191c1d') + ';' + (extra || '');
+  }
+
+  buildTableRows(sheetKey, withFooting) {
+    const sheet = this.sheetsData[sheetKey];
+    if (!sheet) return [];
+    const pad = (this.props.density === '조밀') ? '4px 12px' : '7px 12px';
+    return sheet.rows.map(r => {
+      const c1 = this.fmtNum(r.c1), c2 = this.fmtNum(r.c2);
+      const bold = r.total ? 'font-weight:700;' : '';
+      const hlBg = withFooting && r.hl === 'red' ? 'background:#ffdad6;' : (withFooting && r.hl === 'amber' ? 'background:#ffecc7;' : '');
+      const lvl = this.state.levels[r.k];
+      return {
+        name: r.name, note: r.note,
+        nameStyle: 'font:500 12px var(--al-font-label);color:#191c1d;padding:' + pad + ';border-bottom:1px solid rgba(195,198,209,0.4);padding-left:' + (16 + r.ind * 18) + 'px;' + bold,
+        noteStyle: 'font:500 11px var(--al-font-label);color:#737780;padding:' + pad + ';border-bottom:1px solid rgba(195,198,209,0.4);text-align:center',
+        c1: c1.t, c2: c2.t,
+        c1Style: this.numCellStyle(c1.neg, bold + hlBg + (withFooting ? 'white-space:nowrap;' : '')),
+        c2Style: this.numCellStyle(c2.neg, bold),
+        isTotal: !!r.total,
+        level: lvl || (r.ind === 0 && r.total ? 'L1' : 'L2'),
+        manual: !!lvl,
+        onLevel: (e) => this.setState(s => ({ levels: { ...s.levels, [r.k]: e.target.value } })),
+        lvlCellStyle: 'padding:' + pad + ';border-bottom:1px solid rgba(195,198,209,0.4);width:110px',
+        diff: withFooting && r.diff ? r.diff : null,
+        diffStyle: 'display:inline-block;margin-left:8px;font:700 10px var(--al-font-label);color:#fff;background:' + (r.hl === 'red' ? '#ba1a1a' : '#7a4f00') + ';border-radius:4px;padding:2px 6px;font-variant-numeric:tabular-nums'
+      };
+    });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const nav = (key, icon, label, opts) => {
+      const active = s.screen === key;
+      return Object.assign({
+        icon, label, key,
+        style: 'display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;font:' + (active ? '600' : '500') + ' 13px var(--al-font-label);color:' + (active ? '#001e40' : '#43474f') + ';cursor:pointer;margin-bottom:2px;' + (active ? 'background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.05);' : ''),
+        onClick: () => this.setState({ screen: key })
+      }, opts || {});
+    };
+
+    const navSections = [
+      { label: 'DSD WORKBENCH', tag: '로컬 전용', tagStyle: 'font:600 9px var(--al-font-label);color:#001e40;background:#d5e3ff;border-radius:4px;padding:2px 6px', items: [
+        nav('worklist', 'folder_open', '작업 목록'),
+        nav('session', 'table_chart', '㈜한빛전자 FY2025', { chip: '6', chipStyle: 'font:700 10px var(--al-font-label);color:#930010;background:#ffdad6;border-radius:9999px;padding:1px 7px' })
+      ]},
+      { label: 'DART EXPLORER', tag: '수신 전용', tagStyle: 'font:600 9px var(--al-font-label);color:#4e6874;background:#cbe7f5;border-radius:4px;padding:2px 6px', items: [
+        nav('search', 'search', '공시 검색'),
+        nav('xbrl', 'account_tree', 'XBRL 파이프라인'),
+        nav('settings', 'settings', '설정')
+      ]}
+    ];
+    const statusActive = s.screen === 'status';
+    const statusNavStyle = 'display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;font:500 13px var(--al-font-label);color:' + (statusActive ? '#001e40' : '#43474f') + ';cursor:pointer;' + (statusActive ? 'background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.05);font-weight:600;' : '');
+
+    // header
+    const isExplorer = ['search', 'xbrl', 'settings'].includes(s.screen);
+    const titles = {
+      worklist: ['DSD Workbench', '작업 목록'],
+      session: ['DSD Workbench', '세션 상세'],
+      search: ['DART Explorer', '공시 검색'],
+      xbrl: ['DART Explorer', 'XBRL 파이프라인'],
+      settings: ['DART Explorer', '설정'],
+      status: ['상태', 'E-0']
+    };
+    const trustLocal = !isExplorer;
+    const trustStyle = 'display:inline-flex;align-items:center;gap:6px;font:600 11px var(--al-font-label);border-radius:8px;padding:5px 10px;' +
+      (trustLocal ? 'color:#001e40;background:#d5e3ff' : 'color:#4e6874;background:#cbe7f5');
+
+    // tabs
+    const tabDefs = [
+      { key: 'overview', label: '개요' }, { key: 'sheets', label: '시트 뷰' },
+      { key: 'footing', label: 'Footing', count: '6', countColor: '#930010', countBg: '#ffdad6' },
+      { key: 'change', label: '변경검토', count: '363', countColor: '#001e40', countBg: '#d5e3ff' },
+      { key: 'history', label: '이력' }
+    ];
+    const tabs = tabDefs.map(t => ({
+      label: t.label, count: t.count || null,
+      countStyle: 'font:700 10px var(--al-font-label);color:' + (t.countColor || '') + ';background:' + (t.countBg || '') + ';border-radius:9999px;padding:1px 7px;font-variant-numeric:tabular-nums',
+      style: 'display:flex;align-items:center;gap:6px;padding:9px 14px;cursor:pointer;font:600 13px var(--al-font-label);border-bottom:2px solid ' + (s.tab === t.key ? '#001e40' : 'transparent') + ';color:' + (s.tab === t.key ? '#001e40' : '#737780'),
+      onClick: () => this.setState({ tab: t.key })
+    }));
+
+    // pipeline stepper
+    const steps = ['추출', '엑셀 편집 (외부)', '변경검토', 'repack', 'DART 확인'];
+    const cur = 2;
+    const pipeSteps = steps.map((label, i) => {
+      const done = i < cur, active = i === cur;
+      return {
+        label, icon: done ? 'check' : (active ? 'radio_button_checked' : 'radio_button_unchecked'),
+        dotStyle: 'width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;color:' + (done || active ? '#fff' : '#737780') + ';background:' + (done ? '#001e40' : (active ? 'linear-gradient(90deg,#001e40,#003366)' : '#e1e3e4')),
+        labelStyle: 'font:' + (active ? '700' : '500') + ' 11px var(--al-font-label);color:' + (active ? '#001e40' : (done ? '#43474f' : '#737780')) + ';white-space:nowrap',
+        hasLine: i < steps.length - 1,
+        lineStyle: 'flex:1;height:2px;margin:0 8px 22px;background:' + (i < cur ? '#001e40' : '#e1e3e4')
+      };
+    });
+
+    // sessions
+    const stChip = {
+      '추출됨': this.chip('#001e40', '#d5e3ff'), '수정중': this.chip('#7a4f00', '#ffecc7'), 'repack완료': this.chip('#3a5a2e', '#dcead2')
+    };
+    const sessions = [
+      { file: '한빛전자_FY2025_DSD.xml', company: '㈜한빛전자', status: '수정중', editver: '5.2.1', verified: true, meta: '21,480 셀 · 주석 47', last: '07-09 18:42' },
+      { file: '대성물산_FY2025_DSD.xml', company: '대성물산㈜', status: 'repack완료', editver: '5.2.1', verified: true, meta: '18,204 셀 · 주석 41', last: '07-04 11:20' },
+      { file: '세종바이오_FY2025_DSD.xml', company: '㈜세종바이오', status: '추출됨', editver: '6.0.0-beta', verified: false, meta: '9,881 셀 · 주석 33', last: '07-08 09:15' }
+    ].map(x => ({
+      ...x,
+      statusStyle: stChip[x.status] + ';flex:none',
+      editverIcon: x.verified ? 'check' : 'warning',
+      editver: x.verified ? 'editver ' + x.editver : '미검증 편집기 ' + x.editver,
+      editverStyle: x.verified ? this.chip('#3a5a2e', '#dcead2') : this.chip('#930010', '#ffdad6'),
+      onOpen: () => this.setState({ screen: 'session', tab: 'overview' })
+    }));
+
+    // sheet tree
+    const treeNames = ['표지', 'BS', 'PL', 'PL1', 'CE', 'CF', '주석1', '주석2', '주석4', '주석5', '주석7', '주석10', '주석12', '주석22', '주석26', '주석28', '외부감사'];
+    const sheetTree = treeNames.map(n => ({
+      name: n,
+      style: 'padding:7px 12px;border-radius:8px;font:' + (s.sheet === n ? '600' : '500') + ' 12px var(--al-font-label);color:' + (s.sheet === n ? '#001e40' : '#43474f') + ';cursor:pointer;margin-bottom:1px;' + (s.sheet === n ? 'background:#d5e3ff;' : ''),
+      onClick: () => this.setState({ sheet: n })
+    }));
+    const curSheet = this.sheetsData[s.sheet];
+    const thBase = 'font:700 11px var(--al-font-label);color:#737780;border-bottom:1px solid #c3c6d1;padding:8px 12px;background:#f3f4f5';
+    const mkCols = (sheet, extra) => {
+      const cols = sheet ? sheet.cols : [];
+      const out = cols.map((label, i) => ({ label, style: thBase + ';text-align:' + (i >= 2 ? 'right' : (i === 1 ? 'center' : 'left')) }));
+      if (extra) out.push({ label: '추론 레벨', style: thBase + ';text-align:right' });
+      return out;
+    };
+
+    // footing
+    const sumChip = (color, bg, label) => ({
+      label,
+      style: 'display:inline-flex;align-items:center;gap:6px;font:600 12px var(--al-font-label);color:' + color + ';background:' + bg + ';border-radius:8px;padding:5px 10px;font-variant-numeric:tabular-nums',
+      dotStyle: 'width:7px;height:7px;border-radius:9999px;background:' + color
+    });
+    const footSummary = [
+      sumChip('#3a5a2e', '#dcead2', '일치 41'),
+      sumChip('#7a4f00', '#ffecc7', '단수차 3'),
+      sumChip('#ba1a1a', 'rgba(186,26,26,0.08)', '불일치 1'),
+      sumChip('#43474f', '#edeeef', '주석대사 미매칭 2')
+    ];
+    const filters = [['all', '전체 6'], ['amber', '단수차 3'], ['red', '불일치 1'], ['gray', '미매칭 2']];
+    const findFilters = filters.map(([k, label]) => ({
+      label,
+      style: 'font:600 11px var(--al-font-label);padding:4px 10px;border-radius:8px;cursor:pointer;' + (s.findFilter === k ? 'background:#001e40;color:#fff' : 'background:#edeeef;color:#43474f'),
+      onClick: () => this.setState({ findFilter: k })
+    }));
+    const sevColor = { red: '#ba1a1a', amber: '#e0a100', gray: '#737780' };
+    const findings = this.findingsData.filter(f => s.findFilter === 'all' || f.sev === s.findFilter).map(f => ({
+      title: f.title, loc: f.loc, diff: f.diff,
+      style: 'display:flex;align-items:flex-start;gap:10px;padding:11px 14px;cursor:pointer;border-bottom:1px solid rgba(195,198,209,0.4);border-left:3px solid ' + (s.selFinding === f.id ? '#001e40' : 'transparent') + ';' + (s.selFinding === f.id ? 'background:#f3f4f5;' : ''),
+      sevStyle: 'width:8px;height:8px;border-radius:9999px;flex:none;margin-top:4px;background:' + sevColor[f.sev],
+      diffStyle: 'flex:none;font:700 11px var(--al-font-label);font-variant-numeric:tabular-nums;color:' + sevColor[f.sev],
+      onClick: () => this.setState({ selFinding: f.id })
+    }));
+    const selF = this.findingsData.find(f => f.id === s.selFinding) || this.findingsData[0];
+    const footIsRecon = !!selF.recon;
+    const footSheet = footIsRecon ? null : this.sheetsData[selF.sheet];
+
+    // prior mode
+    const priorFindings = [
+      { label: 'BS 전기열 ↔ 전기 DSD 당기열', val: '58 / 58 일치', ok: true },
+      { label: 'PL 전기열 ↔ 전기 DSD 당기열', val: '41 / 42 일치 · 1 상이', ok: false }
+    ].map(p => ({
+      label: p.label, val: p.val,
+      dotStyle: 'width:7px;height:7px;border-radius:9999px;flex:none;background:' + (p.ok ? '#3a5a2e' : '#e0a100'),
+      valStyle: 'font:600 11px var(--al-font-label);font-variant-numeric:tabular-nums;color:' + (p.ok ? '#3a5a2e' : '#7a4f00')
+    }));
+
+    // change review
+    const groupDefs = [
+      { key: 'edit', label: '수정', tag: '수정', tagFg: '#001e40', tagBg: '#d5e3ff', total: 12 },
+      { key: 'cr', label: '&cr; 정리', tag: '&cr;', tagFg: '#4e6874', tagBg: '#cbe7f5', total: 319 },
+      { key: 'num', label: '주석번호 정리', tag: '번호', tagFg: '#7a4f00', tagBg: '#ffecc7', total: 32 }
+    ];
+    const cd = this.changeData;
+    let selCount = 0;
+    const changeGroups = groupDefs.map(g => {
+      const rows = cd[g.key];
+      const shown = rows.length;
+      const excludedInGroup = rows.filter((_, i) => s.excluded[g.key + i]).length;
+      const groupSel = g.total - excludedInGroup;
+      selCount += groupSel;
+      const allChecked = excludedInGroup === 0;
+      return {
+        label: g.label, tag: g.tag,
+        tagStyle: this.chip(g.tagFg, g.tagBg),
+        countLabel: groupSel + ' / ' + g.total + '건 선택',
+        open: s.openGroups[g.key],
+        chev: s.openGroups[g.key] ? 'expand_more' : 'chevron_right',
+        onToggle: () => this.setState(st => ({ openGroups: { ...st.openGroups, [g.key]: !st.openGroups[g.key] } })),
+        allChecked,
+        onToggleAll: (e) => {
+          const checked = e.target.checked;
+          this.setState(st => {
+            const ex = { ...st.excluded };
+            rows.forEach((_, i) => { if (checked) delete ex[g.key + i]; else ex[g.key + i] = true; });
+            return { excluded: ex };
+          });
+        },
+        more: g.total > shown ? '… 외 ' + (g.total - shown) + '건 (그룹 선택 상태를 따릅니다)' : null,
+        rows: rows.map((r, i) => {
+          const key = g.key + i;
+          const checked = !s.excluded[key];
+          const numCss = r.num ? 'font-variant-numeric:tabular-nums;text-align:right;' : 'text-align:right;';
+          return {
+            sheet: r.sheet, cell: r.cell, before: r.before, after: r.after, checked,
+            rowStyle: checked ? '' : 'opacity:0.45',
+            beforeStyle: 'font:500 12px var(--al-font-label);color:#930010;padding:6px 8px;border-bottom:1px solid rgba(195,198,209,0.4);' + numCss + 'text-decoration:line-through',
+            afterStyle: 'font:600 12px var(--al-font-label);color:#191c1d;padding:6px 16px 6px 8px;border-bottom:1px solid rgba(195,198,209,0.4);' + numCss,
+            onToggle: () => this.setState(st => {
+              const ex = { ...st.excluded };
+              if (ex[key]) delete ex[key]; else ex[key] = true;
+              return { excluded: ex };
+            })
+          };
+        })
+      };
+    });
+
+    // history
+    const historyItems = [
+      { id: 'h1', op: 'dry-run', time: '2026-07-09 18:42', summary: '변경 363건 감지 (수정 12 · &cr; 319 · 번호 32)', sha: 'e3f1…c99a', opts: '&cr; 정리 on · 주석번호 정리 on', cells: [
+        { sheet: 'BS', cell: 'D23', change: '4,244,201,000 → 4,244,200,000' },
+        { sheet: 'PL', cell: 'D19', change: '812,441,556 → 812,441,557' },
+        { sheet: 'CE', cell: 'B8', change: '기타포괄손익 → 기타포괄손익누계액' }
+      ]},
+      { id: 'h2', op: 'extract', time: '2026-07-05 14:03', summary: '21,480 셀 · 주석 47 · &cr;-only 319 추출', sha: '7bc2…41f9', opts: '기본', cells: [
+        { sheet: '전체', cell: '—', change: '원본에서 셀 21,480개 추출 완료' }
+      ]}
+    ].map(h => ({
+      ...h,
+      open: s.openHist[h.id],
+      chev: s.openHist[h.id] ? 'expand_more' : 'chevron_right',
+      opStyle: this.chip(h.op === 'dry-run' ? '#001e40' : '#4e6874', h.op === 'dry-run' ? '#d5e3ff' : '#cbe7f5'),
+      onToggle: () => this.setState(st => ({ openHist: { ...st.openHist, [h.id]: !st.openHist[h.id] } }))
+    }));
+
+    // DART
+    const rct = [['biz', '사업보고서'], ['half', '반기보고서'], ['qtr', '분기보고서'], ['audit', '감사보고서']];
+    const reportChips = rct.map(([k, label]) => ({
+      label,
+      style: 'font:600 11px var(--al-font-label);padding:5px 11px;border-radius:8px;cursor:pointer;border:1px solid ' + (s.reportTypes[k] ? '#001e40' : '#c3c6d1') + ';' + (s.reportTypes[k] ? 'background:#001e40;color:#fff' : 'background:#fff;color:#43474f'),
+      onClick: () => this.setState(st => ({ reportTypes: { ...st.reportTypes, [k]: !st.reportTypes[k] } }))
+    }));
+    const dartResults = [
+      { company: '㈜한빛전자', report: '사업보고서 (2025.12)', date: '2026-03-19', rcept: '20260319001234', cached: true },
+      { company: '㈜한빛전자', report: '감사보고서 (2025.12)', date: '2026-03-12', rcept: '20260312000871', cached: true },
+      { company: '㈜한빛전자', report: '반기보고서 (2025.06)', date: '2025-08-14', rcept: '20250814002203', cached: false },
+      { company: '한빛전자판매㈜', report: '감사보고서 (2025.12)', date: '2026-03-28', rcept: '20260328001518', cached: false }
+    ].map(d => ({
+      ...d,
+      dlLabel: d.cached ? '캐시에서 열기' : '원본 다운로드',
+      onXbrl: () => this.setState({ screen: 'xbrl' })
+    }));
+
+    // xbrl steps
+    const xbrlSteps = [
+      { label: 'rcept 탐색', detail: '20260319001234 — 사업보고서 (2025.12)' },
+      { label: '다운로드', detail: '캐시 사용 · 42.1 MB (재다운로드 생략)' },
+      { label: '압축해제', detail: '142개 파일' },
+      { label: '팩트 추출', detail: '8,214 facts · 3.8초' },
+      { label: '버전대사', detail: '전기 2024 대비 312 계정 · 상이 4건' }
+    ].map((x, i, arr) => ({
+      ...x, icon: 'check', hasLine: i < arr.length - 1,
+      dotStyle: 'width:22px;height:22px;border-radius:9999px;background:#dcead2;color:#3a5a2e;display:flex;align-items:center;justify-content:center;flex:none'
+    }));
+
+    return {
+      // shell
+      navSections, statusNavStyle,
+      goStatus: () => this.setState({ screen: 'status' }),
+      goSettings: () => this.setState({ screen: 'settings' }),
+      headerTitle: titles[s.screen][0], headerSub: titles[s.screen][1],
+      trustStyle, trustIcon: trustLocal ? 'lock' : 'public',
+      trustLabel: trustLocal ? '로컬 전용 — 외부 전송 없음' : 'OpenDART 수신 전용',
+      isWorklist: s.screen === 'worklist', isSession: s.screen === 'session',
+      isSearch: s.screen === 'search', isXbrl: s.screen === 'xbrl',
+      isSettings: s.screen === 'settings', isStatus: s.screen === 'status',
+      // session
+      tabs,
+      tabOverview: s.tab === 'overview', tabSheets: s.tab === 'sheets',
+      tabFooting: s.tab === 'footing', tabChange: s.tab === 'change', tabHistory: s.tab === 'history',
+      goChangeTab: () => this.setState({ tab: 'change' }),
+      goOverviewTab: () => this.setState({ tab: 'overview' }),
+      pipeSteps,
+      crToggleStyle: this.toggleStyle(s.optCr), crKnobStyle: this.knobStyle(s.optCr),
+      noteToggleStyle: this.toggleStyle(s.optNote), noteKnobStyle: this.knobStyle(s.optNote),
+      toggleCr: () => this.setState(st => ({ optCr: !st.optCr })),
+      toggleNote: () => this.setState(st => ({ optNote: !st.optNote })),
+      optWarning: !s.optCr || !s.optNote,
+      // worklist
+      sessions,
+      // sheets
+      sheetTree,
+      sheetTitle: curSheet ? curSheet.title : s.sheet,
+      sheetUnit: curSheet ? curSheet.unit : '',
+      sheetHasData: !!curSheet, sheetNoData: !curSheet,
+      sheetCols: mkCols(curSheet, false),
+      sheetRows: this.buildTableRows(s.sheet, false),
+      // footing
+      footSummary, findFilters, findings,
+      priorMode: s.priorMode, priorOff: !s.priorMode,
+      togglePrior: () => this.setState(st => ({ priorMode: !st.priorMode })),
+      priorIcon: s.priorMode ? 'link_off' : 'add_link',
+      priorLabel: s.priorMode ? '전기대사 해제' : '전기대사',
+      priorBtnStyle: 'display:inline-flex;align-items:center;gap:5px;font:600 12px var(--al-font-label);color:#001e40;background:#fff;border:1px solid #c3c6d1;border-radius:8px;padding:6px 11px;cursor:pointer',
+      priorFindings,
+      footIsTable: !footIsRecon, footIsRecon,
+      footSheetTitle: footSheet ? footSheet.title : '',
+      footSheetUnit: footSheet ? footSheet.unit : '',
+      footCols: mkCols(footSheet, true),
+      footRows: footIsRecon ? [] : this.buildTableRows(selF.sheet, true),
+      reconTitle: footIsRecon ? selF.recon.title : '',
+      reconA: footIsRecon ? selF.recon.a : '', reconAVal: footIsRecon ? selF.recon.av : '',
+      reconB: footIsRecon ? selF.recon.b : '', reconBVal: footIsRecon ? selF.recon.bv : '',
+      reconDiff: footIsRecon ? selF.recon.d : '',
+      openReconSheet: () => this.setState({ tab: 'sheets', sheet: '주석5' }),
+      // change review
+      changeGroups,
+      selCount,
+      selSummary: '선택 ' + selCount + ' / 363건',
+      runRepack: () => this.setState({ modal: true, modalCount: selCount }),
+      stop: (e) => e.stopPropagation(),
+      // modal
+      modalOpen: s.modal, modalCount: s.modalCount,
+      closeModal: () => this.setState({ modal: false }),
+      checklist: ['DART 편집기에서 파일 열림 확인', '표지 · 회사명 · 기수 표시 확인', '주석 참조 번호 링크 정상 동작 확인'],
+      // history
+      historyItems,
+      // dart
+      reportChips, dartResults,
+      // xbrl
+      xbrlSteps,
+      phaseDTabs: ['트리 뷰', '차원 표', '매핑'],
+      xbrlToggleStyle: this.toggleStyle(s.xbrlPrior), xbrlKnobStyle: this.knobStyle(s.xbrlPrior),
+      toggleXbrlPrior: () => this.setState(st => ({ xbrlPrior: !st.xbrlPrior }))
+    };
+  }
+}
+</script>
+</body>
+</html>

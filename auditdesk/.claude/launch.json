@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "dashboard"],
+      "port": 8700
+    },
+    {
+      "name": "auditdesk",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "auditdesk"],
+      "port": 8710
+    }
+  ]
+}

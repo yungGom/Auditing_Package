@@ -1,0 +1,11 @@
+/* 참조 구현(AuditDesk v2 standalone) 전역 스타일 그대로 */
+html, body, #root { margin: 0; padding: 0; height: 100%; }
+* { box-sizing: border-box; }
+a { color: #001e40; text-decoration: none; }
+a:hover { color: #003366; text-decoration: underline; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #c3c6d1; border-radius: 8px; border: 2px solid #f8f9fa; }
+::-webkit-scrollbar-track { background: transparent; }
+button { font-family: inherit; }
+.hoverable:hover { filter: brightness(0.97); }
+.navitem:hover { background: #edeeef !important; color: #191c1d !important; }

@@ -1,0 +1,8 @@
+# dsd_workbench — 고객사 DSD 편집 도구 (완전 오프라인)
+#
+# [보안 원칙] 이 앱은 고객사 데이터를 다루므로 네트워크 라이브러리 의존 금지.
+#   requests / httpx / aiohttp / urllib3 / websockets 등 추가 불가.
+#   외부 통신이 필요한 기능은 dart_explorer(공개 데이터 수신 전용)에만 둔다.
+#   위반 여부는 dsd_tool/tests/test_offline.py 가 검사한다.
+
+openpyxl>=3.1

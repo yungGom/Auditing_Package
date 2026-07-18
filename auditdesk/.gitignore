@@ -1,0 +1,50 @@
+# Python / backend
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.db
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.log
+
+# Claude Code (keep shared launch.json, ignore personal local settings)
+.claude/settings.local.json
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.sw?
+
+# DSD tool generated artifacts
+dsd_workbench/dsd_tool/fixtures/_work/
+dsd_workbench/dsd_tool/fixtures/verify_g3/
+dsd_workbench/history/
+
+# dart_explorer: API 키·다운로드 캐시 (커밋 금지)
+dart_explorer/.env
+dart_explorer/client/.env
+dart_explorer/cache/
+dart_explorer/corpus/
+.test_results.json
+
+# dart_explorer: 택사노미 버전 저장소 (대용량 원본 — 커밋 금지, D-4a)
+dart_explorer/taxonomies/
+
+# AI_Footing 예시 (실무 산출물 — 고객사명 포함, 커밋 금지)
+dsd_workbench/dsd_tool/fixtures/ai_footing/
+
+# AuditDesk 웹 앱 런타임/빌드 산출물
+auditdesk/data/
+auditdesk/static/
+webui/node_modules/
+
+# 금감원 택소노미 배포 엑셀 (D-2c) — 사용자 파일 교체로 갱신, 대용량 바이너리
+assets/taxonomy/*.xlsx

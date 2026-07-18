@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/auditlink-design-system-8cf89275-4d1a-4ef3-9c98-e0fa89a53680/colors_and_type.css">
+  <link rel="stylesheet" href="_ds/auditlink-design-system-8cf89275-4d1a-4ef3-9c98-e0fa89a53680/fonts/fonts.css">
+  <script src="_ds/auditlink-design-system-8cf89275-4d1a-4ef3-9c98-e0fa89a53680/_ds_bundle.js"></script>
+</helmet>
+
+<div style="{{ cardStyle }}">
+  <div style="display:flex;align-items:flex-start;gap:10px">
+    <div style="flex:1;min-width:0">
+      <div style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#001e40;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ elementId }}</div>
+      <div style="font:600 14px var(--al-font-label);color:#191c1d;margin-top:3px">{{ labelKo }}</div>
+    </div>
+    <span style="{{ stateChipStyle }}">
+      <span class="material-symbols-outlined" style="font-size:13px">{{ stateIcon }}</span>{{ stateLabel }}</span>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px">
+    <sc-for list="{{ badgeList }}" as="b" hint-placeholder-count="3">
+      <span style="{{ b.style }}">{{ b.label }}</span>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{ noteText }}" hint-placeholder-val="{{ false }}">
+    <div style="{{ noteStyle }}">{{ noteText }}</div>
+  </sc-if>
+
+  <sc-if value="{{ hasAlts }}" hint-placeholder-val="{{ false }}">
+    <div style="display:inline-flex;align-items:center;gap:4px;font:600 12px var(--al-font-label);color:#43474f;cursor:pointer;margin-top:10px" style-hover="color:#001e40" onClick="{{ toggleAlts }}">
+      <span class="material-symbols-outlined" style="font-size:16px">{{ altChev }}</span>대안 {{ altCount }}건 보기</div>
+    <sc-if value="{{ altsOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;margin-top:6px;border-top:1px solid rgba(195,198,209,0.5)">
+        <sc-for list="{{ altList }}" as="a" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid rgba(195,198,209,0.35)">
+            <span style="font:700 10px var(--al-font-label);color:#737780;width:14px;font-variant-numeric:tabular-nums">{{ a.rank }}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#43474f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.id }}</div>
+              <div style="font:500 11px var(--al-font-label);color:#737780">{{ a.label }}</div>
+            </div>
+            <span style="font:600 10px var(--al-font-label);color:#43474f;background:#edeeef;border-radius:4px;padding:2px 7px;font-variant-numeric:tabular-nums;flex:none">{{ a.badge }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </sc-if>
+
+  <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+    <div style="flex:1"></div>
+    <sc-if value="{{ confirmedRecord }}" hint-placeholder-val="{{ false }}">
+      <span style="font:500 11px var(--al-font-label);color:#737780;display:inline-flex;align-items:center;gap:4px">
+        <span class="material-symbols-outlined" style="font-size:14px;color:#3a5a2e">lock</span>{{ confirmedRecord }}</span>
+    </sc-if>
+    <sc-if value="{{ showConfirm }}" hint-placeholder-val="{{ true }}">
+      <button style="font:600 12px var(--al-font-label);color:#fff;background:linear-gradient(90deg,#001e40,#003366);border:none;border-radius:8px;padding:7px 16px;cursor:pointer;white-space:nowrap" style-hover="opacity:0.9" onClick="{{ doConfirm }}">확정</button>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:420,&quot;height&quot;:260},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;recommend&quot;,&quot;confirmed&quot;,&quot;extension&quot;,&quot;standard&quot;],&quot;default&quot;:&quot;recommend&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;상태&quot;},&quot;elementId&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;ifrs-full:CashAndCashEquivalents&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;labelKo&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;현금및현금성자산&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;badges&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;{label:string;kind:'corpus'|'sim'|'peer'|'ext'}[]&quot;},&quot;alts&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;{id:string;label:string;badge:string}[]&quot;},&quot;note&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;confirmedBy&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;문용 7/12&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onConfirm&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+class Component extends DCLogic {
+  state = { open: false };
+  renderVals() {
+    const p = this.props;
+    const variant = p.variant ?? 'recommend';
+    const chip = (fg, bg) => 'display:inline-flex;align-items:center;gap:4px;font:600 11px var(--al-font-label);color:' + fg + ';background:' + bg + ';border-radius:4px;padding:3px 8px;flex:none';
+    const variants = {
+      recommend: { label: '추천 1순위', icon: 'auto_awesome', fg: '#001e40', bg: '#d5e3ff', border: '#c3c6d1' },
+      confirmed: { label: '확정됨', icon: 'check', fg: '#3a5a2e', bg: '#dcead2', border: '#c3c6d1' },
+      extension: { label: '확장 필요', icon: 'report', fg: '#930010', bg: '#ffdad6', border: '#c3c6d1' },
+      standard: { label: '표준 사용 권장', icon: 'warning', fg: '#7a4f00', bg: '#ffecc7', border: '#e0a100' }
+    };
+    const v = variants[variant] || variants.recommend;
+    const badgeKinds = {
+      corpus: { fg: '#001e40', bg: '#d5e3ff' },
+      sim: { fg: '#43474f', bg: '#edeeef' },
+      peer: { fg: '#4e6874', bg: '#cbe7f5' },
+      ext: { fg: '#930010', bg: '#ffdad6' }
+    };
+    const badges = p.badges ?? [];
+    const alts = p.alts ?? [];
+    const confirmed = variant === 'confirmed';
+    return {
+      elementId: p.elementId ?? '',
+      labelKo: p.labelKo ?? '',
+      cardStyle: 'background:#fff;border:1px solid ' + v.border + ';border-radius:8px;padding:14px 16px;' + (variant === 'standard' ? 'background:#fffdf6;' : '') + (confirmed ? 'background:#fbfdfa;' : ''),
+      stateChipStyle: chip(v.fg, v.bg),
+      stateIcon: v.icon, stateLabel: v.label,
+      badgeList: badges.map(b => {
+        const k = badgeKinds[b.kind] || badgeKinds.sim;
+        return { label: b.label, style: 'font:600 11px var(--al-font-label);color:' + k.fg + ';background:' + k.bg + ';border-radius:4px;padding:3px 8px;font-variant-numeric:tabular-nums' };
+      }),
+      noteText: p.note ?? null,
+      noteStyle: 'font:500 11px var(--al-font-label);color:' + v.fg + ';background:' + v.bg + ';border-radius:8px;padding:8px 10px;margin-top:10px',
+      hasAlts: alts.length > 0,
+      altCount: alts.length,
+      altList: alts.map((a, i) => ({ rank: i + 2, id: a.id, label: a.label, badge: a.badge })),
+      altsOpen: this.state.open,
+      altChev: this.state.open ? 'expand_more' : 'chevron_right',
+      toggleAlts: () => this.setState(s => ({ open: !s.open })),
+      showConfirm: !confirmed,
+      confirmedRecord: confirmed ? ('확정: ' + (p.confirmedBy ?? '문용 7/12')) : null,
+      doConfirm: () => { if (p.onConfirm) p.onConfirm(); }
+    };
+  }
+}
+</script>
+</body>
+</html>

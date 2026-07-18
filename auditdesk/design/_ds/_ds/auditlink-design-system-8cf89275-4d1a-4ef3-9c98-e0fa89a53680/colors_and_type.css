@@ -1,0 +1,187 @@
+/* ==========================================================================
+   AuditLink — Colors & Type
+   Lift directly into any HTML/React project. Pairs with fonts/fonts.css.
+   ========================================================================== */
+
+/* ---- Web fonts ---- */
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap");
+
+:root {
+  /* ---- Brand / Primary ---- */
+  --al-primary: #001e40;
+  --al-primary-container: #003366;
+  --al-primary-fixed: #d5e3ff;
+
+  /* ---- Secondary (slate) ---- */
+  --al-secondary: #48626e;
+  --al-secondary-container: #cbe7f5;
+  --al-on-secondary-container: #4e6874;
+
+  /* ---- Tertiary (coral accent — review/warning) ---- */
+  --al-on-tertiary-container: #ff6c63;
+  --al-tertiary-fixed: #ffdad6;
+  --al-on-tertiary-fixed-variant: #930010;
+
+  /* ---- Semantic ---- */
+  --al-error: #ba1a1a;
+  --al-success: #3a5a2e; /* used once in Dashboard for 100% progress bars */
+
+  /* ---- Surfaces (Material 3 elevation containers) ---- */
+  --al-background: #f8f9fa;
+  --al-surface-container-lowest: #ffffff;
+  --al-surface-container-low: #f3f4f5;
+  --al-surface-container: #edeeef;
+  --al-surface-container-highest: #e1e3e4;
+
+  /* ---- Content on surface ---- */
+  --al-on-surface: #191c1d;
+  --al-on-surface-variant: #43474f;
+  --al-outline: #737780;
+  --al-outline-variant: #c3c6d1;
+
+  /* ---- Typography ---- */
+  --al-font-headline: "Manrope", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+  --al-font-body: "Inter", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+  --al-font-label: "Inter", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+  --al-font-icon: "Material Symbols Outlined";
+
+  /* ---- Type scale (used in the app) ---- */
+  --al-text-9:  9px;   /* micro hints */
+  --al-text-10: 10px;  /* small chips, kbd */
+  --al-text-11: 11px;  /* subtitles in cards */
+  --al-text-xs: 12px;  /* base label */
+  --al-text-sm: 14px;  /* body / input */
+  --al-text-base: 16px;
+  --al-text-lg: 18px;
+  --al-text-xl: 20px;
+  --al-text-2xl: 24px; /* H1 */
+  --al-text-3xl: 30px;
+  --al-text-4xl: 36px; /* big stat numbers */
+
+  /* ---- Radii (matches tailwind.config.js overrides) ---- */
+  --al-radius-sm: 0.125rem;   /* 2px, DEFAULT */
+  --al-radius-lg: 0.25rem;    /* 4px — small chips */
+  --al-radius-xl: 0.5rem;     /* 8px — workhorse */
+  --al-radius-full-soft: 0.75rem; /* 12px — "rounded-full" override */
+  --al-radius-2xl: 1rem;      /* 16px — modals */
+  --al-radius-pill: 9999px;   /* true circles/avatars/dots */
+
+  /* ---- Spacing (Tailwind default, re-declared for portability) ---- */
+  --al-space-1: 4px;
+  --al-space-2: 8px;
+  --al-space-3: 12px;
+  --al-space-4: 16px;
+  --al-space-5: 20px;
+  --al-space-6: 24px;
+  --al-space-8: 32px;
+
+  /* ---- Shadows (used sparingly) ---- */
+  --al-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --al-shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+
+  /* ---- Transitions ---- */
+  --al-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --al-duration-fast: 150ms;
+  --al-duration: 200ms;
+  --al-duration-progress: 700ms;
+}
+
+/* ---- Semantic element defaults ---- */
+html, body {
+  background-color: var(--al-background);
+  color: var(--al-on-surface);
+  font-family: var(--al-font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, .al-h1 {
+  font-family: var(--al-font-headline);
+  font-weight: 700;
+  font-size: var(--al-text-2xl);
+  line-height: 1.2;
+  color: var(--al-on-surface);
+  letter-spacing: -0.01em;
+}
+
+h2, .al-h2 {
+  font-family: var(--al-font-headline);
+  font-weight: 700;
+  font-size: var(--al-text-xl);
+  line-height: 1.25;
+  color: var(--al-on-surface);
+}
+
+h3, .al-h3 {
+  font-family: var(--al-font-headline);
+  font-weight: 700;
+  font-size: var(--al-text-base);
+  line-height: 1.3;
+  color: var(--al-on-surface);
+}
+
+.al-stat-number {
+  font-family: var(--al-font-headline);
+  font-weight: 700;
+  font-size: var(--al-text-4xl);
+  line-height: 1;
+  color: var(--al-primary);
+}
+
+p, .al-body {
+  font-family: var(--al-font-body);
+  font-size: var(--al-text-sm);
+  line-height: 1.5;
+  color: var(--al-on-surface-variant);
+}
+
+.al-label {
+  font-family: var(--al-font-label);
+  font-size: var(--al-text-xs);
+  font-weight: 500;
+  color: var(--al-on-surface-variant);
+}
+
+.al-label-strong {
+  font-family: var(--al-font-label);
+  font-size: var(--al-text-xs);
+  font-weight: 600;
+  color: var(--al-on-surface);
+}
+
+.al-label-tiny {
+  font-family: var(--al-font-label);
+  font-size: var(--al-text-10);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--al-outline);
+}
+
+code, .al-code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--al-text-xs);
+  background: var(--al-surface-container);
+  padding: 1px 6px;
+  border-radius: var(--al-radius-lg);
+  color: var(--al-on-surface);
+}
+
+/* Material Symbols baseline */
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings:
+    "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
