@@ -37,6 +37,22 @@ V_NOFACT, V_ONLYX, V_NOMAP = "태깅 누락", "인스턴스에만 있음", "매�
 GUIDE = ("FALSE 존재 시 태깅 값·단위·문맥(연결/별도)을 확인하십시오 "
          "(판정은 기계, 해석은 회계사)")
 
+def _resolver():
+    """D-2c 리졸버 재사용 — 배포 엑셀 부재 시 표준레이블 열만 생략."""
+    try:
+        from .taxonomy_labels import get_resolver
+        return get_resolver()
+    except Exception:
+        return None
+
+
+def _std_label(resolver, eid):
+    if not resolver or not eid:
+        return ""
+    hit = resolver.resolve(eid)
+    return hit["ko"] if hit["standard"] else "(확장)"
+
+
 _UNIT_RE = re.compile(r"단\s*위\s*[:：]\s*([^\)\s]+)")
 _UNIT_SCALE = {"원": 1, "천원": 1_000, "천 원": 1_000,
                "백만원": 1_000_000, "백만 원": 1_000_000,
@@ -82,6 +98,26 @@ def _current_fact(facts, element_id, doc_end, member, kind):
                         (best.get("start") or ""):
                     best = f                    # 최장 기간(연간 누적)
     return best
+
+
+def _current_dim_fact(facts, element_id, doc_end, member):
+    """당기 보고기간의 차원(멤버 조합) 팩트 — 무차원 부재 시 표기용.
+
+    판정에는 쓰지 않는다(본문 대사는 순수 문맥만). '인스턴스에만 있음'
+    집계에서 무차원/차원을 나눠 보여주기 위한 탐지 전용.
+    """
+    for f in facts.get(element_id, []):
+        dims = f.get("dims") or {}
+        extra = sorted(a for a in dims if a != CONSOL_AXIS)
+        if not extra:
+            continue
+        if CONSOL_AXIS in dims and dims[CONSOL_AXIS] != member:
+            continue
+        if f.get("end") == doc_end:
+            combo = " × ".join(
+                str(dims[a]).rsplit("_", 1)[-1] for a in extra)
+            return f, combo
+    return None, None
 
 
 def _tolerance(fact, scale, override):
@@ -189,27 +225,42 @@ def xbrl_recon(xlsx_path, facts, doc_end, decided=None, succession=None,
         if progress:
             progress(f"  [{sheet}] {len(out)}행 대사")
 
-    # ── 인스턴스에만 있음: 본문 role 소속 + 당기 순수 문맥 + 미사용 ──
+    # ── 인스턴스에만 있음: 본문 role 소속 + 당기 팩트 + 미사용 ──
+    # 무차원(순수 문맥) 우선, 없으면 차원(멤버 조합) 팩트로 분리 집계
+    # (판정 로직 불변 — 본문 대사는 여전히 순수 문맥만, 표기 구분 전용)
     only_inst = []
     for eid in sorted(body_elements or []):
         if eid in used_elements:
             continue
+        entry = None
         for member in set(_MEMBER.values()):
             for kind in ("instant", "duration"):
                 f = _current_fact(facts, eid, doc_end, member, kind)
                 if f is not None:
-                    only_inst.append({"element": eid,
-                                      "fact": float(f["value"]),
-                                      "member": member.split("_")[-1]})
+                    entry = {"element": eid, "fact": float(f["value"]),
+                             "member": member.split("_")[-1],
+                             "dim": None}
                     break
-            else:
-                continue
-            break
+            if entry:
+                break
+        if entry is None:
+            for member in set(_MEMBER.values()):
+                f, combo = _current_dim_fact(facts, eid, doc_end, member)
+                if f is not None:
+                    entry = {"element": eid, "fact": float(f["value"]),
+                             "member": member.split("_")[-1],
+                             "dim": combo}
+                    break
+        if entry is not None:
+            only_inst.append(entry)
 
     matched = counts[V_MATCH] + counts[V_DIFF] + counts[V_NOFACT]
     total = matched + counts[V_NOMAP]
+    oi_dim = sum(1 for x in only_inst if x["dim"])
     summary = {
-        "counts": dict(counts), "only_instance": len(only_inst),
+        "counts": dict(counts),
+        "only_instance": len(only_inst) - oi_dim,   # 무차원(기존 집계)
+        "only_instance_dim": oi_dim,                # 차원(멤버 조합)
         "matched": matched, "total": total,
         "match_rate": round(matched / total, 4) if total else None,
         "true": counts[V_MATCH],
@@ -249,7 +300,9 @@ def _write_excel(out_path, rows_out, only_inst, summary):
     ws0.cell(ws0.max_row, 1).font = _BOLD
     ws0.append([f"판정 분포: 일치 {c[V_MATCH]} / 값 상이 {c[V_DIFF]} / "
                 f"태깅 누락 {c[V_NOFACT]} / 인스턴스에만 있음 "
-                f"{summary['only_instance']} / 매핑 없음 {c[V_NOMAP]}"])
+                f"{summary['only_instance']}"
+                f"(+차원 {summary.get('only_instance_dim', 0)})"
+                f" / 매핑 없음 {c[V_NOMAP]}"])
     ws0.append([])
     ws0.append(["시트", "대사", "TRUE", "FALSE", "매핑 없음", "링크"])
     for cell in ws0[ws0.max_row]:
@@ -269,8 +322,10 @@ def _write_excel(out_path, rows_out, only_inst, summary):
     for col in "BCDEF":
         ws0.column_dimensions[col].width = 13
 
-    headers = ["행 라벨", "DSD 값", "원 환산", "element", "매핑 근거",
-               "인스턴스 팩트", "차이", "판정", "비고"]
+    resolver = _resolver()
+    headers = ["행 라벨", "DSD 값", "원 환산", "element",
+               "한글 표준레이블", "매핑 근거", "인스턴스 팩트", "차이",
+               "판정", "비고"]
     for sheet, d in rows_out.items():
         ws = wb.create_sheet(sheet)
         ws.append([f"{sheet} — 표시단위 {d['unit']} · "
@@ -289,35 +344,42 @@ def _write_excel(out_path, rows_out, only_inst, summary):
                 f"차이 {r['diff']:,.0f}원")
             ws.append([r["label"], r["dsd"], r["won"],
                        (r["element"] or "").replace("_", ":", 1),
+                       _std_label(resolver, r["element"]),
                        r["map_src"], r["fact"], r["diff"],
                        r["verdict"] if r["true"] is None
                        else ("TRUE" if r["true"] else "FALSE"), note])
-            for ci in (2, 3, 6, 7):
+            for ci in (2, 3, 7, 8):
                 ws.cell(ws.max_row, ci).number_format = _NUMFMT
             if r["true"] is False:
                 for cell in ws[ws.max_row]:
                     cell.fill = _FALSE_FILL
             elif r["true"] is None:
-                ws.cell(ws.max_row, 8).fill = _WARN_FILL
+                ws.cell(ws.max_row, 9).fill = _WARN_FILL
         ws.column_dimensions["A"].width = 40
         ws.column_dimensions["D"].width = 44
-        for col in ("B", "C", "F", "G"):
+        for col in ("B", "C", "G", "H"):
             ws.column_dimensions[col].width = 16
-        for col in ("E", "H", "I"):
+        for col in ("E", "F", "I", "J"):
             ws.column_dimensions[col].width = 22
         ws.freeze_panes = "A3"
 
     ws = wb.create_sheet("인스턴스에만_매핑없음")
-    ws.append(["① 인스턴스에만 있음 — 본문 role 소속 당기 팩트 중 DSD 미대응"])
+    ws.append(["① 인스턴스에만 있음 — 본문 role 소속 당기 팩트 중 DSD "
+               "미대응 (무차원/차원 구분 — 차원 팩트는 표기 전용,"
+               " 판정 대상 아님)"])
     ws.cell(1, 1).font = _BOLD
-    ws.append(["element", "연결/별도", "팩트 값"])
+    ws.append(["element", "한글 표준레이블", "구분", "연결/별도", "팩트 값"])
     for cell in ws[2]:
         cell.font = _BOLD
         cell.fill = _HDR_FILL
     for x in only_inst:
-        ws.append([x["element"].replace("_", ":", 1), x["member"],
-                   x["fact"]])
-        ws.cell(ws.max_row, 3).number_format = _NUMFMT
+        ws.append([x["element"].replace("_", ":", 1),
+                   _std_label(resolver, x["element"]),
+                   f"차원({x['dim']})" if x.get("dim") else "무차원",
+                   x["member"], x["fact"]])
+        ws.cell(ws.max_row, 5).number_format = _NUMFMT
     ws.column_dimensions["A"].width = 50
-    ws.column_dimensions["C"].width = 18
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = 30
+    ws.column_dimensions["E"].width = 18
     wb.save(out_path)

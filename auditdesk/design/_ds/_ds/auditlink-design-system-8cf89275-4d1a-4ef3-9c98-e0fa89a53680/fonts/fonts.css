@@ -1,0 +1,7 @@
+/* AuditLink uses Google Fonts for all three families.
+   No local font files are required — the fonts load from Google's CDN.
+   If offline bundling is needed, self-host the Manrope, Inter and
+   Material Symbols Outlined variable fonts and replace the @import below. */
+
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap");

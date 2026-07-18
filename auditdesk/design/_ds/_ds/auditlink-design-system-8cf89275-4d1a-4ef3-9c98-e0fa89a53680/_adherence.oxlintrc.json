@@ -1,0 +1,179 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "eslint.config.js",
+              "src/**",
+              "src/components/**",
+              "src/hooks/**",
+              "src/pages/**",
+              "tailwind.config.js",
+              "ui_kits/auditlink-app/**",
+              "vite.config.js"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Manrope|Inter|Material Symbols Outlined))/i]",
+        "message": "Font not provided by the design system. Available: Manrope, Inter, Material Symbols Outlined."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {},
+    "tokens": [
+      "--al-background",
+      "--al-duration",
+      "--al-duration-fast",
+      "--al-duration-progress",
+      "--al-ease",
+      "--al-error",
+      "--al-font-body",
+      "--al-font-headline",
+      "--al-font-icon",
+      "--al-font-label",
+      "--al-on-secondary-container",
+      "--al-on-surface",
+      "--al-on-surface-variant",
+      "--al-on-tertiary-container",
+      "--al-on-tertiary-fixed-variant",
+      "--al-outline",
+      "--al-outline-variant",
+      "--al-primary",
+      "--al-primary-container",
+      "--al-primary-fixed",
+      "--al-radius-2xl",
+      "--al-radius-full-soft",
+      "--al-radius-lg",
+      "--al-radius-pill",
+      "--al-radius-sm",
+      "--al-radius-xl",
+      "--al-secondary",
+      "--al-secondary-container",
+      "--al-shadow-2xl",
+      "--al-shadow-sm",
+      "--al-space-1",
+      "--al-space-2",
+      "--al-space-3",
+      "--al-space-4",
+      "--al-space-5",
+      "--al-space-6",
+      "--al-space-8",
+      "--al-success",
+      "--al-surface-container",
+      "--al-surface-container-highest",
+      "--al-surface-container-low",
+      "--al-surface-container-lowest",
+      "--al-tertiary-fixed",
+      "--al-text-10",
+      "--al-text-11",
+      "--al-text-2xl",
+      "--al-text-3xl",
+      "--al-text-4xl",
+      "--al-text-9",
+      "--al-text-base",
+      "--al-text-lg",
+      "--al-text-sm",
+      "--al-text-xl",
+      "--al-text-xs"
+    ],
+    "tokenKinds": {
+      "--al-primary": "color",
+      "--al-primary-container": "color",
+      "--al-primary-fixed": "color",
+      "--al-secondary": "color",
+      "--al-secondary-container": "color",
+      "--al-on-secondary-container": "color",
+      "--al-on-tertiary-container": "color",
+      "--al-tertiary-fixed": "color",
+      "--al-on-tertiary-fixed-variant": "color",
+      "--al-error": "color",
+      "--al-success": "color",
+      "--al-background": "color",
+      "--al-surface-container-lowest": "color",
+      "--al-surface-container-low": "color",
+      "--al-surface-container": "color",
+      "--al-surface-container-highest": "color",
+      "--al-on-surface": "color",
+      "--al-on-surface-variant": "color",
+      "--al-outline": "color",
+      "--al-outline-variant": "color",
+      "--al-font-headline": "font",
+      "--al-font-body": "font",
+      "--al-font-label": "font",
+      "--al-font-icon": "font",
+      "--al-text-9": "font",
+      "--al-text-10": "font",
+      "--al-text-11": "font",
+      "--al-text-xs": "font",
+      "--al-text-sm": "font",
+      "--al-text-base": "font",
+      "--al-text-lg": "font",
+      "--al-text-xl": "font",
+      "--al-text-2xl": "font",
+      "--al-text-3xl": "font",
+      "--al-text-4xl": "font",
+      "--al-radius-sm": "radius",
+      "--al-radius-lg": "radius",
+      "--al-radius-xl": "radius",
+      "--al-radius-full-soft": "radius",
+      "--al-radius-2xl": "radius",
+      "--al-radius-pill": "radius",
+      "--al-space-1": "spacing",
+      "--al-space-2": "spacing",
+      "--al-space-3": "spacing",
+      "--al-space-4": "spacing",
+      "--al-space-5": "spacing",
+      "--al-space-6": "spacing",
+      "--al-space-8": "spacing",
+      "--al-shadow-sm": "shadow",
+      "--al-shadow-2xl": "shadow",
+      "--al-ease": "other",
+      "--al-duration-fast": "other",
+      "--al-duration": "other",
+      "--al-duration-progress": "other"
+    },
+    "fontFamilies": [
+      "Inter",
+      "Manrope",
+      "Material Symbols Outlined"
+    ]
+  }
+}
