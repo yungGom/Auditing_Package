@@ -2,10 +2,15 @@
 
 ## 프로젝트 컨텍스트
 
-Streamlit 멀티페이지 데스크톱 도구. 감사인이 로컬 PC에서 실행한다. 12개
+Streamlit 멀티페이지 데스크톱 도구. 감사인이 로컬 PC에서 실행한다. 13개
 페이지로 구성된다 — 리스 식별·면제·할인율·기본재계산·변동리스료·리스변경·
 리스제공자·판매후리스·전대리스(1~9), 감가상각 재계산(10), PDF 도구(11),
-의사록 OCR(12).
+의사록 OCR(12), 조회 모집단 완전성(13).
+
+13번은 유일하게 로직이 지원 모듈로 분리돼 있다 — `fi_detector.py`(탐지 엔진),
+`mapping_utils.py`(헤더 탐지·컬럼 매핑), `profile_store.py`(매핑 프로파일
+저장/재사용), `report_builder.py`(조회 워크북 생성). PATCH_v1~v9.md가 이
+모듈의 변경 이력이다(v7 결번).
 
 공통 흐름: 회사 원장 엑셀 업로드 → 컬럼 매핑 → K-IFRS 재계산 →
 회사값과 차이 분석 → 워크페이퍼용 엑셀 다운로드.
@@ -31,8 +36,11 @@ Streamlit 멀티페이지 데스크톱 도구. 감사인이 로컬 PC에서 실�
   제거한 뒤 사용한다. 파일 rename 시 `.resolve()` 비교로 원본 폴더를
   벗어나는 경로를 차단한다.
 - 고객 데이터 파일(원본 입력, 산출물 등)은 커밋하지 않는다.
-  `.gitignore`에 반드시 반영한다. (현재 repo에 `.gitignore`가 없다 —
-  아래 "수정 대상" 참고)
+  저장소 루트 `.gitignore`가 `.venv/`, `*.xlsx`, `*.xls`를 제외하고
+  있다 — 이 규칙을 약화하지 않는다.
+- 매핑 프로파일(`profile_store.py`)은 `_ALLOWED_KEYS` 화이트리스트로
+  컬럼명 메타데이터만 저장한다. 재무수치·기관명·거래처값이 저장
+  경로에 유입되지 않게 유지한다.
 - 코드·테스트·시드·예시 데이터 어디에도 실제 고객 데이터를 넣지 않는다.
 - OCR은 로컬 EasyOCR 엔진을 쓴다. 모델 최초 1회 다운로드 외에는
   네트워크를 사용하지 않는다.
@@ -42,14 +50,21 @@ Streamlit 멀티페이지 데스크톱 도구. 감사인이 로컬 PC에서 실�
 
 ```
 audit_toolbox.py      진입점 / 런처
-pages/                1~12 도구 페이지 (N_Name.py)
+pages/                1~13 도구 페이지 (N_Name.py)
+fi_detector.py        13번 탐지 엔진 (금융기관 사전 3레이어 + 온라인 조회 판정)
+mapping_utils.py      헤더 행 자동 탐지 + 컬럼 매핑 추정 (streamlit 비의존)
+profile_store.py      매핑 프로파일 저장/재사용 (~/.audit_toolbox/)
+report_builder.py     조회 대상 명세 + 검토 근거 2시트 워크북 생성
+demo_confirmation.py  13번 E2E 점검 스크립트 (전부 가상 데이터)
+test_*.py             자동화 테스트 6파일 / 43개 (자체 러너)
+PATCH_v*.md           패치 이력 v1~v9 (v7 결번)
 run.bat               환경 구성 + localhost 실행 스크립트
 .venv/                가상환경 (커밋 금지)
 ```
 
-`shared/`·`utils/` 공통 모듈 폴더가 없다. `tests/`도 없다.
-공통 코드(`parse_dt`, 엑셀 스타일 상수 등)가 페이지마다 복붙된 상태다 —
-아래 "수정 대상" 참고.
+`shared/`·`utils/` 공통 모듈 폴더는 없다. 13번 모듈만 위처럼 분리돼
+있고, 1~12번은 공통 코드(`parse_dt`, 엑셀 스타일 상수 등)가 페이지마다
+복붙된 상태다 — 아래 "수정 대상" 참고.
 
 ## 기술 스택
 
@@ -59,9 +74,9 @@ Python / Windows / Streamlit 멀티페이지.
 `pip install`된다. batch 기준 핵심 패키지: streamlit, pandas, openpyxl,
 python-dateutil, PyMuPDF, easyocr, pdf2image, Pillow, tqdm.
 
-버전 핀이 확인된 것: streamlit 1.44.1, pandas 2.2.3, openpyxl 3.1.5.
-(XlsxWriter, holidays가 일부 페이지에서 추가로 쓰일 가능성이 있으나
-미확인 — 해당 페이지 확인 전까지 표준으로 간주하지 않는다.)
+실측 환경(PATCH_v9 게이트 기준): Python 3.14, streamlit 1.55.0,
+pandas 2.3.3, openpyxl 3.1.5. **pytest는 설치돼 있지 않다** — 테스트는
+자체 러너로 돌린다(아래 "명령어" 참고).
 
 외부 시스템 의존성으로 Poppler가 필요하다
 (`winget install oschwartz10612.Poppler`).
@@ -100,9 +115,14 @@ python-dateutil, PyMuPDF, easyocr, pdf2image, Pillow, tqdm.
   (최초 실행 시 `.venv` 생성 + 패키지 설치를 자동 수행)
 - 직접 실행: `streamlit run audit_toolbox.py --server.address localhost`
 - Poppler 설치: `winget install oschwartz10612.Poppler`
-- 검증: 이 repo에는 현재 자동화 테스트가 없다. 재계산 로직
-  (`calc_lease`, `calc_dep` 등)에 대한 검증 루프를 세우는 것이
-  우선 과제다. 테스트가 생기기 전까지는 기준 케이스 수기 대조로
+- 검증: `python test_confirmation_population.py` 방식으로 테스트
+  파일 6개(총 43개)를 직접 실행한다. pytest 미설치 환경을 고려해
+  전부 `if __name__ == "__main__"` 자체 러너 + 표준 `assert` 겸용으로
+  작성돼 있다 — 새 테스트도 이 형식을 따른다.
+  커버 범위는 13번 조회 모집단 모듈(fi_detector·mapping_utils·
+  profile_store·report_builder)에 한정된다. 리스·감가상각 재계산
+  코어(`calc_lease`, `calc_dep`)는 여전히 무테스트이며 검증 루프를
+  세우는 것이 우선 과제다. 그 전까지는 기준 케이스 수기 대조로
   검증한다.
 
 ## 코드 스타일
@@ -118,23 +138,29 @@ python-dateutil, PyMuPDF, easyocr, pdf2image, Pillow, tqdm.
 
 ## 수정 대상 (코드에서 발견)
 
-1. **`.gitignore` 없음.** `.venv/`가 repo 최상위에 있는데 `.gitignore`가
-   없다. 이 상태로 GitHub에 올리면 수백 MB 가상환경이 통째로 커밋된다.
-   GitHub 업로드 전에 `.gitignore`를 만들어 `.venv/`, 피감 데이터 파일,
-   산출물을 제외해야 한다.
+1. **리스 재계산 코어 무테스트.** pages/1~12에는 자동화 테스트가
+   없다. 특히 재계산 코어인 `calc_lease`(4번)와 `calc_dep`(10번)의
+   검증이 수기 대조뿐이다. 13번 모듈처럼 로직을 모듈로 분리해
+   테스트를 붙이는 것이 우선 과제다.
 
-2. **중복 코드 — 공통 모듈 추출 후보.** `parse_dt()`와 엑셀 스타일
+2. **5~9번 페이지 엑셀 다운로드 미연결.** 변동리스료·리스변경·
+   리스제공자·판매후리스·전대리스 페이지는 `BytesIO`를 import만
+   해두고 `st.download_button`이 붙어 있지 않다. 계산·화면표시는
+   되지만 워크페이퍼 반출 경로가 없다 — 의도인지 미완인지 확인 후
+   연결할 것.
+
+3. **중복 코드 — 공통 모듈 추출 후보.** `parse_dt()`와 엑셀 스타일
    상수(`HF`, `HN`, `NM`, `shdr`, `scell` 등)가 `4_Lessee_Basic`·
-   `10_Depreciation`·`12_OCR`에 그대로 복붙돼 있다. 12페이지 전체라면
-   같은 코드가 10번 넘게 반복된다. `shared/excel_style.py` +
-   `shared/dateutil.py` 같은 공통 모듈로 빼는 것이 맞다.
+   `10_Depreciation`·`12_OCR`에 그대로 복붙돼 있다.
+   `shared/excel_style.py` + `shared/dateutil.py` 같은 공통 모듈로
+   빼는 것이 맞다.
 
-3. **12_OCR.py의 디스크 저장.** 다른 페이지는 엑셀을 `BytesIO`로만
+4. **12_OCR.py의 디스크 저장.** 다른 페이지는 엑셀을 `BytesIO`로만
    내보내는데, 12_OCR은 `download_button`과 별개로 `output_dir`에
    파일로도 저장한다. 피감 의사록 OCR 원문이 사용자 지정 폴더에
    남는다는 뜻이라 "피감 데이터 디스크 잔존 최소화" 원칙과 부딪힐 수
    있다. 의도된 동작인지 확인이 필요하다.
 
-4. **통합 requirements.txt 없음.** 의존성이 `run.bat`의 `pip install`
+5. **통합 requirements.txt 없음.** 의존성이 `run.bat`의 `pip install`
    줄에만 존재한다. 버전 관리·재현성·GitHub 가독성을 위해
    `requirements.txt`로 분리하는 것이 좋다.
