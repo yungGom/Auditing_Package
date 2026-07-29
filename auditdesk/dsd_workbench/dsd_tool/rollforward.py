@@ -441,7 +441,7 @@ def _write_excel(out_path, sheets_out, summary):
     wb = Workbook()
     ws0 = wb.active
     ws0.title = "요약"
-    ws0.append(["롤포워드 스캐폴드 (F-3b) — 당기 확정 후 입력"])
+    ws0.append(["당기 작성 준비표 — 당기 확정 후 입력"])
     ws0.cell(1, 1).font = Font(bold=True, size=14)
     if summary.get("source_warning"):
         ws0.append([summary["source_warning"]])
@@ -457,7 +457,7 @@ def _write_excel(out_path, sheets_out, summary):
     ws0.append([f"출처 분해: {S_YE} {c[S_YE]} / {S_YE_DSD} {c[S_YE_DSD]} / "
                 f"{S_HALF} {c[S_HALF]} / {S_MANUAL} {c[S_MANUAL]}"])
     t = summary["tagging"]
-    ws0.append([f"태깅(F-3 승계): 승계 {t['승계']} / 유사 {t['유사']} / "
+    ws0.append([f"태깅(기말 승계): 승계 {t['승계']} / 유사 {t['유사']} / "
                 f"미매칭 {t['미매칭']} — 기준 기말 보고기간말 "
                 f"{summary['doc_end_ye']}"])
     if summary.get("update"):
@@ -486,8 +486,8 @@ def _write_excel(out_path, sheets_out, summary):
             hdr = (["행 라벨"]
                    + [f"당기 {s}(당기 확정 후 입력)" for s in d["sub_labels"]]
                    + d["cmp_labels"]
-                   + ["값 출처", "element ID", "한글 표준레이블", "영문명",
-                      "근거", "D-4c", "확정 ☐"])
+                   + ["값 출처", "태깅 요소 ID", "한글 표준레이블", "영문명",
+                      "근거", "택소노미 점검", "확정 ☐"])
             ws.append(hdr)
             hr = ws.max_row
             for cell in ws[hr]:
@@ -512,10 +512,10 @@ def _write_excel(out_path, sheets_out, summary):
         else:
             ws.append([d["title"]])
             ws.cell(1, 1).font = _BOLD
-            ws.append([f"role: {d['role']} (F-3 승계)"])
+            ws.append([f"공시 구획: {d['role']} (기말 승계)"])
             ws.append(["행 라벨", "당기값(당기 확정 후 입력)",
-                       "전반기 프리필", "기말 프리필", "값 출처",
-                       "element ID", "한글 표준레이블", "확정 ☐"])
+                       "전반기 미리 채움", "기말 미리 채움", "값 출처",
+                       "태깅 요소 ID", "한글 표준레이블", "확정 ☐"])
             hr = ws.max_row
             for cell in ws[hr]:
                 cell.font = _BOLD

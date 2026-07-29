@@ -240,7 +240,7 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                         conf += f" · 라벨 유사 {inh['sim']:.2f}"
                     alts = ""
                     if tc:
-                        conf += f" · D-4c {tc['status']}"
+                        conf += f" · 택소노미 점검 {tc['status']}"
                         if tc["status"] != "녹색":
                             alts = tc["detail"]
                     if tc.get("status") == "노랑":     # 폐지 → 대체 후보
@@ -345,9 +345,9 @@ def _write_overview(ws, dsd_path, report_type, stats, sheet_summaries,
     ws.append([f"보고서 유형: {report_type} · 생성: "
                f"{datetime.date.today().isoformat()}"])
     if succession is not None:
-        ws.append([f"승계 모드(F-3): 기말 자산 {os.path.basename(succession.source)}"
+        ws.append([f"승계 모드(기말 태깅 이어받기): 기말 자산 {os.path.basename(succession.source)}"
                    f" — 승계 {stats['inherited']} / 신규 계정 {stats['new']}"
-                   f" / D-4c 폐지 경고 {stats['deprecated']}"
+                   f" / 택소노미 폐지 경고 {stats['deprecated']}"
                    + (f" (신버전 {succession.against} 대조)"
                       if succession.against else " (택사노미 대조 생략)")])
         ws.cell(row=ws.max_row, column=1).font = _BOLD

@@ -1,4 +1,4 @@
-// 홈 (시즌 여정) — 참조 구현 그대로: 여정 카드 + 상태 요약 + 드롭존 + 최근 세션
+// 홈 (시즌 여정) — 참조 구현 그대로: 여정 카드 + 상태 요약 + 드롭존 + 최근 작업 파일
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
 import { Card, chip, ErrorBanner, F_HEAD, F_LABEL, Icon } from "./ui";
@@ -119,17 +119,17 @@ export default function Home({ openSession }: {
       }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Journey tag="결산" tagFg="#001e40" tagBg="#d5e3ff"
-            title="DSD 결산 세션" cta="세션 열기" onGo={pick}
-            steps={[["DSD 추출", "cur"], ["엑셀 편집", "todo"],
-              ["Footing", "todo"], ["변경검토", "todo"],
-              ["repack", "todo"], ["DART 확인", "todo"]]} />
+            title="DSD 결산 작업" cta="작업 파일 열기" onGo={pick}
+            steps={[["엑셀 변환", "cur"], ["엑셀 편집", "todo"],
+              ["검증", "todo"], ["변경검토", "todo"],
+              ["DSD 반영", "todo"], ["DART 확인", "todo"]]} />
           <Journey tag="시즌 착수" tagFg="#3a5a2e" tagBg="#dcead2"
-            title="2026 택사노미 착수 준비" cta="작성 워크시트 (UI-3)"
-            steps={[["택사노미 체크", "todo"], ["작성 워크시트", "todo"],
+            title="2026 택소노미 착수 준비" cta="전사 가이드 작성"
+            steps={[["택소노미 버전 점검", "todo"], ["전사 가이드 작성", "todo"],
               ["편집기 전사", "todo"]]} />
           <Journey tag="수시" tagFg="#4e6874" tagBg="#cbe7f5"
-            title="벤치마크 · 조회 도구" cta="공시 검색 (UI-4)"
-            steps={[["벤치마크 검색", "todo"], ["차원표 조회", "todo"],
+            title="벤치마크 · 조회 도구" cta="공시 검색"
+            steps={[["벤치마크 검색", "todo"], ["XBRL 표 조회", "todo"],
               ["코퍼스 갱신", "todo"]]} />
         </div>
 
@@ -183,7 +183,7 @@ export default function Home({ openSession }: {
         <Icon name="upload_file" size={26} color="#737780" />
         <div>
           <div style={{ font: `600 14px ${F_LABEL}`, color: "#191c1d" }}>
-            {busy ? "세션 생성 중…" : "DSD 파일을 선택 (클릭 → OS 대화상자)"}
+            {busy ? "작업 파일 생성 중…" : "DSD 파일을 선택 (클릭 → OS 대화상자)"}
           </div>
           <div style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
             .dsd / .xml — 파일은 이 PC를 벗어나지 않습니다</div>
@@ -212,7 +212,7 @@ export default function Home({ openSession }: {
         margin: "24px 0 12px",
       }}>
         <h2 style={{ margin: 0, font: `700 15px ${F_HEAD}`,
-          color: "#191c1d" }}>최근 세션</h2>
+          color: "#191c1d" }}>최근 작업 파일</h2>
         <span style={{ font: `500 12px ${F_LABEL}`, color: "#737780" }}>
           {sessions.length}건</span>
       </div>

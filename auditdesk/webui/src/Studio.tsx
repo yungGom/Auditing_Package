@@ -235,7 +235,7 @@ export function MappingScreen() {
                 매핑 확정 {nDone}/{items.length}</div>
               <div style={{
                 font: `500 11px ${F_LABEL}`, color: "#737780", marginTop: 2,
-              }}>D-3b 코퍼스 · Top-4 홀드아웃 99.0%</div>
+              }}>공시 사례 데이터 · Top-4 적중 99.0%</div>
             </div>
           </div>
           <div style={{
@@ -483,7 +483,7 @@ export function TaxoScreen() {
             <div style={{
               font: `500 12px ${F_LABEL}`, color: "#43474f",
               marginBottom: 14,
-            }}>전기 인스턴스 대비 {against} 택사노미 대조 — 폐지된
+            }}>전기 제출파일 대비 {against} 택소노미 대조 — 폐지된
               element에 대체 후보를 제시합니다</div>
 
             {result.yellow.map((tx: any, i: number) => (
@@ -581,8 +581,8 @@ export function WorksheetScreen({ presetDsd }: {
             font: `500 12px ${F_LABEL}`, border: "1px solid #c3c6d1",
             borderRadius: 8, padding: "8px 10px", background: "#fff",
           }}>
-          <option value="new">신규 (D-3b 추천)</option>
-          <option value="inherit">승계 (F-3 — 자기 기말 자산)</option>
+          <option value="new">신규 (공시 사례 추천)</option>
+          <option value="inherit">승계 (기말 태깅 이어받기)</option>
         </select>
         {mode === "inherit" && (
           <PathInput value={inheritPkg} onChange={setInheritPkg} width={300}
@@ -595,14 +595,14 @@ export function WorksheetScreen({ presetDsd }: {
           <input type="checkbox" checked={notes}
             onChange={(e) => setNotes(e.target.checked)}
             style={{ accentColor: "#001e40" }} />
-          주석 포함 (F-2 — 수 분 소요)
+          주석 포함 (수 분 소요)
         </label>
         <PrimaryBtn onClick={() => run("/api/studio/worksheet", {
           dsd_path: dsd, report, mode,
           inherit_package: mode === "inherit" ? inheritPkg : undefined,
           include_notes: notes,
         })}>
-          <Icon name="edit_note" size={15} />워크시트 생성</PrimaryBtn>
+          <Icon name="edit_note" size={15} />전사 가이드 생성</PrimaryBtn>
       </div>
 
       <div style={{ padding: err ? "0 24px" : 0 }}>
@@ -632,10 +632,10 @@ export function WorksheetScreen({ presetDsd }: {
               작성 개요: 항목 {sm.rows} · 매핑 {sm.mapped} · 확장 후보{" "}
               {sm.extension_candidates}
               {sm.mode === "inherit" && ` · 승계 ${sm.inherited} · ` +
-                `신규 계정 ${sm.new_accounts} · D-4c 폐지 ${sm.deprecated}`}
+                `신규 계정 ${sm.new_accounts} · 폐지 예정 ${sm.deprecated}`}
             </span>
             {sm.mode === "inherit" && (
-              <span style={chip("#001e40", "#d5e3ff")}>승계 모드 (F-3)</span>
+              <span style={chip("#001e40", "#d5e3ff")}>승계 모드</span>
             )}
             <GhostBtn onClick={() => api("/api/fs/open", {
               method: "POST",
@@ -656,9 +656,9 @@ export function WorksheetScreen({ presetDsd }: {
       {!result && !job && (
         <div style={{
           padding: 24, font: `500 13px ${F_LABEL}`, color: "#737780",
-        }}>DSD와 보고서 유형·모드를 지정해 전사 가이드 워크시트를
+        }}>DSD와 보고서 유형·모드를 지정해 전사 가이드를
           생성하세요. 승계 모드는 자기 기말 인스턴스의 element·확장·role을
-          그대로 잇고 신규 계정에만 D-3b가 작동합니다.</div>
+          그대로 잇고 신규 계정에만 공시 사례 추천이 작동합니다.</div>
       )}
     </div>
   );
@@ -699,7 +699,7 @@ export function DimScreen() {
         {result && (
           <>
             <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
-              D-2 렌더 — 화면은 산출 xlsx 재독(값 동일 보장)</span>
+              화면은 산출 엑셀 재독(값 동일 보장)</span>
             <GhostBtn onClick={() => api("/api/fs/open", {
               method: "POST",
               body: JSON.stringify({ path: result.xlsx_path }),

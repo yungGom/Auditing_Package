@@ -69,7 +69,7 @@ export default function Session({ sessionId, initialTab }: {
   const tabs = [
     { key: "overview", label: "개요" },
     { key: "sheets", label: "시트 뷰" },
-    { key: "footing", label: "Footing",
+    { key: "footing", label: "검증",
       count: footBad !== undefined ? String(footBad) : undefined,
       countBad: (footBad || 0) > 0 },
     { key: "change", label: "변경검토",
@@ -524,8 +524,8 @@ function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
         borderBottom: "1px solid #c3c6d1",
       }}>
         {subTab("foot", "합계검증·주석대사")}
-        {subTab("prior", "전기대사 (A-5)")}
-        {subTab("xrecon", "XBRL 대사 (V-1)")}
+        {subTab("prior", "전기와 일치합니까?")}
+        {subTab("xrecon", "XBRL 태깅 대사")}
         <div style={{ width: 1, height: 22, background: "#c3c6d1",
           margin: "0 4px" }} />
         {sub === "foot" && badges.map(([lb, n, fg, bg]) => (
@@ -565,7 +565,7 @@ function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
               <Icon name="refresh" size={15} />
               {foot ? (overridesToApply.length
                 ? `재검증 (레벨 ${overridesToApply.length}건 반영)` : "재검증")
-                : "Footing 검증 실행"}
+                : "합계 검증 실행"}
             </PrimaryBtn>
           </>
         )}
@@ -794,14 +794,14 @@ function XbrlReconSub({ sessionId, runJob }: {
             borderRadius: 8, padding: "8px 10px", background: "#fff",
             maxWidth: 240,
           }}>
-            <option value="">최근 수신 패키지…</option>
+            <option value="">최근 수신 XBRL 자료…</option>
             {pkgs.map((p) => (
               <option key={p.path} value={p.path}>{p.name}</option>
             ))}
           </select>
         )}
         <input value={pkg} onChange={(e) => setPkg(e.target.value)}
-          placeholder="XBRL 패키지 폴더 (같은 회사 인스턴스)"
+          placeholder="XBRL 자료 폴더 (같은 회사 제출파일)"
           style={{
             flex: 1, minWidth: 280, font: `500 12px ${F_LABEL}`,
             padding: "8px 10px", border: "1px solid #c3c6d1",
@@ -815,14 +815,14 @@ function XbrlReconSub({ sessionId, runJob }: {
           }} />
         <PrimaryBtn onClick={run}>
           <Icon name="rule" size={15} />
-          {result ? "재실행" : "XBRL 대사 실행"}</PrimaryBtn>
+          {result ? "재실행" : "태깅 대사 실행"}</PrimaryBtn>
       </div>
 
       {!result && (
         <div style={{ font: `500 13px ${F_LABEL}`, color: "#737780" }}>
-          같은 회사의 XBRL 인스턴스와 DSD 본문 값을 대조합니다 —
+          같은 회사의 XBRL 제출파일과 DSD 본문 값을 대조합니다 —
           태깅이 공시 본문과 일치하는지 제출 직전 최종 검증 (매핑은
-          F-1 확정 → F-3 승계 재사용, 신규 추론 없음).</div>
+          계정 매핑 확정 기록 → 기말 태깅 승계 순 재사용, 신규 추론 없음).</div>
       )}
 
       {result && (
@@ -853,7 +853,7 @@ function XbrlReconSub({ sessionId, runJob }: {
             <span style={chip("#930010", "#ffdad6")}>
               태깅 누락 {c["태깅 누락"]}</span>
             <span style={chip("#4e6874", "#cbe7f5")}>
-              인스턴스에만 {result.only_instance}</span>
+              제출파일에만 {result.only_instance}</span>
             <span style={chip("#43474f", "#edeeef")}>
               매핑 없음 {c["매핑 없음"]}</span>
             <div style={{ flex: 1 }} />
@@ -892,7 +892,7 @@ function XbrlReconSub({ sessionId, runJob }: {
               <thead><tr>
                 {[["시트", "left"], ["행 라벨", "left"],
                   ["DSD 값(원)", "right"], ["element", "left"],
-                  ["근거", "left"], ["인스턴스 팩트", "right"],
+                  ["근거", "left"], ["제출파일 값", "right"],
                   ["차이", "right"], ["판정", "center"]].map(([h, a]) => (
                   <th key={String(h)} style={{
                     textAlign: a as any, font: `700 11px ${F_LABEL}`,

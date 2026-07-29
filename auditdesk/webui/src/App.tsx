@@ -18,16 +18,16 @@ const EXPLORER_SCREENS = ["search", "xbrl", "settings"];
 
 const TITLES: Record<string, [string, string]> = {
   home: ["AuditDesk", "홈 — 시즌 여정"],
-  session: ["DSD Workbench", "세션 상세"],
-  status: ["상태", "E-0"],
-  taxo: ["XBRL Studio", "택사노미 체크"],
-  mapping: ["XBRL Studio", "매핑 확정"],
-  worksheet: ["XBRL Studio", "작성 워크시트"],
-  dimtable: ["XBRL Studio", "차원 표 뷰어"],
-  tree: ["XBRL Studio", "트리 뷰"],
-  search: ["DART Explorer", "공시 검색"],
-  xbrl: ["DART Explorer", "XBRL 파이프라인"],
-  settings: ["DART Explorer", "설정"],
+  session: ["DSD 작업", "작업 파일 상세"],
+  status: ["상태", "요약"],
+  taxo: ["XBRL 작성 지원", "택소노미 버전 점검"],
+  mapping: ["XBRL 작성 지원", "계정 매핑 확정"],
+  worksheet: ["XBRL 작성 지원", "전사 가이드 작성"],
+  dimtable: ["XBRL 작성 지원", "XBRL 표 뷰어"],
+  tree: ["XBRL 작성 지원", "택소노미 계층 뷰"],
+  search: ["공시 조회(DART)", "공시 검색"],
+  xbrl: ["공시 조회(DART)", "XBRL 수신"],
+  settings: ["공시 조회(DART)", "설정"],
 };
 
 function NavItem({ icon, label, active, chip: chipEl, onClick }: {
@@ -150,38 +150,38 @@ export default function App() {
             <span style={{
               font: `600 9px ${F_LABEL}`, color: "#737780",
               letterSpacing: "0.05em",
-            }}>DSD · XBRL · DART TOOLKIT</span>
+            }}>감사 공시 실무도구</span>
           </div>
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <SectionHead label="DSD WORKBENCH" tag="로컬 전용"
+          <SectionHead label="DSD 작업" tag="로컬 전용"
             tagFg="#001e40" tagBg="#d5e3ff" />
           <NavItem icon="home" label="홈 · 작업 목록"
             active={route.screen === "home"}
             onClick={() => setRoute({ screen: "home" })} />
           {route.screen === "session" && (
-            <NavItem icon="table_chart" label={sessionLabel || "세션"} active />
+            <NavItem icon="table_chart" label={sessionLabel || "작업 파일"} active />
           )}
         </div>
         <div style={{ marginBottom: 14 }}>
-          <SectionHead label="XBRL STUDIO" tag="로컬 분석"
+          <SectionHead label="XBRL 작성 지원" tag="로컬 분석"
             tagFg="#3a5a2e" tagBg="#dcead2" />
-          {[["fact_check", "택사노미 체크", "taxo"],
-            ["join_inner", "매핑 확정", "mapping"],
-            ["edit_note", "작성 워크시트", "worksheet"],
-            ["pivot_table_chart", "차원 표 뷰어", "dimtable"],
-            ["account_tree", "트리 뷰", "tree"]].map(([ic, lb, key]) => (
+          {[["fact_check", "택소노미 버전 점검", "taxo"],
+            ["join_inner", "계정 매핑 확정", "mapping"],
+            ["edit_note", "전사 가이드 작성", "worksheet"],
+            ["pivot_table_chart", "XBRL 표 뷰어", "dimtable"],
+            ["account_tree", "택소노미 계층 뷰", "tree"]].map(([ic, lb, key]) => (
             <NavItem key={key} icon={ic} label={lb}
               active={route.screen === key}
               onClick={() => setRoute({ screen: key })} />
           ))}
         </div>
         <div style={{ marginBottom: 14 }}>
-          <SectionHead label="DART EXPLORER" tag="수신 전용"
+          <SectionHead label="공시 조회(DART)" tag="수신 전용"
             tagFg="#4e6874" tagBg="#cbe7f5" />
           {[["search", "공시 검색", "search"],
-            ["cloud_download", "XBRL 파이프라인", "xbrl"],
+            ["cloud_download", "XBRL 수신", "xbrl"],
             ["settings", "설정", "settings"]].map(([ic, lb, key]) => (
             <NavItem key={key} icon={ic} label={lb}
               active={route.screen === key}
@@ -196,7 +196,7 @@ export default function App() {
             chip={<span style={{
               font: `600 9px ${F_LABEL}`, color: "#737780",
               background: "#e1e3e4", borderRadius: 4, padding: "2px 6px",
-            }}>E-0</span>}
+            }}>요약</span>}
             onClick={() => setRoute({ screen: "status" })} />
           <div style={{
             padding: "8px 12px 2px", font: `500 10px ${F_LABEL}`,

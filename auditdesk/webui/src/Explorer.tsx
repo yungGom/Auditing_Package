@@ -103,7 +103,7 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
     }
   };
 
-  // [차원표 엑셀] — 주석 번호별 택사노미+숫자 산출물 직행
+  // [XBRL 표 엑셀] — 주석 번호별 택사노미+숫자 산출물 직행
   const actDimtable = async (d: any) => {
     const rep = d.report_nm?.includes("반기") ? "half"
       : d.report_nm?.includes("분기") ? "q1" : "annual";
@@ -112,7 +112,7 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
       report: rep,
     });
     if (r) {
-      setNotice(`차원표 생성 — 시트: ${(r.sheets || []).slice(0, 8)
+      setNotice(`XBRL 표 생성 — 시트: ${(r.sheets || []).slice(0, 8)
         .join(", ")}${(r.sheets || []).length > 8 ? " …" : ""} ` +
         `(파일을 열었습니다)`);
       openFile(r.xlsx_path);
@@ -367,10 +367,10 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
                     <ActBtn label="엑셀로 변환" icon="table_view"
                       testid="act-excel"
                       onClick={() => actToExcel(d)} />
-                    <ActBtn label="차원표 엑셀" icon="pivot_table_chart"
+                    <ActBtn label="XBRL 표 엑셀" icon="pivot_table_chart"
                       testid="act-dim"
                       onClick={() => actDimtable(d)} />
-                    <ActBtn label="워크시트" icon="edit_note"
+                    <ActBtn label="전사 가이드" icon="edit_note"
                       onClick={() => actWorksheet(d)} ghost />
                   </span>
                 </td>
@@ -740,7 +740,7 @@ export function SettingsScreen() {
             font: `500 11px ${F_LABEL}`, color: "#737780", marginTop: 2,
             fontVariantNumeric: "tabular-nums",
           }}>ok {(s.corpus?.ok ?? 0).toLocaleString()}사 · 처리{" "}
-            {(s.corpus?.processed ?? 0).toLocaleString()}사 · D-3b Top-4
+            {(s.corpus?.processed ?? 0).toLocaleString()}사 · 추천 Top-4
             홀드아웃 99.0%</div>
         </div>
         <GhostBtn onClick={buildCorpus}>

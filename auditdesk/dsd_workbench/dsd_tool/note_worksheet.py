@@ -304,7 +304,7 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
         ws.append(["[role 배정]", "", "", "", "", "확정 ☐"])
         ws.cell(ws.max_row, 1).font = _BOLD
         if inherited_role is not None:
-            ws.append(["→ 승계 (F-3)", inherited_role["code"],
+            ws.append(["→ 승계 (기말)", inherited_role["code"],
                        inherited_role["definition"][:60],
                        "자기 기말 role 구성 그대로", "", "☐"])
         if cands:
@@ -466,7 +466,7 @@ def build_note_sheets(wb, ctx, corpus, assets: NoteAssets, induty=None,
                             ev = (f"승계 — 기말 사용 "
                                   f"(팩트 {own_e.get('n_facts', 0)})")
                             if tc:
-                                ev += f" · D-4c {tc['status']}"
+                                ev += f" · 택소노미 점검 {tc['status']}"
                                 if tc["status"] == "노랑":
                                     ev += f" ⚠ {tc['detail']}"
                             ws.append([label.strip(), "element",

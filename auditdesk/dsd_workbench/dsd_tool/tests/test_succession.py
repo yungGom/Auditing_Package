@@ -196,7 +196,7 @@ def test_gate3_succession_worksheet(tmp_path):
     wb = load_workbook(out)
     text = "\n".join(str(c.value) for ws in wb for row in ws.iter_rows()
                      for c in row if c.value)
-    assert "승계 모드(F-3)" in text
+    assert "승계 모드(기말 태깅 이어받기)" in text
     assert "승계 — 기말 사용" in text
     # 기간 체계가 분반기로 변환 (F-1 규칙 재사용)
     assert re.search(r"값: (당기 누적|당기 3개월)", text)

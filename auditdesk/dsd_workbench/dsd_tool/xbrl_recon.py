@@ -32,7 +32,7 @@ _MEMBER = {"연결": "ifrs-full_ConsolidatedMember",
            "별도": "ifrs-full_SeparateMember"}
 
 V_MATCH, V_DIFF = "일치", "값 상이"
-V_NOFACT, V_ONLYX, V_NOMAP = "태깅 누락", "인스턴스에만 있음", "매핑 없음"
+V_NOFACT, V_ONLYX, V_NOMAP = "태깅 누락", "제출파일에만 있음", "매핑 없음"
 
 GUIDE = ("FALSE 존재 시 태깅 값·단위·문맥(연결/별도)을 확인하십시오 "
          "(판정은 기계, 해석은 회계사)")
@@ -283,7 +283,7 @@ def _write_excel(out_path, rows_out, only_inst, summary):
     wb = Workbook()
     ws0 = wb.active
     ws0.title = "요약"
-    ws0.append(["DSD ↔ XBRL 인스턴스 대사 (V-1)"])
+    ws0.append(["DSD ↔ XBRL 제출파일 태깅 대사"])
     ws0.cell(1, 1).font = Font(bold=True, size=14)
     if summary.get("source_warning"):
         ws0.append([summary["source_warning"]])
@@ -299,7 +299,7 @@ def _write_excel(out_path, rows_out, only_inst, summary):
                 f"보고기간말 {summary['doc_end']}"])
     ws0.cell(ws0.max_row, 1).font = _BOLD
     ws0.append([f"판정 분포: 일치 {c[V_MATCH]} / 값 상이 {c[V_DIFF]} / "
-                f"태깅 누락 {c[V_NOFACT]} / 인스턴스에만 있음 "
+                f"태깅 누락 {c[V_NOFACT]} / 제출파일에만 있음 "
                 f"{summary['only_instance']}"
                 f"(+차원 {summary.get('only_instance_dim', 0)})"
                 f" / 매핑 없음 {c[V_NOMAP]}"])
@@ -323,8 +323,8 @@ def _write_excel(out_path, rows_out, only_inst, summary):
         ws0.column_dimensions[col].width = 13
 
     resolver = _resolver()
-    headers = ["행 라벨", "DSD 값", "원 환산", "element",
-               "한글 표준레이블", "매핑 근거", "인스턴스 팩트", "차이",
+    headers = ["행 라벨", "DSD 값", "원 환산", "태깅 요소 ID",
+               "한글 표준레이블", "매핑 근거", "제출파일 값", "차이",
                "판정", "비고"]
     for sheet, d in rows_out.items():
         ws = wb.create_sheet(sheet)
@@ -337,7 +337,7 @@ def _write_excel(out_path, rows_out, only_inst, summary):
             cell.fill = _HDR_FILL
         for r in d["rows"]:
             note = "" if r["true"] else (
-                "F-1 확정·F-3 승계 모두 부재 — 판정 불가"
+                "계정 매핑 확정·기말 승계 기록 모두 부재 — 판정 불가"
                 if r["verdict"] == V_NOMAP else
                 "당기 문맥 팩트 없음 — 태깅 확인"
                 if r["verdict"] == V_NOFACT else
@@ -363,9 +363,9 @@ def _write_excel(out_path, rows_out, only_inst, summary):
             ws.column_dimensions[col].width = 22
         ws.freeze_panes = "A3"
 
-    ws = wb.create_sheet("인스턴스에만_매핑없음")
-    ws.append(["① 인스턴스에만 있음 — 본문 role 소속 당기 팩트 중 DSD "
-               "미대응 (무차원/차원 구분 — 차원 팩트는 표기 전용,"
+    ws = wb.create_sheet("제출파일에만_매핑없음")
+    ws.append(["① 제출파일에만 있음 — 본문 구획 소속 당기 값 중 DSD "
+               "미대응 (무차원/차원 구분 — 차원 값은 표기 전용,"
                " 판정 대상 아님)"])
     ws.cell(1, 1).font = _BOLD
     ws.append(["element", "한글 표준레이블", "구분", "연결/별도", "팩트 값"])

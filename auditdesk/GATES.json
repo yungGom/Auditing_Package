@@ -218,6 +218,13 @@
       "status": "통과",
       "note": "공통 정규화 textutil.match_fs_title 일반화 — 접두 수식어(연결/반기/분기/중간/요약) 순서 무관 소거, 괄호 그룹·제N기(말) 제거, 잔여 문자열이 표 유형명과 정확 일치할 때만 채택(오탐 방지 — '재무상태표상자산' 불일치), 연결/별도 보존. 전수 적용: scanner FS 판별(match_fs_title)·foot 시트 인식(FS_SHEET_RE textutil 단일 소스화)·A-5 전기대사 pair_fs_sheets 신설(반기BS↔연결BS 등 접두 표기 차이 페어링 — recon_statement/recon_ce/사이드 렌더에 pri_sheet 관통, 미페어 시트는 progress 노출)·worksheet 카테고리/V-1/F-3b는 endswith·시트명 기반이라 기존 호환 확인(grep 전수). 미분류 침묵 탈락 금지 — scanner fs_unclassified 수집(제목형 표+FS유사+주석 상한 적용) → extract meta 'fs_unclassified' 노출. 회귀 픽스처 CONTENTS_XML_HALF 신설(연결반기 순서 역전·중간요약·괄호 제57기·분기 + 미분류 1건). 게이트: 재현 — 접두 변형 4종 전부 시트 인식(반기연결BS·PL·CE·분기CF)+미분류 '재무상태표 부속명세' 노출+페어링 {반기연결BS→연결BS}, 단위 17 passed. 신원·무벡스 불변 — F-3b 4/4(513/755 68.0%)·V-1 2/2(66/99)·무벡스 639/1,078(59.3%) 출처 분해 동일. 전 테스트 회귀 187 passed(1:58:42)",
       "date": "2026-07-21"
+    },
+    {
+      "patch": "UI-6",
+      "title": "용어 전면 교체 — 회계 실무 용어 통일 (GLOSSARY 단일 기준)",
+      "status": "통과",
+      "note": "docs/GLOSSARY.md 신설(내부용어↔화면용어↔정의, 금지어 목록·허용 목록). 3면 동시 교체 — 화면(webui 5파일 50여 라벨: DSD 작업/XBRL 작성 지원/공시 조회(DART)/작업 파일/검증 탭/택소노미 버전 점검/계정 매핑 확정/전사 가이드 작성/XBRL 표 뷰어/택소노미 계층 뷰/XBRL 수신, 제출파일·XBRL 자료·공시 사례 추천 등), 산출물(xbrl_recon·rollforward·worksheet·note_worksheet 17건: 'DSD ↔ XBRL 제출파일 태깅 대사'·'당기 작성 준비표'·태깅 요소 ID·제출파일에만_매핑없음 시트 등), USER_GUIDE.md 전면 동기화. 전기대사 진입 질문형 '전기와 일치합니까?'(마이크로카피만, 로직 불변). 패치 ID·영문 모듈명 UI 노출 금지 — tests/test_glossary_ban.py로 강제(웹 문자열 리터럴·JSX 텍스트 / 산출물 라이터 한국어 리터럴(docstring 제외, ast) / USER_GUIDE — 허용: 코드 식별자·주석·import·GATES·docs 스펙·AI_Footing). 코드 식별자·패치 ID·API 키는 불변(counts 키 '제출파일에만 있음'은 표시 판정 문자열이라 교체). 게이트: 금지어 grep 잔존 0(3면 3/3 passed), 산출물 3종 재생성(태깅 대사·당기 작성 준비표·전사 가이드) 새 라벨 스크린샷, USER_GUIDE 동기화 diff 커밋 포함, 종합계획 상황판 H-1·UI-6 등재. 전 테스트 회귀 191 passed(1:25:52)",
+      "date": "2026-07-21"
     }
   ]
 }
