@@ -104,10 +104,32 @@ def _period_seq(ctx, sheet, want):
     return dict(seq), rows
 
 
-def recon_statement(cur_ctx, pri_ctx, sheet, tolerance=0):
+def _fs_pair_key(name):
+    """H-1: 기간 접두(반기/분기)를 무시한 페어링 키 (연결 구분 보존)."""
+    return re.sub(r"^(반기|분기)", "", name)
+
+
+def pair_fs_sheets(cur_ctx, pri_ctx):
+    """본문 시트 페어링 — 이름 일치 우선, 접두 무시 키 폴백.
+
+    H-1: 반기BS ↔ BS 같은 접두 표기 차이로 인한 침묵 탈락 방지.
+    """
+    pri_by_key = {}
+    for s2 in pri_ctx.fs_sheets:
+        pri_by_key.setdefault(_fs_pair_key(s2), s2)
+    out = {}
+    for s2 in cur_ctx.fs_sheets:
+        out[s2] = (s2 if s2 in pri_ctx.fs_sheets
+                   else pri_by_key.get(_fs_pair_key(s2)))
+    return out
+
+
+def recon_statement(cur_ctx, pri_ctx, sheet, tolerance=0,
+                    pri_sheet=None):
+    psheet = pri_sheet or sheet
     cur_prior, cur_rows = _period_seq(cur_ctx, sheet, "전기")
-    pri_current, pri_rows = _period_seq(pri_ctx, sheet, "당기")
-    ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[sheet]
+    pri_current, pri_rows = _period_seq(pri_ctx, psheet, "당기")
+    ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[psheet]
 
     pri_by_label, pri_by_label2 = {}, {}
     for r in pri_rows:
@@ -189,7 +211,7 @@ def _ce_rows(ctx, sheet, want_block):
     return out
 
 
-def recon_ce(cur_ctx, pri_ctx, sheet, tolerance=0):
+def recon_ce(cur_ctx, pri_ctx, sheet, tolerance=0, pri_sheet=None):
     """행 단위 판정 — 당기 파일 전기 블록 행 ↔ 전기 파일 당기 블록 행.
 
     같은 라벨끼리 연도가 달라 못 붙는 날짜 접두는 제거하고, 블록을
@@ -197,7 +219,7 @@ def recon_ce(cur_ctx, pri_ctx, sheet, tolerance=0):
     자본항목 열이 일치해야 TRUE — 렌더 판정 열과 1:1.
     """
     cur = _ce_rows(cur_ctx, sheet, "전기")
-    pri = _ce_rows(pri_ctx, sheet, "당기")
+    pri = _ce_rows(pri_ctx, pri_sheet or sheet, "당기")
     pri_by_label = {}
     for r, lab, _raw, vals in pri:
         pri_by_label.setdefault(lab, (r, vals))
@@ -506,12 +528,14 @@ def _style_sheet(ws):
             30 if col in label_cols else 14
 
 
-def _side_statement(dst, cur_ctx, pri_ctx, sheet, results):
+def _side_statement(dst, cur_ctx, pri_ctx, sheet, results,
+                    pri_sheet=None):
     """본문 시트: 당기 원문 | 판정(행 단위) | 전기 원문 (행 라벨 정렬)."""
-    ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[sheet]
-    rm_c, rm_p = cur_ctx.rowmaps[sheet], pri_ctx.rowmaps[sheet]
+    psheet = pri_sheet or sheet
+    ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[psheet]
+    rm_c, rm_p = cur_ctx.rowmaps[sheet], pri_ctx.rowmaps[psheet]
     _periods_c, rows_c = cur_ctx.fs_sequences(sheet)
-    _periods_p, rows_p = pri_ctx.fs_sequences(sheet)
+    _periods_p, rows_p = pri_ctx.fs_sequences(psheet)
 
     all_cols_c = sorted({c for r in rm_c for c in rm_c[r]})
     all_cols_p = sorted({c for r in rm_p for c in rm_p[r]})
@@ -574,15 +598,16 @@ def _side_statement(dst, cur_ctx, pri_ctx, sheet, results):
     _verdict_header(dst, verdict_col)
 
 
-def _side_ce(dst, cur_ctx, pri_ctx, sheet, results):
+def _side_ce(dst, cur_ctx, pri_ctx, sheet, results, pri_sheet=None):
     """CE 시트: 당기 원문 | 판정(행 단위) | 전기 원문(당기 블록 정렬).
 
     recon_ce가 매칭한 전기 파일 행(pri_row)을 그대로 옆에 붙인다 —
     본문식 라벨 매칭은 연도 포함 날짜 라벨·블록 반복 라벨에서 오정렬
     (요약 TRUE ↔ 시트 FALSE 불일치의 원인이었음).
     """
-    ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[sheet]
-    rm_c, rm_p = cur_ctx.rowmaps[sheet], pri_ctx.rowmaps[sheet]
+    psheet = pri_sheet or sheet
+    ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[psheet]
+    rm_c, rm_p = cur_ctx.rowmaps[sheet], pri_ctx.rowmaps[psheet]
     all_cols_p = sorted({c for r in rm_p for c in rm_p[r]})
     width_c = max((c for r in rm_c for c in rm_c[r]), default=6)
     verdict_col = width_c + 1
@@ -710,15 +735,18 @@ def write_side_by_side(cur_ctx, pri_ctx, note_map, wb, stmt_results,
                        note_results):
     """실무 양식 상세 시트들을 wb에 추가. [(구분, 시트명)] 반환."""
     rendered = []
+    pairs = pair_fs_sheets(cur_ctx, pri_ctx)
     for sheet in cur_ctx.fs_sheets:
-        if sheet not in pri_ctx.fs_sheets:
+        psheet = pairs.get(sheet)
+        if psheet is None:
             continue
         dst = wb.create_sheet(sheet)
         res = stmt_results.get(sheet, [])
         if sheet.endswith("CE"):
-            _side_ce(dst, cur_ctx, pri_ctx, sheet, res)
+            _side_ce(dst, cur_ctx, pri_ctx, sheet, res, pri_sheet=psheet)
         else:
-            _side_statement(dst, cur_ctx, pri_ctx, sheet, res)
+            _side_statement(dst, cur_ctx, pri_ctx, sheet, res,
+                            pri_sheet=psheet)
         _style_sheet(dst)
         dst.column_dimensions["A"].width = 34
         rendered.append(("본문", sheet))
@@ -763,15 +791,20 @@ def recon(cur_path, prior_path, out_path=None, tolerance=0, progress=None):
         pri_ctx = FootingContext(pri_x)
 
         stmt_results = {}
+        pairs = pair_fs_sheets(cur_ctx, pri_ctx)
         for sheet in cur_ctx.fs_sheets:
-            if sheet not in pri_ctx.fs_sheets:
+            psheet = pairs.get(sheet)
+            if psheet is None:
+                if progress:                    # H-1: 침묵 탈락 금지
+                    progress(f"  [{sheet}] 전기 대응 시트 없음 — 미대사")
                 continue
             if sheet.endswith("CE"):
                 stmt_results[sheet] = recon_ce(cur_ctx, pri_ctx, sheet,
-                                               tolerance)
+                                               tolerance, pri_sheet=psheet)
             else:
                 stmt_results[sheet] = recon_statement(cur_ctx, pri_ctx,
-                                                      sheet, tolerance)
+                                                      sheet, tolerance,
+                                                      pri_sheet=psheet)
             if progress:
                 progress(f"  [{sheet}] {len(stmt_results[sheet])}건 대사")
 

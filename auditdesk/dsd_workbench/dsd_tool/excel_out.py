@@ -291,6 +291,8 @@ def extract(dsd_path: str, out_path: str = None,
     return {
         "out_path": out_path,
         "fs_sheets": [b.sheet_name for b in doc.fs_blocks],
+        # H-1: FS유사 제목인데 미판별 — 침묵 탈락 금지, 그대로 노출
+        "fs_unclassified": list(doc.fs_unclassified or []),
         "note_count": len(doc.notes),
         "note_mode": doc.note_mode,
         "te_tables": len(doc.te_tables),

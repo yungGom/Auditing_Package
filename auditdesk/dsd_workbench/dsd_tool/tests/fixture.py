@@ -100,6 +100,24 @@ META_XML_TEMPLATE = (
     "</METAINFO>\r\n")
 
 
+
+# H-1 회귀 픽스처: 반기/분기·중간·요약·제N기·연결 접두 변형 제목
+# + FS유사 미분류 제목 1건 (침묵 탈락 금지 검증용)
+CONTENTS_XML_HALF = (
+    CONTENTS_XML
+    .replace("재 무 상 태 표", "연결 반기 재무상태표")
+    .replace("포괄손익계산서</TD>", "중간요약포괄손익계산서</TD>")
+    .replace("자 본 변 동 표", "자본변동표(제57기 반기)")
+    .replace("현 금 흐 름 표", "제 57 기 분기 현금흐름표")
+    .replace(
+        "<SECTION-2><TITLE>주석</TITLE>",
+        '<TABLE WIDTH="600"><TR><TD ALIGN="CENTER">'
+        "재무상태표 부속명세"
+        "</TD></TR></TABLE>\r\n"
+        "<SECTION-2><TITLE>주석</TITLE>")
+)
+
+
 def build_dsd(path: str, contents: str = CONTENTS_XML,
               editver: str = "5.049"):
     """contents.xml + meta.xml(실제 형식) 부속 엔트리를 가진 .dsd(ZIP) 생성."""

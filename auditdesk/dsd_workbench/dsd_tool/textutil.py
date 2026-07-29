@@ -204,14 +204,65 @@ FS_ABBREV = {
 }
 
 
+# H-1: 기간 수식어 일반화 — 접두 순서 무관 제거.
+# 반기/분기는 시트명 접두로 보존, 중간/요약은 제거만 (기간 구분 아님).
+_FS_MOD_KEEP = ("반기", "분기")
+_FS_MOD_DROP = ("중간", "요약")
+_FS_GISU_RE = re.compile(r"제\d+기(말)?")
+_FS_PAREN_RE = re.compile(r"[\(\[（【][^\)\]）】]*[\)\]）】]")
+
+# 시트명 인식 — scanner 산출 접두 규격과 단일 소스 (foot 등 공용)
+FS_SHEET_RE = re.compile(r"^(반기|분기)?(연결)?(BS|PL1?|CE|CF|RE|DE)$")
+
+
 def normalize_title(s: str) -> str:
     """공백(전각 포함) 전부 제거."""
     return _WS_RE.sub("", s or "")
 
 
 def match_fs_title(s: str):
-    """FS 제목이면 (period_prefix, consol_prefix, base_name) 반환, 아니면 None."""
-    m = FS_TITLE_RE.match(normalize_title(s))
-    if not m:
-        return None
-    return (m.group(1) or "", m.group(2) or "", m.group(3))
+    """FS 제목이면 (period_prefix, consol_prefix, base_name) 반환, 아니면 None.
+
+    H-1 일반화: 괄호 그룹·제N기(말) 표기 제거 후, 접두 수식어
+    (연결/반기/분기/중간/요약)를 순서 무관으로 소거 — '연결반기재무상태표',
+    '중간요약재무상태표', '재무상태표(제43기)' 등 수용. 잔여 문자열이
+    표 유형명과 정확히 일치할 때만 채택 (오탐 방지 — '재무상태표상자산'
+    같은 주석 셀은 불일치). 연결/별도 구분은 보존.
+    """
+    t = normalize_title(s)
+    t = _FS_PAREN_RE.sub("", t)
+    t = _FS_GISU_RE.sub("", t)
+    period, consol = "", ""
+    while True:
+        if t.startswith("연결"):
+            consol = "연결"
+            t = t[2:]
+            continue
+        for m_ in _FS_MOD_KEEP:
+            if t.startswith(m_):
+                period = period or m_
+                t = t[len(m_):]
+                break
+        else:
+            for m_ in _FS_MOD_DROP:
+                if t.startswith(m_):
+                    t = t[len(m_):]
+                    break
+            else:
+                break
+            continue
+        continue
+    if t in FS_ABBREV:
+        return (period, consol, t)
+    return None
+
+
+def fs_title_unclassified(s: str):
+    """표 유형명을 포함하지만 FS 제목으로 판별되지 않는 제목 감지.
+
+    H-1 §3 — 침묵 탈락 금지: scanner가 이 결과를 '미분류'로 노출한다.
+    """
+    if match_fs_title(s) is not None:
+        return False
+    t = normalize_title(s)
+    return any(base in t for base in FS_ABBREV)

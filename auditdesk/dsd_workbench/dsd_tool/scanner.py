@@ -6,7 +6,7 @@
 import re
 from dataclasses import dataclass, field
 
-from .textutil import clean_text, match_fs_title
+from .textutil import clean_text, fs_title_unclassified, match_fs_title
 
 # ---------------------------------------------------------------------------
 # 저수준 요소
@@ -139,6 +139,7 @@ class Document:
     note_mode: str              # usermark | span-id | plain | none
     te_tables: list             # 외부감사 (TE 셀 포함 테이블)
     standalone_tus: list        # 테이블 밖 단위 표기 셀
+    fs_unclassified: list = None   # H-1: 미분류 FS유사 제목 (침묵 탈락 금지)
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +280,7 @@ def scan(text: str) -> Document:
     # --- 재무제표 블록 ------------------------------------------------------
     fs_blocks = []
     fs_table_idx = set()
+    fs_unclassified_raw = []       # H-1: FS유사지만 미판별 제목 (start, raw)
     for i, tbl in enumerate(tables):
         hit = _is_title_table(tbl)
         if hit:
@@ -287,6 +289,11 @@ def scan(text: str) -> Document:
                 title_cell=cell, title_parts=parts,
                 extra_title_cells=rest, tables=[]))
             fs_table_idx.add(i)
+        elif tbl.rows and len(tbl.rows) <= 6                 and len(list(tbl.all_cells())) <= 8:
+            fne = [c for c in tbl.rows[0] if c.text]
+            if len(fne) == 1 and fs_title_unclassified(fne[0].text):
+                fs_unclassified_raw.append(
+                    (fne[0].start, fne[0].text.strip()))
 
     # --- 주석 헤더 ----------------------------------------------------------
     notes_lo = fs_blocks[0].title_cell.start if fs_blocks else 0
@@ -312,6 +319,9 @@ def scan(text: str) -> Document:
     # 주석 본문 안의 소형 표(첫 셀이 "재무상태표" 등)로 인한 FS 오탐 제거
     fs_blocks = [b for b in fs_blocks if b.title_cell.start < notes_start]
     fs_table_idx = {i for i in fs_table_idx if tables[i].start < notes_start}
+    # H-1: 미분류 제목도 같은 상한 적용 (주석 속 셀 오탐 배제) 후 노출
+    fs_unclassified = [t for pos, t in fs_unclassified_raw
+                       if pos < notes_start]
 
     # --- FS 블록에 테이블 배정 (제목 테이블 이후 ~ 다음 제목/주석 시작 전) ----
     title_positions = sorted(
@@ -408,6 +418,7 @@ def scan(text: str) -> Document:
         note_mode=note_mode,
         te_tables=te_tables,
         standalone_tus=standalone_tus,
+        fs_unclassified=fs_unclassified,
     )
 
 

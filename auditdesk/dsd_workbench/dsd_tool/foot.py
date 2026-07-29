@@ -24,7 +24,8 @@ from .textutil import try_number
 FOOT_SHEET = "_FOOT"
 DEFAULT_LIMIT = 2          # DSDbreaker 단수차 한도 ±2
 
-_FS_SHEET_RE = re.compile(r"^(반기|분기)?(연결)?(BS|PL1?|CE|CF|RE|DE)$")
+# H-1: 시트명 인식 정규식은 textutil과 단일 소스
+from .textutil import FS_SHEET_RE as _FS_SHEET_RE  # noqa: E402
 _YELLOW = PatternFill("solid", start_color="FFF2CC")
 _RED = PatternFill("solid", start_color="FFC7CE")
 _BOLD = Font(bold=True)
