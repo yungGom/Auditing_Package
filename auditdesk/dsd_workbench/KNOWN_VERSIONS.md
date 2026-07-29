@@ -14,6 +14,7 @@ extract 시 이 목록에 없는 editver를 만나면 경고가 출력된다.
 ## 수동 메모
 
 - 금감원 택소노미 배포 엑셀(D-2c 레이블 리졸버 자산): assets/taxonomy/1__DART_Taxonomy_20260630_배포용.xlsx — 버전 '26.06.30 (Concepts 9,451 · Label Link ko). 다운로드 코드 없음 — 갱신은 사용자가 파일 교체 (수신 허용·송신 금지). gitignore 대상(대용량 바이너리).
+- 금감원 XBRL 작성가이드(F-4a 규칙 자산 원천): assets/guide/20260701_금융감독원 DART 재무제표 XBRL 본문 주석 작성가이드.pdf — 2026-07-01 배포판(420p). 규칙 자산은 guide_rules_2026.json(133조항, 요지 패러프레이즈 — 원문 전사 아님). 다운로드 코드 없음 — 개정판 교체는 사용자 몶. PDF는 gitignore 대상(대용량), JSON·생성기는 커밋
 
 
 - 5.106은 2026-07-15 실물 확보(뷰티스킨 FY2025 별도 DSD)로 G2 검증·등재 완료. 5.107은 아직 픽스처 미확보 — 해당 버전 DSD 확보 시 fixtures/real에 넣고 batch_validate 재실행.

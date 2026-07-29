@@ -48,3 +48,4 @@ webui/node_modules/
 
 # 금감원 택소노미 배포 엑셀 (D-2c) — 사용자 파일 교체로 갱신, 대용량 바이너리
 assets/taxonomy/*.xlsx
+assets/guide/*.pdf
