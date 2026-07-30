@@ -119,13 +119,15 @@ CONTENTS_XML_HALF = (
 
 
 def build_dsd(path: str, contents: str = CONTENTS_XML,
-              editver: str = "5.049"):
+              editver: str = "5.049", no_meta: bool = False):
     """contents.xml + meta.xml(실제 형식) 부속 엔트리를 가진 .dsd(ZIP) 생성."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("contents.xml", contents.encode("utf-8"))
-        z.writestr("meta.xml",
-                   META_XML_TEMPLATE.format(editver=editver).encode("utf-8"))
+        if not no_meta:                 # B-4: 수신 래핑본 모의
+            z.writestr(
+                "meta.xml",
+                META_XML_TEMPLATE.format(editver=editver).encode("utf-8"))
         z.writestr("images/logo.bin", bytes(range(256)) * 4)
     with open(path, "wb") as f:
         f.write(buf.getvalue())

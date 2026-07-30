@@ -116,6 +116,22 @@ def peer_induty():
 # 원클릭으로 연결. 기능 신규 0 — 캐시 경로를 내부 전달만 한다.
 # --------------------------------------------------------------------------
 
+@router.get("/attachments")
+def attachments(corp_code: str, rcept_no: str):
+    """B-4: 접수번호의 첨부 문서 목록 (본문/연결·별도 감사보고서 등).
+
+    수신·캐시는 기존 document 경로 재사용 — 첫 호출만 다운로드.
+    """
+    if not corp_code or not rcept_no:
+        raise HTTPException(400, "corp_code/rcept_no 필요")
+    from dart_explorer.converters.document_wrap import list_attachments
+    try:
+        return {"attachments": list_attachments(_client(), corp_code,
+                                                rcept_no)}
+    except Exception as e:
+        raise HTTPException(502, f"첨부 목록 수신 실패: {e}")
+
+
 @router.post("/dsd", status_code=202)
 def dsd_save(body: dict):
     """[DSD 저장] — 공시원본 수신(캐시) → DSD 래핑 → 지정 위치 복사.
@@ -128,11 +144,15 @@ def dsd_save(body: dict):
     if not corp_code or not rcept_no:
         raise HTTPException(400, "corp_code/rcept_no 필요")
 
+    attach = body.get("attach")             # B-4: 첨부 단위 수신
+
     def _run(progress):
         import shutil
         progress("공시원본 수신 중… (캐시 히트 시 재다운로드 없음)")
-        from dart_explorer.converters.document_wrap import fetch_and_wrap
-        path = fetch_and_wrap(_client(), corp_code, rcept_no)
+        from dart_explorer.converters.document_wrap import (
+            fetch_and_wrap, fetch_and_wrap_entry)
+        path = fetch_and_wrap_entry(_client(), corp_code, rcept_no,
+                                    attach) if attach else             fetch_and_wrap(_client(), corp_code, rcept_no)
         if save_to:
             shutil.copyfile(path, save_to)
             path = save_to
@@ -152,10 +172,14 @@ def to_excel(body: dict):
     if not corp_code or not rcept_no:
         raise HTTPException(400, "corp_code/rcept_no 필요")
 
+    attach = body.get("attach")             # B-4: 첨부 단위 변환
+
     def _run(progress):
         progress("공시원본 수신 중…")
-        from dart_explorer.converters.document_wrap import fetch_and_wrap
-        dsd = fetch_and_wrap(_client(), corp_code, rcept_no)
+        from dart_explorer.converters.document_wrap import (
+            fetch_and_wrap, fetch_and_wrap_entry)
+        dsd = fetch_and_wrap_entry(_client(), corp_code, rcept_no,
+                                   attach) if attach else             fetch_and_wrap(_client(), corp_code, rcept_no)
         progress("DSD → Excel 추출 중…")
         from dsd_tool.excel_out import extract
         xlsx = os.path.splitext(dsd)[0] + ".xlsx"

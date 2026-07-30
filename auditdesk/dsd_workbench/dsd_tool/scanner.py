@@ -140,6 +140,8 @@ class Document:
     te_tables: list             # 외부감사 (TE 셀 포함 테이블)
     standalone_tus: list        # 테이블 밖 단위 표기 셀
     fs_unclassified: list = None   # H-1: 미분류 FS유사 제목 (침묵 탈락 금지)
+    fs_dropped: list = None        # B-4: 유효 FS 제목이나 주석 이후라 탈락
+    merged_notes: dict = None      # B-4: 주석 묶침 {번호: [포함 추정 번호]}
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +319,12 @@ def scan(text: str) -> Document:
     notes_start = headers[0]["pos"] if headers else notes_hi
 
     # 주석 본문 안의 소형 표(첫 셀이 "재무상태표" 등)로 인한 FS 오탐 제거
+    # B-4: 단, 유효한 FS 제목이 주석 이후에 오는 경우(수신본 본문의
+    # 별도 재무제표 섩션 등)는 침묵 탈락 금지 — 미분할 원문으로 노출
+    fs_dropped = [(b.title_cell.start,
+                   " ".join(b.title_parts[i] for i in (0, 1, 2) if
+                            b.title_parts[i]))
+                  for b in fs_blocks if b.title_cell.start >= notes_start]
     fs_blocks = [b for b in fs_blocks if b.title_cell.start < notes_start]
     fs_table_idx = {i for i in fs_table_idx if tables[i].start < notes_start}
     # H-1: 미분류 제목도 같은 상한 적용 (주석 속 셀 오탐 배제) 후 노출
@@ -408,6 +416,19 @@ def scan(text: str) -> Document:
 
     _assign_sheet_names(fs_blocks)
 
+    # B-4: 주석 묶침 감지 — 본문 안에 다른 번호의 주석 헤더가
+    # 평문으로 남아 있으면(분할 실패) 해당 번호들을 기록
+    merged_notes = {}
+    note_num_re = re.compile(r"[>\n\r]\s*(\d{1,2})\s*[.．]\s*[가-힣]")
+    for n in notes:
+        body = text[n.start:n.end]
+        extra = sorted({int(m.group(1))
+                        for m in note_num_re.finditer(body)
+                        if int(m.group(1)) != n.number and
+                        int(m.group(1)) > n.number})
+        if extra:
+            merged_notes[n.number] = extra
+
     return Document(
         text=text,
         tables=tables,
@@ -419,6 +440,8 @@ def scan(text: str) -> Document:
         te_tables=te_tables,
         standalone_tus=standalone_tus,
         fs_unclassified=fs_unclassified,
+        fs_dropped=fs_dropped,
+        merged_notes=merged_notes,
     )
 
 

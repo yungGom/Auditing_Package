@@ -40,6 +40,56 @@ def wrap_as_contents(xml_bytes: bytes, out_path: str) -> str:
     return out_path
 
 
+def _classify_attachment(name: str, xml_text: str, rcept_no: str):
+    """B-4: 쳊부 문서 분류 — 본문/연결감사보고서/별도감사보고서/검토보고서."""
+    if name.startswith(rcept_no) and "_" not in name[len(rcept_no):-4]:
+        return {"kind": "본문", "consol": None}
+    head = xml_text[:20000]
+    review = "검토보고서" in head
+    if "(첨부)연결" in head.replace(" ", "") or             "(첨부) 연 결" in head:
+        kind = "연결검토보고서" if review else "연결감사보고서"
+        return {"kind": kind, "consol": "연결"}
+    if "(첨부)" in head:
+        kind = "검토보고서(별도)" if review else "별도감사보고서"
+        return {"kind": kind, "consol": "별도"}
+    return {"kind": "기타 첨부", "consol": None}
+
+
+def list_attachments(cli, corp_code: str, rcept_no: str):
+    """접수 ZIP의 문서 목록(분류 포함). 수신은 기존 캐시 경로 재사용."""
+    data, _zp = cli.fetch_binary(
+        "document.xml", {"rcept_no": rcept_no},
+        f"document/{corp_code}/{rcept_no}.zip")
+    out = []
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        for n in z.namelist():
+            if not n.lower().endswith(".xml"):
+                continue
+            txt = z.read(n).decode("utf-8", "ignore")
+            info = _classify_attachment(n, txt, rcept_no)
+            info["entry"] = n
+            out.append(info)
+    order = {"본문": 0, "연결감사보고서": 1, "별도감사보고서": 2}
+    out.sort(key=lambda x: order.get(x["kind"], 9))
+    return out
+
+
+def fetch_and_wrap_entry(cli, corp_code: str, rcept_no: str,
+                         entry: str) -> str:
+    """지정 첨부 XML을 래핑 — {rcept}_{suffix}.dsd (읽기 전용 수신물)."""
+    data, _zp = cli.fetch_binary(
+        "document.xml", {"rcept_no": rcept_no},
+        f"document/{corp_code}/{rcept_no}.zip")
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        xml = z.read(entry)
+    suffix = entry[:-4].replace(rcept_no, "").strip("_") or "main"
+    out_dir = os.path.join(cli.cache.root, "document", corp_code)
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{rcept_no}_{suffix}.dsd")
+    wrap_as_contents(xml, out_path)
+    return out_path
+
+
 def extract_to_excel(document_zip_path: str, xlsx_path: str,
                      work_dir: str = None) -> dict:
     """OpenDART 원본 ZIP → (래핑) → dsd_tool extract 엑셀 산출.

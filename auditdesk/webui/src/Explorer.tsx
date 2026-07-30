@@ -77,27 +77,48 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
   });
 
   // [DSD 저장] — 저장 위치 사용자 선택 (원본이 곧 DSD)
-  const actSaveDsd = async (d: any) => {
+  const actSaveDsd = async (d: any, attach?: string, tag?: string) => {
     const pick = await api("/api/fs/save-pick", {
       method: "POST",
       body: JSON.stringify({
-        suggest: `${d.corp_name}_${d.rcept_no}.dsd` }),
+        suggest: `${d.corp_name}_${d.rcept_no}${tag ? "_" + tag : ""}.dsd`,
+      }),
     });
     if (!pick.path) return;
     const r = await runAction("/api/explorer/dsd", {
       corp_code: d.corp_code || res.corp_code, rcept_no: d.rcept_no,
-      save_to: pick.path,
+      save_to: pick.path, attach,
     });
     if (r) setNotice(`DSD 저장됨: ${r.dsd_path}`);
   };
 
-  // [엑셀로 변환] — 검색에서 클릭 2번 안에 편집용 엑셀 (ACCIO 대응)
-  const actToExcel = async (d: any) => {
+  // B-4: 접수번호별 첨부 문서 목록 펼침
+  const [attachOpen, setAttachOpen] = useState<string | null>(null);
+  const [attachList, setAttachList] = useState<Record<string, any[]>>({});
+  const toggleAttach = async (d: any) => {
+    const key = d.rcept_no;
+    if (attachOpen === key) { setAttachOpen(null); return; }
+    setAttachOpen(key);
+    if (!attachList[key]) {
+      try {
+        const r = await api("/api/explorer/attachments?corp_code=" +
+          `${d.corp_code || res.corp_code}&rcept_no=${key}`);
+        setAttachList((c) => ({ ...c, [key]: r.attachments }));
+      } catch (e: any) {
+        setNotice(`첨부 목록 실패: ${e?.message || e}`);
+        setAttachOpen(null);
+      }
+    }
+  };
+
+  // [열람용 엑셀] — 검색에서 클릭 2번 안에 열람·분석용 엑셀 (ACCIO 대응)
+  const actToExcel = async (d: any, attach?: string) => {
     const r = await runAction("/api/explorer/to-excel", {
       corp_code: d.corp_code || res.corp_code, rcept_no: d.rcept_no,
+      attach,
     });
     if (r) {
-      setNotice(`편집용 엑셀 생성 — 셀 ${r.cells?.toLocaleString()} · ` +
+      setNotice(`열람용 엑셀 생성 — 셀 ${r.cells?.toLocaleString()} · ` +
         `주석 ${r.notes} (파일을 열었습니다)`);
       openFile(r.xlsx_path);
     }
@@ -324,7 +345,7 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
               ))}
           </tr></thead>
           <tbody>
-            {res.docs.map((d: any) => (
+            {res.docs.map((d: any) => [
               <tr key={d.rcept_no}>
                 <td style={{
                   font: `600 12px ${F_LABEL}`, color: "#191c1d",
@@ -364,7 +385,7 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
                   }}>
                     <ActBtn label="DSD 저장" icon="download"
                       onClick={() => actSaveDsd(d)} ghost />
-                    <ActBtn label="엑셀로 변환" icon="table_view"
+                    <ActBtn label="본문 열람용 엑셀" icon="table_view"
                       testid="act-excel"
                       onClick={() => actToExcel(d)} />
                     <ActBtn label="XBRL 표 엑셀" icon="pivot_table_chart"
@@ -372,10 +393,76 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
                       onClick={() => actDimtable(d)} />
                     <ActBtn label="전사 가이드" icon="edit_note"
                       onClick={() => actWorksheet(d)} ghost />
+                    <ActBtn
+                      label={attachOpen === d.rcept_no ? "첨부 접기"
+                        : "첨부…"}
+                      icon={attachOpen === d.rcept_no
+                        ? "expand_less" : "expand_more"}
+                      onClick={() => toggleAttach(d)} ghost />
                   </span>
                 </td>
-              </tr>
-            ))}
+              </tr>,
+              attachOpen === d.rcept_no && (
+                <tr key={d.rcept_no + "_att"}>
+                  <td colSpan={5} style={{
+                    background: "#f3f4f5", padding: "8px 14px 10px",
+                    borderBottom: "1px solid rgba(195,198,209,0.4)",
+                  }}>
+                    {!attachList[d.rcept_no] && (
+                      <span style={{
+                        font: `500 12px ${F_LABEL}`, color: "#737780",
+                      }}>첨부 목록 수신 중…</span>
+                    )}
+                    {(attachList[d.rcept_no] || []).map((a: any) => (
+                      <div key={a.entry} style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "4px 0",
+                      }}>
+                        <span style={{
+                          font: `600 12px ${F_LABEL}`, color: "#191c1d",
+                          minWidth: 170,
+                        }}>{a.kind}{a.consol
+                          ? "" : a.kind === "본문" ? " (열람용)" : ""}
+                        </span>
+                        <span style={{
+                          fontFamily: MONO, fontSize: 10,
+                          color: "#737780", minWidth: 190,
+                        }}>{a.entry}</span>
+                        <ActBtn
+                          label={"DSD 저장" +
+                            (a.consol ? `(${a.consol})` : "")}
+                          icon="download" ghost
+                          onClick={() => actSaveDsd(d,
+                            a.kind === "본문" ? undefined : a.entry,
+                            a.kind)} />
+                        <ActBtn
+                          label={(a.kind === "본문" ? "본문 열람용 엑셀"
+                            : "엑셀로 변환" +
+                              (a.consol ? `(${a.consol})` : ""))}
+                          icon="table_view"
+                          onClick={() => actToExcel(d,
+                            a.kind === "본문" ? undefined : a.entry)} />
+                      </div>
+                    ))}
+                    {!!(attachList[d.rcept_no] || []).length && (
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        paddingTop: 6, borderTop: "1px dashed #c3c6d1",
+                        marginTop: 4,
+                      }}>
+                        <span style={{
+                          font: `500 11px ${F_LABEL}`, color: "#737780",
+                        }}>XBRL 제출파일은 접수 공용 — 연결·별도 시트가
+                          모두 담깁니다</span>
+                        <ActBtn label="XBRL 표 엑셀(연결·별도 시트 포함)"
+                          icon="pivot_table_chart" ghost
+                          onClick={() => actDimtable(d)} />
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ),
+            ])}
             {!res.docs.length && (
               <tr><td colSpan={5} style={{
                 font: `500 12px ${F_LABEL}`, color: "#737780",

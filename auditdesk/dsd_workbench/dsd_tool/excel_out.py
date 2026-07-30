@@ -6,7 +6,7 @@ import hashlib
 import re
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from . import __version__
@@ -43,6 +43,18 @@ GUIDE_LINES = [
     "",
     "역변환: python -m dsd_tool repack <이파일.xlsx> <원본.dsd>",
     "출력: {원본명}_수정.dsd (원본은 덮어쓰지 않습니다)",
+]
+
+
+GUIDE_LINES_VIEWONLY = [
+    "DSD 수신문서 열람용 변환본 사용안내",
+    "",
+    "1. 이 파일은 OpenDART 공시 원본(수신물)에서 변환된 열람·분석용입니다.",
+    "2. 이 파일로는 수정·역변환(DSD 반영)을 하지 않습니다 —",
+    "   편집·변환은 회사 보유 DSD(편집기 계열)로 하세요.",
+    "3. 수신문서는 주석 분할이 부정확할 수 있습니다 — 뭉침·미분할",
+    "   안내가 있는 시트는 아래 목록과 각 시트 상단 배너를 확인하세요.",
+    "4. 숫자·표는 원본 표기 그대로입니다 (단위 변환 없음).",
 ]
 
 
@@ -137,12 +149,28 @@ def extract(dsd_path: str, out_path: str = None,
     wb.remove(wb.active)
     map_rows = []
 
-    # --- 사용안내 -----------------------------------------------------------
+    # --- 사용안내 (B-4: 수신물은 열람용 안내로 분기) ------------------------
+    from .version import read_version_info
+    ver = read_version_info(data)
+    wrapped = not ver["editver"]            # meta.xml 없음 = 수신 래핑본
+    guide_lines = list(GUIDE_LINES_VIEWONLY if wrapped else GUIDE_LINES)
+    if wrapped:
+        for num, extra in sorted((doc.merged_notes or {}).items()):
+            guide_lines.append(
+                f"⚠ 주석 {num} 시트: 주석 "
+                f"{', '.join(str(x) for x in extra[:8])}"
+                f"{' 등' if len(extra) > 8 else ''} 미분할 포함")
+        if doc.fs_dropped:
+            guide_lines.append(
+                "⚠ 시트화되지 않은 재무제표 제목 감지 — '미분할 원문' 시트 참조: "
+                + " / ".join(t for _p, t in doc.fs_dropped))
     guide = wb.create_sheet("사용안내")
-    for i, line in enumerate(GUIDE_LINES, start=1):
+    for i, line in enumerate(guide_lines, start=1):
         c = guide.cell(row=i, column=1, value=line)
         if i == 1:
             c.font = _TITLE_FONT
+        if line.startswith("⚠"):
+            c.fill = PatternFill("solid", start_color="FFEB9C")
     guide.column_dimensions["A"].width = 70
 
     # --- 표지 ---------------------------------------------------------------
@@ -198,6 +226,14 @@ def extract(dsd_path: str, out_path: str = None,
             hc.font = _BOLD
         else:
             sw.put_readonly(1, 1, display, font=_BOLD)
+        if wrapped and doc.merged_notes \
+                and note.number in doc.merged_notes:
+            extra = doc.merged_notes[note.number]
+            bc = sw.put_readonly(
+                2, 1,
+                f"⚠ 주석 {extra[0]}~ 미분할 포함 — 수신본 분할 한계, "
+                "열람·분석용 (분할 기준은 회사 보유 DSD)")
+            bc.fill = PatternFill("solid", start_color="FFEB9C")
         r = 3
         for _, kind, payload in note.items:
             if kind == "para":
@@ -228,6 +264,25 @@ def extract(dsd_path: str, out_path: str = None,
         sw.ws.column_dimensions["A"].width = 45
         for ci in range(2, 10):
             sw.ws.column_dimensions[get_column_letter(ci)].width = 14
+
+    # --- B-4: 미분할 원문 (탈락 감지 — 침묵 탈락 금지) --------------------
+    if doc.fs_dropped:
+        ws_d = wb.create_sheet("미분할 원문")
+        ws_d.cell(1, 1, "⚠ 아래 재무제표 제목이 원문에 있으나 시트화되지"
+                        " 않았습니다 (수신본 분할 한계). 원문 텍스트를"
+                        " 그대로 노출합니다 — 열람용.").font = _BOLD
+        ws_d.cell(1, 1).fill = PatternFill("solid", start_color="FFEB9C")
+        rr = 3
+        first = min(pos for pos, _t in doc.fs_dropped)
+        raw = re.sub(r"<[^>]+>", "\n", text[first:])
+        raw = raw.replace("&amp;cr;", " ").replace("&amp;", "&")
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        for ln in lines[:3000]:
+            ws_d.cell(rr, 1, _safe(ln[:300]))
+            rr += 1
+        if len(lines) > 3000:
+            ws_d.cell(rr, 1, f"… (이하 {len(lines) - 3000}줄 생략)")
+        ws_d.column_dimensions["A"].width = 90
 
     # --- 원문 통합 시트 (스펙 7.5 P3 — ACCIO 장점 흡수) ------------------------
     # 전체 내용을 세로로 이어붙인 참조 전용 뷰. _MAP에는 포함하지 않는다 —
@@ -262,8 +317,7 @@ def extract(dsd_path: str, out_path: str = None,
     ms.sheet_state = "hidden"
 
     # DART 편집기 버전 (meta.xml GENERATOR) — 패치 A-3
-    from .version import is_known, read_version_info
-    ver = read_version_info(data)
+    from .version import is_known
 
     meta = wb.create_sheet(META_SHEET)
     meta.append(["key", "value"])
@@ -293,6 +347,11 @@ def extract(dsd_path: str, out_path: str = None,
         "fs_sheets": [b.sheet_name for b in doc.fs_blocks],
         # H-1: FS유사 제목인데 미판별 — 침묵 탈락 금지, 그대로 노출
         "fs_unclassified": list(doc.fs_unclassified or []),
+        "fs_dropped": [t for _p, t in (doc.fs_dropped or [])],
+        "merged_notes": {str(k): v for k, v in
+                         (doc.merged_notes or {}).items()} if wrapped
+        else {},
+        "viewonly": wrapped,
         "note_count": len(doc.notes),
         "note_mode": doc.note_mode,
         "te_tables": len(doc.te_tables),
