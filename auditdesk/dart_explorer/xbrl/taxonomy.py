@@ -59,6 +59,7 @@ class TaxonomyPackage:
         self.labels_en = self._load_labels(_pkg_glob(folder, "*_lab-en.xml"))
         self.role_defs = {}
         self.extensions = set()
+        self.ext_attrs = {}             # V-2: 확장 element 속성
         for xsd in _pkg_glob(folder, "*.xsd"):
             root = etree.parse(xsd).getroot()
             for rt in root.iter(f"{{{LB}}}roleType"):
@@ -68,6 +69,16 @@ class TaxonomyPackage:
             for el in root.iter(f"{{{XS}}}element"):
                 if el.get("id"):
                     self.extensions.add(el.get("id"))
+                    # V-2: 확장 element 속성 (같은 순회 — 속성 판독만)
+                    self.ext_attrs[el.get("id")] = {
+                        "periodType": el.get(
+                            "{http://www.xbrl.org/2003/instance}"
+                            "periodType", ""),
+                        "type": el.get("type", ""),
+                        "balance": el.get(
+                            "{http://www.xbrl.org/2003/instance}"
+                            "balance", ""),
+                    }
 
     @staticmethod
     def _load_labels(paths):

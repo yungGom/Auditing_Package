@@ -169,6 +169,12 @@ class XbrlInstance:
                 "type": period[0], "start": period[1], "end": period[2],
                 "dims": dims,
             }
+        # V-2: 단위 정의 (xbrli:unit — 같은 파일, 기존 순회 확장)
+        self.units = {}
+        for u in root.findall(f"{{{XI}}}unit"):
+            measures = [m.text.strip() for m in u.iter(f"{{{XI}}}measure")
+                        if m.text]
+            self.units[u.get("id")] = " / ".join(measures)
         self.facts = collections.defaultdict(list)
         for el in root:
             if not isinstance(el.tag, str):
@@ -184,6 +190,7 @@ class XbrlInstance:
             self.facts[cid].append({
                 "ctx": self.contexts[cref], "value": val,
                 "decimals": el.get("decimals", ""),
+                "unit": self.units.get(el.get("unitRef", ""), ""),
             })
 
         # 보고기준일 (dart-gcd_DocumentPeriodEndDate) — 당기/전기 판정 기준.

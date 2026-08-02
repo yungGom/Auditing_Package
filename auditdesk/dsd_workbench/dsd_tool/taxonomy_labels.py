@@ -50,15 +50,22 @@ class LabelResolver:
         wb = load_workbook(path, read_only=True)
 
         # Concepts: 표준 concept 등록부 (prefix, name)
+        # V-2: 속성(type/balance/periodType)도 같은 행에서 함께 로드
         self.names = {}                       # id → (prefix, name)
+        self.attrs = {}                       # id → {type,balance,periodType}
         ws = wb["Concepts"]
         rows = ws.iter_rows(values_only=True)
-        header = next(rows)                   # #, prefix, name, id, ...
+        header = [str(h or "").strip() for h in next(rows)]
+        col = {h: i for i, h in enumerate(header)}
         for row in rows:
             if not row or not row[1] or not row[2]:
                 continue
             prefix, name = str(row[1]).strip(), str(row[2]).strip()
-            self.names[f"{prefix}_{name}"] = (prefix, name)
+            cid = f"{prefix}_{name}"
+            self.names[cid] = (prefix, name)
+            self.attrs[cid] = {
+                k: str(row[col[k]] or "").strip()
+                for k in ("type", "balance", "periodType") if k in col}
 
         # Label Link ko 블록: label (없으면 terseLabel)
         self.ko = {}                          # id → 한글 표준레이블
@@ -89,6 +96,12 @@ class LabelResolver:
         return {"ko": None, "en": name or cid,
                 "qname": f"{prefix}:{name}" if name else cid,
                 "standard": False}
+
+
+def attrs_of(resolver, concept):
+    """V-2: 표준 concept 속성 — 없으면 None (확장은 패키지 xsd 속성으로)."""
+    from .taxonomy_labels import normalize_concept
+    return resolver.attrs.get(normalize_concept(concept))
 
 
 _CACHED = None
