@@ -175,3 +175,54 @@ def test_g2_tamper_three_kinds(cases):
     assert tampered["true"] is False and "게이트변조" in tampered["title"]
     print(f"\n[V-2 G2] 변조 3종 검출 — 기간({eid1}) · decimals({eid2}) "
           f"· 주석명(행 {matched_idx + 1}) 각 1건만 FALSE 전환")
+
+def _guide_inputs(pkg):
+    """F-4b-lite+ 조립층 — 제출파일 단독 3종 입력 (HypercubeDef 재사용)."""
+    from dart_explorer.xbrl.dimension_table import HypercubeDef, XbrlInstance
+    cube = HypercubeDef(pkg)
+    axis_members, domain_in_members = {}, {}
+    for cubes in cube.by_base.values():
+        for c in cubes:
+            for ax in c["axes"]:
+                key = f"{c['code']}:{ax['axis']}"
+                axis_members[key] = list(ax["members"])
+                domain_in_members[key] = any(
+                    d in ax["members"] for d in ax["domains"])
+    inst = XbrlInstance(pkg)
+    axes_used = sorted({(a, eid) for eid, fl in inst.facts.items()
+                        for f in fl
+                        for a in (f["ctx"].get("dims") or {})})
+    return {"axis_members": axis_members,
+            "domain_in_members": domain_in_members,
+            "axes_used": axes_used}
+
+
+def test_g3_guide_sheet_in_v2_report(cases, tmp_path):
+    """F-4b-lite+ — 삼성 첨부 인스턴스로 가이드검증형 시트 + 변조 검출."""
+    from dsd_tool.attr_check import attr_check
+    data, _tmp = cases
+    c = data["삼성"]
+    gi = _guide_inputs(_CASES["삼성"]["pkg"])
+    out = str(tmp_path / "v2_guide.xlsx")
+    res = attr_check(c["facts"], c["attrs_of"], c["role_defs"],
+                     c["titles"], c["doc_end"], guide_inputs=gi,
+                     out_path=out)
+    g = res["summary"]["guide"]
+    rules = {r["rule"] for r in res["guide_rows"]}
+    assert rules == {"5.Ⅱ.4(1)나", "5.Ⅱ.4(1)라", "5.Ⅱ.3(1)아"}
+    from openpyxl import load_workbook
+    assert "가이드검증형" in load_workbook(out).sheetnames
+    base_false = g["false"]
+    # 변조 1건: 임의 축에 member 중복을 심는다
+    import copy
+    gi2 = copy.deepcopy(gi)
+    key = next(k for k, v in gi2["axis_members"].items() if v)
+    gi2["axis_members"][key] = gi2["axis_members"][key] +         [gi2["axis_members"][key][0]]
+    res2 = attr_check(c["facts"], c["attrs_of"], c["role_defs"],
+                      c["titles"], c["doc_end"], guide_inputs=gi2)
+    assert res2["summary"]["guide"]["false"] == base_false + 1
+    tampered = [r for r in res2["guide_rows"] if r["true"] is False and
+                r["spot"] == key]
+    assert tampered and "member 중복" in tampered[0]["note"]
+    print(f"\n[F-4b-lite+ G] 삼성 가이드검증형 {g['total']}행 (위반 "
+          f"{g['false']}) · 변조 1건 → +1 검출")

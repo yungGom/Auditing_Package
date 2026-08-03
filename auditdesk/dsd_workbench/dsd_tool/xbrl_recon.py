@@ -341,7 +341,11 @@ def _write_excel(out_path, rows_out, only_inst, summary):
                 if r["verdict"] == V_NOMAP else
                 "당기 문맥 팩트 없음 — 태깅 확인"
                 if r["verdict"] == V_NOFACT else
-                f"차이 {r['diff']:,.0f}원")
+                f"차이 {r['diff']:,.0f}원"
+                + (" · 가이드 5.Ⅱ.3(1)아 확인(유동/비유동 구분은"
+                   " 축이 아닌 행)"
+                   if ("유동" in r["label"] or
+                       "Current" in (r["element"] or "")) else ""))
             ws.append([r["label"], r["dsd"], r["won"],
                        (r["element"] or "").replace("_", ":", 1),
                        _std_label(resolver, r["element"]),

@@ -87,7 +87,7 @@ def collect_note_titles(ctx):
 
 def attr_check(facts, attrs_of, role_defs, note_titles, doc_end,
                std_label=None, out_path=None, source_warning=None,
-               progress=None):
+               guide_inputs=None, progress=None):
     """제출파일 속성 검증 3종. 요약 dict 반환 (+A-5 규격 엑셀).
 
     facts: {element_id: [{value, decimals, unit, type, start, end, dims}]}
@@ -235,9 +235,25 @@ def attr_check(facts, attrs_of, role_defs, note_titles, doc_end,
         "doc_dec": doc_dec, "doc_end": doc_end,
         "source_warning": source_warning,
     }
+    # F-4b-lite+: 제출파일 단독 판정 가능 3종 (조항ID 병기 —
+    # 기존 guide_check 판정 재사용, 입력은 조립층 전달)
+    guide_rows = []
+    if guide_inputs is not None:
+        from .guide_check import machine_check
+        for rid in ("5.Ⅱ.4(1)나", "5.Ⅱ.4(1)라", "5.Ⅱ.3(1)아"):
+            for spot, verdict, note in machine_check(rid, guide_inputs):
+                guide_rows.append({"rule": rid, "spot": spot,
+                                   "verdict": verdict,
+                                   "true": (None if verdict == "판단필요"
+                                            else verdict != "위반"),
+                                   "note": note})
+        summary["guide"] = {
+            "false": sum(1 for r in guide_rows if r["true"] is False),
+            "total": len(guide_rows)}
     result = {"summary": summary, "period_rows": period_rows,
               "pair_rows": pair_rows, "unit_rows": unit_rows,
-              "name_rows": name_rows, "only_roles": only_roles}
+              "name_rows": name_rows, "only_roles": only_roles,
+              "guide_rows": guide_rows}
     if out_path:
         _write_excel(out_path, result)
         result["out_path"] = out_path
@@ -331,6 +347,12 @@ def _write_excel(out_path, result):
                      r["role_def"], r["en"], r["verdict"], r["note"]],
           {"A": 40, "B": 8, "C": 14, "D": 40, "E": 34, "F": 10,
            "G": 30})
+    if result.get("guide_rows"):
+        sheet("가이드검증형",
+              ["조항ID", "적용 지점", "판정", "비고"],
+              result["guide_rows"],
+              lambda r: [r["rule"], r["spot"], r["verdict"], r["note"]],
+              {"A": 14, "B": 56, "C": 12, "D": 44})
     ws_n = wb["주석명칭"]
     ws_n.append([])
     ws_n.append(["— 제출파일에만 있는 주석 role (노출) —"])
