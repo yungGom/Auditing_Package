@@ -37,6 +37,14 @@ _NOTE_PLAIN_RE = re.compile(r"<P\b[^>]*>\s*((\d+)\s*\.\s*[^<&]{1,60})", re.DOTAL
 _NOTE_FUSED_RE = re.compile(
     r"<P\b[^>]*>\s*(?:&amp;cr;|\s|<SPAN\b[^>]*>)*"
     r"((\d{1,2})\s*[.．]\s*[가-힣][^<]{0,60})")
+# B-6c: 문단 중간 &cr; 경계 헤더 — '…합니다.&cr;&cr;2. 제목' 형태.
+# 공시본 실측(바이오인프라 FY25 감사보고서): 일부 헤더가 P 시작이 아닌
+# 본문 중간에만 존재해 평문 체인이 붕괴한다. TITLE로 확정된 주석
+# 범위 안에서만 후보로 쓴다 (폴백 전용).
+_NOTE_CR_RE = re.compile(
+    r"(?:&amp;cr;\s*)+((\d{1,2})\s*[.．]\s*[가-힣][^<&]{0,60})")
+# B-6c: 주석 범위 단일 산정 — '주석' TITLE ~ 다음 TITLE
+_NOTES_TITLE_RE = re.compile(r"<TITLE\b[^>]*>\s*주\s*석\s*</TITLE>")
 
 
 @dataclass
@@ -212,7 +220,8 @@ def _note_title(header_text: str) -> str:
     return re.sub(r"^(\d+)\s*\.\s*(?:\1\s*\.\s*)?", "", first).strip()
 
 
-def _find_note_headers(text: str, lo: int, hi: int, skip=None):
+def _find_note_headers(text: str, lo: int, hi: int, skip=None,
+                       cr_boundaries=False, allow_skip=False):
     """주석 헤더 탐지 폴백 체인: USERMARK → SPAN ID → 평문 P.
 
     반환 항목: dict(num, pos, start, end, raw, mappable)
@@ -246,17 +255,32 @@ def _find_note_headers(text: str, lo: int, hi: int, skip=None):
                     "start": m.start(1), "end": m.end(1),
                     "raw": m.group(1), "mappable": False,
                 })
+            if cr_boundaries:
+                # B-6c: 문단 중간 &cr; 경계 후보 합집합 (콘텐츠 시작
+                # 오프셋으로 중복 제거 — P 프리픽스형과 위치가 같다)
+                seen_c1 = {x["start"] for x in matches}
+                for m in _NOTE_CR_RE.finditer(text, lo, hi):
+                    if m.start(1) in seen_c1 or \
+                            (skip and skip(m.start())):
+                        continue
+                    matches.append({
+                        "num": int(m.group(2)), "pos": m.start(),
+                        "start": m.start(1), "end": m.end(1),
+                        "raw": m.group(1), "mappable": False,
+                    })
             matches.sort(key=lambda x: x["pos"])
-        chained = _longest_chain(matches)
+        chained = _longest_chain(matches, allow_skip=allow_skip)
         if len(chained) >= 2 or (len(chained) == 1 and mode == "usermark"):
             return mode, chained
     return "none", []
 
 
-def _longest_chain(matches):
+def _longest_chain(matches, allow_skip=False):
     """1부터 시작해 +1씩 이어지는 가장 자연스러운 연속열만 채택.
 
     본문 안의 "1." 볼드 등 오탐을 걸러낸다. 1이 없으면 전체를 그대로 쓴다.
+    allow_skip(B-6c 폴백 전용): TITLE로 확정된 주석 범위 안에서는
+    오름차순(건너뜀 허용) 체인 — 결번이 있어도 붕괴하지 않는다.
     """
     if not matches:
         return []
@@ -276,8 +300,13 @@ def _longest_chain(matches):
     for s in starts:
         chain = [matches[s]]
         expect = 2
+        last = matches[s]["num"]
         for item in matches[s + 1:]:
-            if item["num"] == expect:
+            if allow_skip:
+                if item["num"] > last:
+                    chain.append(item)
+                    last = item["num"]
+            elif item["num"] == expect:
                 chain.append(item)
                 expect += 1
         if len(chain) > len(best) or \
@@ -339,8 +368,28 @@ def scan(text: str) -> Document:
         if cm2:
             notes_hi = cm2.start()
 
+    # B-6c: '주석' TITLE이 있으면 범위를 TITLE ~ 다음 TITLE로 한정 —
+    # 후반 '외부감사 실시내용'의 번호 TITLE(1.~4.)·본문과 격리
+    # (주석 범위 산정 단일 소스)
+    ntm = _NOTES_TITLE_RE.search(text, notes_lo, notes_hi)
+    titled = ntm is not None
+    if titled:
+        notes_lo = ntm.end()
+        nxt = _TITLE_RE.search(text, ntm.end())
+        if nxt and nxt.start() < notes_hi:
+            notes_hi = nxt.start()
+
     note_mode, headers = _find_note_headers(text, notes_lo, notes_hi,
                                             skip=inside_table)
+    if note_mode == "none" and titled:
+        # B-6c 폴백: 헤더 일부가 문단 중간 &cr; 경계로만 존재해(공시본
+        # 실측 — 결번으로 연속 체인 붕괴) 미검출인 경우, TITLE로 확정된
+        # 주석 범위 안에서만 &cr; 후보 합집합 + 건너뜀 허용 체인 재시도
+        note_mode, headers = _find_note_headers(
+            text, notes_lo, notes_hi, skip=inside_table,
+            cr_boundaries=True, allow_skip=True)
+        if headers:
+            note_mode = "plain-cr"
     notes = []
     for k, h in enumerate(headers):
         end = headers[k + 1]["pos"] if k + 1 < len(headers) else notes_hi
