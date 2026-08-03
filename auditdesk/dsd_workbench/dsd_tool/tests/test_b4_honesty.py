@@ -10,11 +10,16 @@ import pytest
 from dsd_tool.excel_out import extract
 from dsd_tool.tests.fixture import CONTENTS_XML, build_dsd
 
-# 뭉침: 주석 1 본문에 평문 '2.' 헤더가 남아 있는 수신물 모의
+# 뭉침 잔여: 2차 분할(B-6-mini)이 가를 수 없는 형태 — 표 셀 안에
+# 주석 헤더 모양 텍스트가 남은 수신물 모의 (분할 실패 잔여는 뭉침
+# 배너로 노출 — B-6-mini 이후에도 유지되는 정직성 경로 검증).
+# 종전 평문 P 뭉침 케이스는 B-6-mini가 실제로 분할해 배너가
+# 불필요해졌다 (test_b6_mini에서 분할 자체를 검증).
 _MERGED = CONTENTS_XML.replace(
     '<P><SPAN USERMARK=" B">2. 재무제표 작성기준</SPAN>'
     "&amp;cr;&amp;cr;회사는 K-IFRS를 적용하고 있습니다.</P>",
-    "<P>2. 재무제표 작성기준 내용이 이어집니다.</P>")
+    '<TABLE WIDTH="600"><TR><TD><P>2. 재무제표 작성기준 내용'
+    "</P></TD><TD>값</TD></TR></TABLE>")
 # 탈락: 주석 시작 이후에 유효 FS 제목(별도 섹션 모의) 삽입
 _DROPPED = CONTENTS_XML.replace(
     "</SECTION-2>\r",

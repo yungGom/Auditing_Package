@@ -32,6 +32,11 @@ _NOTE_SPANID_RE = re.compile(
     r'<SPAN\b[^>]*ID="[^"]*"[^>]*>\s*((\d+)\s*\.\s*.*?)</SPAN>', re.DOTALL
 )
 _NOTE_PLAIN_RE = re.compile(r"<P\b[^>]*>\s*((\d+)\s*\.\s*[^<&]{1,60})", re.DOTALL)
+# B-6-mini: 융합형 평문 주석 경계 — 제목+본문이 한 P에 이어져도
+# 경계로 인정 (2차 분할 전용 — 1차 헤더 체인은 기존 규칙 유지)
+_NOTE_FUSED_RE = re.compile(
+    r"<P\b[^>]*>\s*(?:&amp;cr;|\s|<SPAN\b[^>]*>)*"
+    r"((\d{1,2})\s*[.．]\s*[가-힣][^<]{0,60})")
 
 
 @dataclass
@@ -207,7 +212,7 @@ def _note_title(header_text: str) -> str:
     return re.sub(r"^(\d+)\s*\.\s*(?:\1\s*\.\s*)?", "", first).strip()
 
 
-def _find_note_headers(text: str, lo: int, hi: int):
+def _find_note_headers(text: str, lo: int, hi: int, skip=None):
     """주석 헤더 탐지 폴백 체인: USERMARK → SPAN ID → 평문 P.
 
     반환 항목: dict(num, pos, start, end, raw, mappable)
@@ -218,13 +223,30 @@ def _find_note_headers(text: str, lo: int, hi: int):
                           ("span-id", _NOTE_SPANID_RE),
                           ("plain", _NOTE_PLAIN_RE)):
         matches = []
+        seen_pos = set()
         for m in pattern.finditer(text, lo, hi):
+            if skip and skip(m.start()):
+                continue                # B-6-mini: 표 셀 안 P는 헤더 아님
             inner = m.group(1)
+            seen_pos.add(m.start())
             matches.append({
                 "num": int(m.group(2)), "pos": m.start(),
                 "start": m.start(1), "end": m.end(1), "raw": inner,
                 "mappable": mode != "plain" and "<" not in inner,
             })
+        if mode == "plain":
+            # B-6-mini: 융합형(제목+본문 한 P·SPAN 래핑 포함) 후보도
+            # 합집합으로 — 최장 순차 체인 검증(_longest_chain)이 본문
+            # 명세항('1.영업에서 창출된 현금흐름' 등) 오탐을 방어한다
+            for m in _NOTE_FUSED_RE.finditer(text, lo, hi):
+                if m.start() in seen_pos or (skip and skip(m.start())):
+                    continue
+                matches.append({
+                    "num": int(m.group(2)), "pos": m.start(),
+                    "start": m.start(1), "end": m.end(1),
+                    "raw": m.group(1), "mappable": False,
+                })
+            matches.sort(key=lambda x: x["pos"])
         chained = _longest_chain(matches)
         if len(chained) >= 2 or (len(chained) == 1 and mode == "usermark"):
             return mode, chained
@@ -241,6 +263,15 @@ def _longest_chain(matches):
     starts = [i for i, item in enumerate(matches) if item["num"] == 1]
     if not starts:
         return matches
+    def _min_gap(chain):
+        # B-6-mini: 동률 타이브레이크 — 헤더 간 최소 간격.
+        # 본문 명세 나열 오탐('1.영업에서 창출된 현금흐름' 등)은
+        # 항목이 다닥닥 붙어 간격이 작다 — 진짜 주석 체인이 이긴다.
+        if len(chain) < 2:
+            return 0
+        return min(b["pos"] - a["pos"]
+                   for a, b in zip(chain, chain[1:]))
+
     best = []
     for s in starts:
         chain = [matches[s]]
@@ -249,7 +280,9 @@ def _longest_chain(matches):
             if item["num"] == expect:
                 chain.append(item)
                 expect += 1
-        if len(chain) > len(best):
+        if len(chain) > len(best) or \
+                (len(chain) == len(best) and best and
+                 _min_gap(chain) > _min_gap(best)):
             best = chain
     return best
 
@@ -306,7 +339,8 @@ def scan(text: str) -> Document:
         if cm2:
             notes_hi = cm2.start()
 
-    note_mode, headers = _find_note_headers(text, notes_lo, notes_hi)
+    note_mode, headers = _find_note_headers(text, notes_lo, notes_hi,
+                                            skip=inside_table)
     notes = []
     for k, h in enumerate(headers):
         end = headers[k + 1]["pos"] if k + 1 < len(headers) else notes_hi
@@ -317,6 +351,41 @@ def scan(text: str) -> Document:
             header=header, header_mappable=h["mappable"]))
 
     notes_start = headers[0]["pos"] if headers else notes_hi
+
+    # B-6-mini: 주석 텍스트 2차 분할 — 마크업 경계 소진 후 잔여 블록의
+    # 평문 'N. 제목' 경계 (융합형 허용). 편집기·수신물 공통.
+    # 순차 번호 검증: 직전+1 우선이되 건너뜀 허용·역행 불허 —
+    # 표 내부 숫자 오탐 억제. repack(_MAP)·FS 분할 불가침 —
+    # 분할 실패 잔여는 기존 뭉침 배너(B-4) 체계로 노출된다.
+    if notes:
+        expanded = []
+        for n in notes:
+            search_from = n.header.end if n.header is not None else n.start
+            cuts = []
+            last = n.number
+            for m in _NOTE_FUSED_RE.finditer(text, search_from, n.end):
+                if inside_table(m.start()):
+                    continue
+                num = int(m.group(2))
+                if num > last:          # 오름차순(건너뜀 허용)·역행 불허
+                    cuts.append((num, m))
+                    last = num
+            if not cuts:
+                expanded.append(n)
+                continue
+            bounds = [(n.number, n.start, n.header, n.title,
+                       n.header_mappable)]
+            for num, m in cuts:
+                hdr = Paragraph(start=m.start(1), end=m.end(1),
+                                raw=m.group(1))
+                bounds.append((num, m.start(), hdr,
+                               _note_title(hdr.text), False))
+            for i, (num, pos, hdr, title, mp) in enumerate(bounds):
+                end = bounds[i + 1][1] if i + 1 < len(bounds) else n.end
+                expanded.append(Note(
+                    number=num, title=title, start=pos, end=end,
+                    header=hdr, header_mappable=mp))
+        notes = expanded
 
     # 주석 본문 안의 소형 표(첫 셀이 "재무상태표" 등)로 인한 FS 오탐 제거
     # B-4: 단, 유효한 FS 제목이 주석 이후에 오는 경우(수신본 본문의
