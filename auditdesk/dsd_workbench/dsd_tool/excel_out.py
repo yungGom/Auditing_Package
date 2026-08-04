@@ -10,7 +10,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from . import __version__
-from .scanner import scan
+from .scanner import honesty_stats, scan
 from .textutil import dedup_note_number, is_cr_only_cell, try_number
 from .zipsplice import read_contents
 
@@ -153,7 +153,32 @@ def extract(dsd_path: str, out_path: str = None,
     from .version import read_version_info
     ver = read_version_info(data)
     wrapped = not ver["editver"]            # meta.xml 없음 = 수신 래핑본
+    hstats = honesty_stats(doc, text)       # B-5: 완전성 통계
+    import datetime as _dt
+    import os as _os
+    src_name = dsd_path.replace("\\", "/").rsplit("/", 1)[-1]
+    try:
+        src_time = _dt.datetime.fromtimestamp(
+            _os.path.getmtime(dsd_path)).strftime("%Y-%m-%d %H:%M")
+    except OSError:
+        src_time = "(확인 불가)"
+    source_line = f"소스 문서: {src_name} · 수신 시각 {src_time}"
     guide_lines = list(GUIDE_LINES_VIEWONLY if wrapped else GUIDE_LINES)
+    guide_lines.insert(1, source_line)      # B-5: 소스 식별 명기
+    # B-5: 원문 대비 시트화 커버리지 + 미시트화 블록·흡수 의심 목록
+    guide_lines.append("")
+    guide_lines.append(
+        f"시트화 커버리지: {hstats['coverage']:.1%} "
+        f"(원문 가시 문자 {hstats['total_chars']:,}자 중 "
+        f"{hstats['covered_chars']:,}자)")
+    for blk in hstats["uncovered_blocks"]:
+        guide_lines.append(
+            f"⚠ 미시트화 블록 — 가시 {blk['chars']:,}자: "
+            f"“{blk['preview']}…” (열람은 원본 문서로)")
+    for name, marks in sorted(hstats["absorbed"].items()):
+        guide_lines.append(
+            f"⚠ {name} 시트: 성격이 다른 콘텐츠 흡수 의심 — "
+            + ", ".join(marks[:4]) + (" 등" if len(marks) > 4 else ""))
     if wrapped:
         for num, extra in sorted((doc.merged_notes or {}).items()):
             guide_lines.append(
@@ -189,6 +214,7 @@ def extract(dsd_path: str, out_path: str = None,
         for cell in doc.cover_cells:
             cover.put_mapped(r, 1, cell)
             r += 1
+    cover.put_readonly(r + 1, 1, source_line)   # B-5: 소스 식별 명기
     cover.ws.column_dimensions["A"].width = 60
 
     # --- 재무제표 시트 --------------------------------------------------------
@@ -204,6 +230,13 @@ def extract(dsd_path: str, out_path: str = None,
         for tbl in block.tables:
             r = sw.put_table(r, tbl, border=True)
             r += 1
+        if wrapped and block.sheet_name in hstats["absorbed"]:
+            # B-5: 이질 콘텐츠 흡수 배너 — 행 삽입 없이 우측 상단 고정
+            # (행이 밀리면 위치 기반 역변환이 깨진다)
+            bc = sw.put_readonly(
+                1, 9, "⚠ 이 시트에 성격이 다른 콘텐츠가 흡수되었을 수 "
+                      "있습니다 — 사용안내 목록 확인")
+            bc.fill = PatternFill("solid", start_color="FFEB9C")
         sw.ws.column_dimensions["A"].width = 40
         for ci in range(2, 8):
             sw.ws.column_dimensions[get_column_letter(ci)].width = 16
@@ -326,6 +359,8 @@ def extract(dsd_path: str, out_path: str = None,
     meta.append(["contents_len", len(text)])
     meta.append(["contents_sha1", hashlib.sha1(contents).hexdigest()])
     meta.append(["note_mode", doc.note_mode])
+    meta.append(["coverage", f"{hstats['coverage']:.4f}"])
+    meta.append(["source_time", src_time])
     meta.append(["editver", ver["editver"] or ""])
     meta.append(["docver", ver["docver"] or ""])
     meta.append(["schema", ver["schema"] or ""])
@@ -352,6 +387,10 @@ def extract(dsd_path: str, out_path: str = None,
                          (doc.merged_notes or {}).items()} if wrapped
         else {},
         "viewonly": wrapped,
+        # B-5: 완전성 통계 — 커버리지·미시트화 블록·흡수 의심
+        "coverage": hstats["coverage"],
+        "uncovered_blocks": hstats["uncovered_blocks"],
+        "absorbed": dict(hstats["absorbed"]),
         "note_count": len(doc.notes),
         "note_mode": doc.note_mode,
         "te_tables": len(doc.te_tables),

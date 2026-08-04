@@ -563,6 +563,88 @@ def scan(text: str) -> Document:
     )
 
 
+def _visible_text(seg: str) -> str:
+    """마크업·개행 표기를 걷어낸 가시 문자만 (커버리지 문자량 기준)."""
+    s = re.sub(r"<[^>]+>", "", seg)
+    s = s.replace("&amp;cr;", " ").replace("&amp;", "&")
+    return re.sub(r"\s+", "", s)
+
+
+def honesty_stats(doc: Document, text: str) -> dict:
+    """B-5: 산출물 완전성 통계 — 시트화 커버리지·미시트화 블록·이질 흡수.
+
+    - coverage: 시트로 옮겨진 원문 구간의 가시 문자량 / 전체 가시 문자량
+    - uncovered: 어떤 시트에도 배정되지 않은 원문 블록 (가시 200자 이상)
+    - absorbed: FS 시트 구간 안의 이질 마커(TITLE·주석형 헤더 무리) —
+      다른 성격의 콘텐츠가 그 시트로 흡수되었다는 신호 (침묵 흡수 0)
+    """
+    spans = []
+    for p in doc.cover_paragraphs:
+        spans.append((p.start, p.end))
+    for c in doc.cover_cells:
+        spans.append((c.start, c.end))
+    fs_spans = {}
+    for b in doc.fs_blocks:
+        lo = b.title_cell.start
+        hi = max([t.end for t in b.tables] + [b.title_cell.end])
+        fs_spans[b.sheet_name] = (lo, hi)
+        spans.append((lo, hi))
+    for n in doc.notes:
+        spans.append((n.start, n.end))
+    for t in doc.te_tables:
+        spans.append((t.start, t.end))
+    if doc.fs_dropped:
+        spans.append((min(p for p, _t in doc.fs_dropped), len(text)))
+    spans.sort()
+    merged = []
+    for s, e in spans:
+        if merged and s <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+
+    total_vis = len(_visible_text(text))
+    covered_vis = sum(len(_visible_text(text[s:e])) for s, e in merged)
+    uncovered = []
+    prev = 0
+    for s, e in merged + [[len(text), len(text)]]:
+        gap = _visible_text(text[prev:s])
+        if len(gap) >= 200:
+            uncovered.append({"pos": prev, "chars": len(gap),
+                              "preview": gap[:40]})
+        prev = max(prev, e)
+
+    table_spans = [(t.start, t.end) for t in doc.tables]
+
+    def _outside(pos):
+        return not any(s <= pos < e for s, e in table_spans)
+
+    absorbed = {}
+    for name, (lo, hi) in fs_spans.items():
+        marks = []
+        for m in _TITLE_RE.finditer(text, lo, hi):
+            t_ = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+            if not t_:
+                continue
+            if doc.notes and t_.replace(" ", "") == "주석":
+                # 주석 분할이 성공한 문서의 구획 제목 자체는 흡수 아님
+                continue
+            marks.append(f"제목 '{t_[:20]}'")
+        heads = [m for m in _NOTE_FUSED_RE.finditer(text, lo, hi)
+                 if _outside(m.start())]
+        if len(heads) >= 2:
+            marks.append(f"주석형 헤더 {len(heads)}개")
+        if marks:
+            absorbed[name] = marks
+
+    return {
+        "coverage": (covered_vis / total_vis) if total_vis else 1.0,
+        "covered_chars": covered_vis, "total_chars": total_vis,
+        "uncovered_blocks": uncovered,
+        "absorbed": absorbed,
+    }
+
+
 def _assign_sheet_names(fs_blocks):
     """시트명 약칭 부여 (스펙 7.5 + P1 접두사 반영).
 
