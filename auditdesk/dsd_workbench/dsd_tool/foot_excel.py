@@ -20,7 +20,8 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .excel_out import MAP_SHEET, META_SHEET
-from .foot import FOOT_SHEET, FUZZY, MISMATCH
+from .foot import (DEFAULT_LIMIT, FOOT_SHEET, FUZZY, MISMATCH,
+                   FootingContext)
 
 _BOLD = Font(bold=True)
 _HDR_FILL = PatternFill("solid", start_color="D9E1F2")
@@ -29,6 +30,70 @@ _LINK_FONT = Font(color="FF0563C1", underline="single")
 
 _SUMMARY_LEFT_HDR = ["시트", "제목"]
 _SUMMARY_RIGHT_HDR = ["시트", "시트 링크", "푸팅 오류", "크로스 오류", "총합"]
+
+
+DETAIL_SHEET = "검증내역"          # A-6: 전수 목록·수식 판정
+_REASONS = ("①분해 공시", "②단위·집계 상이", "③매칭 불가")
+
+
+def _ref(sheet, row, col):
+    """엑셀 셀 참조 — 시트명은 항상 인용(숫자 시트명 '12' 등 안전)."""
+    return f"'{sheet}'!{get_column_letter(col)}{row}"
+
+
+def _foot_cells(ctx, fr):
+    """푸팅 결과 행 → (부모 (row,col), 자식 [(row,col)]) 실좌표."""
+    sheet = fr["sheet"]
+    if fr["axis"] == "행":
+        m = re.match(r"표\d+:C(\d+)", str(fr["scope"] or ""))
+        if m:                                    # 주석 표 — 열 고정
+            col = int(m.group(1))
+            return ((fr["parent_key"], col),
+                    [(k, col) for k in fr["child_keys"]])
+        # FS — 행별 실제 값 열 (당기 좌/우 쌍 대응)
+        pc = ctx.fs_value_col(sheet, fr["parent_key"], fr["scope"])
+        if pc is None:
+            return None
+        children = []
+        for k in fr["child_keys"]:
+            c = ctx.fs_value_col(sheet, k, fr["scope"])
+            if c is None:
+                return None
+            children.append((k, c))
+        return (fr["parent_key"], pc), children
+    m = re.search(r"R(\d+)", str(fr["scope"] or ""))
+    if not m:
+        return None
+    row = int(m.group(1))                        # 열 방향 — 행 고정
+    return ((row, fr["parent_key"]),
+            [(row, k) for k in fr["child_keys"]])
+
+
+def _classify_missing(ctx, pools, refs, value):
+    """크로스 미발견 사유 분류 (A-6 보완 — 사유 없는 미발견 금지).
+
+    기계 분류는 후보 제시일 뿐 판정 변경 없음 (통제 4호 — 확정은
+    회계사). ② 스케일 후보 → ① 구성 합 일치 → ③ 기타 순.
+    """
+    limit = ctx.limit
+    for ref in refs:
+        for _ti, _axis, _key, seq in ctx.table_sequences(ref):
+            vals = [x for _k, x in seq if x is not None]
+            for i in range(len(vals)):
+                s = 0.0
+                for j in range(i, len(vals)):
+                    s += vals[j]
+                    if j > i and abs(abs(s) - abs(value)) <= limit:
+                        return "①분해 공시(구성 합 일치 구간 존재)"
+    # 스케일 후보는 미세값 우연 일치 방지 가드: 양변 모두 유의미한 크기
+    for ref in refs:
+        for _r, _c, nv in pools.get(ref, []):
+            if abs(nv) <= limit * 10 or abs(value) < 1000:
+                continue
+            if abs(abs(nv) - abs(value) / 1000) <= limit or \
+                    abs(abs(nv) - abs(value) * 1000) <= limit:
+                return "②단위·집계 상이(천배 스케일 후보)"
+    return "③매칭 불가(기타)"
 
 
 def _sheet_title(ws):
@@ -130,6 +195,12 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         c = ws0.cell(row=4, column=7 + j, value=h)
         c.font = _BOLD
         c.fill = _HDR_FILL
+    # A-6: 수행 건수 병기 — 원형 5열(G~K)은 불가침, 우측에 추가
+    # ("0/0 검증불능"과 "0/N 전부 일치" 구분 — 침묵 무결 금지)
+    for j, h in enumerate(("푸팅 수행", "크로스 수행")):
+        c = ws0.cell(row=4, column=12 + j, value=h)
+        c.font = _BOLD
+        c.fill = _HDR_FILL
 
     left = [("원문", _sheet_title(wb[src_order[0]]) if src_order else "")]
     left += [(s, _sheet_title(wb[s])) for s in src_order]
@@ -140,6 +211,15 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         c.font = _LINK_FONT
         ws0.cell(row=r, column=3, value=title)
 
+    ctx = FootingContext(xlsx_path)             # A-6: 좌표·모수 재구성용
+    verify_targets = set(ctx.fs_sheets) | set(ctx.note_sheets)
+    foot_all, cross_all = {}, {}                # A-6: 시트별 수행(모수)
+    for fr in foot_result["foot"]:
+        foot_all.setdefault(fr["sheet"], []).append(fr)
+    for nr in foot_result["notes"]:
+        cross_all.setdefault(nr["sheet"], []).append(nr)
+
+    _WARN = PatternFill("solid", start_color="FFFFC000")   # 모수 0 경고색
     total_foot = total_cross = 0
     for i, name in enumerate(src_order):
         r = 5 + i
@@ -155,9 +235,131 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         ws0.cell(row=r, column=9, value=float(nf))
         ws0.cell(row=r, column=10, value=float(nc))
         ws0.cell(row=r, column=11, value=f"=총괄표!I{r}+총괄표!J{r}")
+        # A-6: 수행 건수 — 모수 0이면 경고색 (검증불능 ≠ 무결)
+        nfa, nca = len(foot_all.get(name, [])), len(cross_all.get(name, []))
+        cf = ws0.cell(row=r, column=12, value=float(nfa))
+        cc = ws0.cell(row=r, column=13, value=float(nca))
+        if name in verify_targets:              # 검증 대상인데 모수 0
+            if nfa == 0:
+                cf.fill = _WARN
+            if nca == 0 and name in ctx.fs_sheets:   # 크로스는 FS발 검증
+                cc.fill = _WARN
     ws0.column_dimensions["C"].width = 40
     for col in ("B", "G", "H"):
         ws0.column_dimensions[col].width = 16
+
+    # --- 검증내역 (A-6) — 수행된 모든 검증 전수 목록·수식 판정 --------------
+    # 판정·차이는 엑셀 수식으로 기입 — 셀 클릭 시 근거 추적 (조서 증적)
+    from .foot import _numeric_cells
+    pools = {s: _numeric_cells(ctx, s) for s in ctx.note_sheets}
+    limit = ctx.limit
+    wsd = wb.create_sheet(DETAIL_SHEET, 2)      # 총괄표|원문 다음 (원형 보존)
+    reason_counts = {k: 0 for k in _REASONS}
+    n_foot = len(foot_result["foot"])
+    n_cross = len(foot_result["notes"])
+    n_found = sum(1 for x in foot_result["notes"] if x["found"])
+    foot_bad = sum(1 for x in foot_result["foot"]
+                   if x["verdict"] in (FUZZY, MISMATCH))
+    wsd.append([f"검증내역 — 수행된 모든 검증 전수 목록 "
+                f"(판정·차이 = 엑셀 수식, 허용 한도 ±{limit})"])
+    wsd.cell(1, 1).font = Font(bold=True, size=12)
+    wsd.append([f"푸팅: 수행 {n_foot} — 통과 {n_foot - foot_bad} / "
+                f"오류 {foot_bad}"])
+    wsd.append([])                              # 크로스 집계 — 사유 확정 후
+    wsd.append([])
+    wsd.append(["유형", "시트", "좌변 참조", "좌변 내용", "좌변 값",
+                "우변 참조", "우변 계정명", "우변 값", "판정", "차이액",
+                "미발견 사유", "이동"])
+    hdr_r = wsd.max_row
+    for c in wsd[hdr_r]:
+        c.font = _BOLD
+        c.fill = _HDR_FILL
+    detail_of = {}                              # (시트, 행) → 검증내역 행
+
+    for fr in foot_result["foot"]:
+        cells = _foot_cells(ctx, fr)
+        r = wsd.max_row + 1
+        if cells is None:                       # 좌표 재구성 불가 — 값 기입
+            wsd.append(["푸팅", fr["sheet"], fr["scope"], "Σ자식",
+                        fr["expected"], fr["loc"], fr["label"],
+                        fr["actual"], fr["verdict"] not in (FUZZY, MISMATCH),
+                        fr["diff"], "", ""])
+        else:
+            (pr, pc), children = cells
+            refs = [_ref(fr["sheet"], cr, cc) for cr, cc in children]
+            wsd.append([
+                "푸팅", fr["sheet"], "+".join(refs),
+                f"Σ자식 {fr['n_children']}개 ({fr['direction']})",
+                "=" + "+".join(refs),
+                _ref(fr["sheet"], pr, pc), fr["label"],
+                "=" + _ref(fr["sheet"], pr, pc),
+                f"=ABS(E{r}-H{r})<={limit}", f"=E{r}-H{r}", "",
+                f'=HYPERLINK("#{_quote(fr["sheet"])}!'
+                f'{get_column_letter(pc)}{pr}","이동")'])
+        wsd.cell(r, 12).font = _LINK_FONT
+        if fr["verdict"] in (FUZZY, MISMATCH):
+            wsd.cell(r, 9).fill = _YELLOW
+            if fr["axis"] == "행":
+                br = fr["parent_key"]
+            else:
+                m2 = re.search(r"R(\d+)", str(fr["scope"] or ""))
+                br = int(m2.group(1)) if m2 else None
+            if br:
+                detail_of.setdefault((fr["sheet"], br), r)
+
+    for nr in foot_result["notes"]:
+        r = wsd.max_row + 1
+        lc = ctx.fs_value_col(nr["sheet"], nr["row"], nr["period"])
+        lref = _ref(nr["sheet"], nr["row"], lc) if lc else ""
+        left_val = "=" + lref if lref else nr["value"]
+        kind = "크로스" if nr["refs"] != "(폴백)" else "크로스(폴백)"
+        if nr["found"]:
+            m = re.match(r"(?:주석)?(.+?) R(\d+)C(\d+)$",
+                         str(nr["where"] or ""))
+            if m and m.group(1) in wb.sheetnames:
+                tref = _ref(m.group(1), int(m.group(2)), int(m.group(3)))
+                wsd.append([
+                    kind, nr["sheet"], lref,
+                    f"{nr['label']} ({nr['period']} · 주석 {nr['refs']})",
+                    left_val, tref, nr["where"], "=" + tref,
+                    f"=ABS(ABS(E{r})-ABS(H{r}))<={limit}",
+                    f"=ABS(E{r})-ABS(H{r})", "",
+                    f'=HYPERLINK("#{_quote(nr["sheet"])}!A{nr["row"]}",'
+                    f'"이동")'])
+            else:
+                wsd.append([kind, nr["sheet"], lref,
+                            f"{nr['label']} ({nr['period']})", left_val,
+                            nr["where"], "", "", True, "", "",
+                            f'=HYPERLINK("#{_quote(nr["sheet"])}!'
+                            f'A{nr["row"]}","이동")'])
+        else:
+            refs = [t for t in re.findall(r"\d+", str(nr["refs"]))
+                    if t in ctx.note_sheets]
+            reason = _classify_missing(ctx, pools, refs, nr["value"])
+            reason_counts[reason.split("(")[0]] += 1
+            wsd.append([kind, nr["sheet"], lref,
+                        f"{nr['label']} ({nr['period']} · 주석 "
+                        f"{nr['refs']})", left_val,
+                        "(미발견)", "", "", False, "", reason,
+                        f'=HYPERLINK("#{_quote(nr["sheet"])}!A{nr["row"]}",'
+                        f'"이동")'])
+            wsd.cell(r, 9).fill = _YELLOW
+            detail_of.setdefault((nr["sheet"], nr["row"]), r)
+        wsd.cell(r, 12).font = _LINK_FONT
+
+    rc = " · ".join(f"{k} {v}" for k, v in reason_counts.items())
+    wsd.cell(3, 1).value = (
+        f"크로스: 수행 {n_cross} — 발견 {n_found} / 미발견 "
+        f"{n_cross - n_found} (사유별: {rc}) — 사유 없는 미발견 없음")
+    for col, w in (("C", 28), ("D", 34), ("F", 18), ("G", 22), ("K", 26)):
+        wsd.column_dimensions[col].width = w
+
+    # 개별 시트 → 검증내역 왕복 링크 (오류 행 N열)
+    for (sheet, row), dr in detail_of.items():
+        if sheet in wb.sheetnames:
+            c = wb[sheet].cell(row=row, column=14)
+            c.value = f'=HYPERLINK("#{DETAIL_SHEET}!A{dr}","검증내역")'
+            c.font = _LINK_FONT
 
     # --- 저장 ---------------------------------------------------------------
     if MAP_SHEET in wb.sheetnames:
@@ -174,4 +376,8 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
     wb.save(out_path)
     return {"out_path": out_path, "foot_errors": total_foot,
             "cross_errors": total_cross,
-            "sheets": ["총괄표", "원문"] + src_order}
+            "sheets": ["총괄표", "원문", DETAIL_SHEET] + src_order,
+            # A-6: 수행 모수·사유별 집계 — "오류/수행"이 해석 가능하게
+            "checks": {"foot_total": n_foot, "cross_total": n_cross,
+                       "cross_found": n_found,
+                       "missing_reasons": dict(reason_counts)}}

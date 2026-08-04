@@ -258,6 +258,39 @@ class FootingContext:
                     periods.append((f"col{c}", seq))
         return periods, data_rows
 
+    def fs_value_col(self, sheet, row, period):
+        """해당 행·기간 값이 실제로 놓인 열 (A-6 검증내역 수식 참조용).
+
+        fs_sequences의 열 선택 규칙과 동일: 4열=쌍(좌 우선, 없으면 우),
+        2열=당/전 순, colN=해당 열.
+        """
+        rowmap = self.rowmaps[sheet]
+        regions = _regions(rowmap)
+        if not regions:
+            return None
+        region = max(regions, key=len)
+        data_rows = region[1:]
+        ws = self.wb[sheet]
+        amount_cols = [c for c in
+                       sorted({c for r in data_rows for c in rowmap[r]})
+                       if c >= 3]
+        if str(period).startswith("col"):
+            try:
+                cand = [int(str(period)[3:])]
+            except ValueError:
+                cand = []
+        elif len(amount_cols) == 4:
+            cand = amount_cols[:2] if period == "당기" else amount_cols[2:]
+        elif len(amount_cols) == 2:
+            cand = ([amount_cols[0]] if period == "당기"
+                    else [amount_cols[1]])
+        else:
+            cand = amount_cols
+        for c in cand:
+            if _num(ws, row, c) is not None:
+                return c
+        return cand[0] if cand else None
+
     # --- 일반 테이블 (주석/CE 등): 열별·행별 시퀀스 -----------------------
     def table_sequences(self, sheet):
         """[(테이블번호, axis, key이름, [(key, value)])]"""
