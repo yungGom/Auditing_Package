@@ -365,6 +365,9 @@ def xbrl_recon_route(body: dict):
     session_id = body.get("session_id") or ""
     package = body.get("package_dir") or ""
     tolerance = body.get("tolerance")
+    # V-1b: "current"(당기, 기본) | "prior"(전기 컨텍스트 대상 —
+    # 세션 DSD가 전기 공시본일 때 당기 인스턴스의 전기 비교표시와 대사)
+    target = body.get("target") or "current"
     if not os.path.isdir(package):
         raise HTTPException(400, f"XBRL 패키지 폴더 없음: {package}")
     with jobs.connect() as con:
@@ -418,7 +421,7 @@ def xbrl_recon_route(body: dict):
             decided=_decided_map(), succession=succession,
             body_elements=body_elements, tolerance=tolerance,
             out_path=out, source_warning=warning,
-            progress=lambda m: progress(m))
+            progress=lambda m: progress(m), target=target)
         res["package"] = package
         with jobs.connect() as con:
             con.execute("UPDATE sessions SET recon=recon WHERE id=?",

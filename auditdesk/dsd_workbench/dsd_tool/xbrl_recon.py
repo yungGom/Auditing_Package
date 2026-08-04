@@ -120,6 +120,25 @@ def _current_dim_fact(facts, element_id, doc_end, member):
     return None, None
 
 
+def _prior_ends(facts, doc_end):
+    """V-1b: 당기 인스턴스의 전기 컨텍스트 종료일 도출.
+
+    전기말(instant — 예: 전기 12/31)과 전반기(duration — 예: 전기 6/30
+    누적)는 날짜가 다르므로 kind별로 doc_end 이전 최대 종료일을 취한다.
+    비교표시가 없으면 None — 호출자가 정직하게 판정 불가 처리.
+    """
+    ends = {"instant": None, "duration": None}
+    for fl in facts.values():
+        for f in fl:
+            e = f.get("end")
+            if not e or str(e) >= doc_end:
+                continue
+            k = f.get("type")
+            if k in ends and (ends[k] is None or str(e) > ends[k]):
+                ends[k] = str(e)
+    return ends
+
+
 def _tolerance(fact, scale, override):
     if override is not None:
         return float(override)
@@ -146,7 +165,7 @@ def _tolerance(fact, scale, override):
 
 def xbrl_recon(xlsx_path, facts, doc_end, decided=None, succession=None,
                body_elements=None, tolerance=None, out_path=None,
-               source_warning=None, progress=None):
+               source_warning=None, progress=None, target="current"):
     """DSD 편집용 xlsx ↔ 인스턴스 팩트 대사. 요약 dict 반환 (+엑셀).
 
     facts: {element_id: [{value, decimals, type, start, end, dims}]}
@@ -154,11 +173,23 @@ def xbrl_recon(xlsx_path, facts, doc_end, decided=None, succession=None,
     succession: SuccessionAssets — F-3 승계 (없으면 None)
     body_elements: 본문 role(D2~D6) 소속 element 집합 —
       '인스턴스에만 있음' 판정 범위
+    target(V-1b): "current"(기본 — 당기 컨텍스트) | "prior"(전기
+      컨텍스트 대상 — 당기 인스턴스의 전기 비교표시 ↔ 전기 공시 DSD
+      대사. xlsx_path에 전기 공시 DSD의 extract 산출물을 넣는다.
+      선별만 다르고 판정·매핑·엑셀 로직은 동일)
     """
     doc_end = str(doc_end)                      # date 객체 → ISO 문자열
+    if target == "prior":
+        sel_ends = _prior_ends(facts, doc_end)
+        if not sel_ends["instant"] and not sel_ends["duration"]:
+            raise ValueError("전기 컨텍스트 없음 — 인스턴스에 doc_end "
+                             "이전 종료일 팩트가 없습니다")
+    else:
+        sel_ends = {"instant": doc_end, "duration": doc_end}
     ctx = FootingContext(xlsx_path)
     decided = decided or {}
     rows_out = {}
+    skipped = []                                # V-1b: 대상 기간 부재 시트
     used_elements = set()
     counts = {V_MATCH: 0, V_DIFF: 0, V_NOFACT: 0, V_NOMAP: 0}
     tol_used = set()
@@ -170,6 +201,10 @@ def xbrl_recon(xlsx_path, facts, doc_end, decided=None, succession=None,
         scale, unit_txt = _detect_unit(ws)
         member = _MEMBER["연결" if "연결" in sheet else "별도"]
         kind = "instant" if sheet.endswith("BS") else "duration"
+        sel_end = sel_ends[kind]                # V-1b: 대상 기간 종료일
+        if sel_end is None:
+            skipped.append(sheet)               # 비교표시 부재 — 정직 노출
+            continue
         periods, data_rows = ctx.fs_sequences(sheet)
         cur = dict(next((s for n, s in periods if n == "당기"), []))
         if not cur:                             # CE류 colN 구조 등
@@ -203,7 +238,7 @@ def xbrl_recon(xlsx_path, facts, doc_end, decided=None, succession=None,
                 counts[V_NOMAP] += 1
             else:
                 used_elements.add(eid)
-                f = _current_fact(facts, eid, doc_end, member, kind)
+                f = _current_fact(facts, eid, sel_end, member, kind)
                 if f is None:
                     row["verdict"] = V_NOFACT
                     row["true"] = False
@@ -235,7 +270,9 @@ def xbrl_recon(xlsx_path, facts, doc_end, decided=None, succession=None,
         entry = None
         for member in set(_MEMBER.values()):
             for kind in ("instant", "duration"):
-                f = _current_fact(facts, eid, doc_end, member, kind)
+                if sel_ends[kind] is None:
+                    continue
+                f = _current_fact(facts, eid, sel_ends[kind], member, kind)
                 if f is not None:
                     entry = {"element": eid, "fact": float(f["value"]),
                              "member": member.split("_")[-1],
@@ -245,7 +282,9 @@ def xbrl_recon(xlsx_path, facts, doc_end, decided=None, succession=None,
                 break
         if entry is None:
             for member in set(_MEMBER.values()):
-                f, combo = _current_dim_fact(facts, eid, doc_end, member)
+                f, combo = _current_dim_fact(
+                    facts, eid, sel_ends["instant"] or sel_ends["duration"],
+                    member)
                 if f is not None:
                     entry = {"element": eid, "fact": float(f["value"]),
                              "member": member.split("_")[-1],
@@ -270,6 +309,9 @@ def xbrl_recon(xlsx_path, facts, doc_end, decided=None, succession=None,
             f"±{t:,.0f}" for t in sorted(tol_used)[:4]),
         "doc_end": doc_end, "source_warning": source_warning,
         "sheets": {s: len(d["rows"]) for s, d in rows_out.items()},
+        # V-1b: 대상 기간 — current(당기) / prior(전기 컨텍스트)
+        "target": target, "target_ends": dict(sel_ends),
+        "skipped_sheets": skipped,
     }
     if out_path:
         _write_excel(out_path, rows_out, only_inst, summary)
@@ -293,6 +335,17 @@ def _write_excel(out_path, rows_out, only_inst, summary):
     ws0.cell(ws0.max_row, 1).font = _BOLD
     ws0.append([])
     c = summary["counts"]
+    if summary.get("target") == "prior":        # V-1b: 대상 기간 명시
+        te = summary.get("target_ends") or {}
+        ws0.append(["대상 기간: 전기 컨텍스트 — "
+                    f"전기말(instant) {te.get('instant') or '(없음)'} · "
+                    f"전반기(duration) {te.get('duration') or '(없음)'} "
+                    "(당기 인스턴스의 전기 비교표시 ↔ 전기 공시 DSD)"])
+        ws0.cell(ws0.max_row, 1).fill = _WARN_FILL
+        if summary.get("skipped_sheets"):
+            ws0.append(["비교표시 부재로 제외된 시트: "
+                        + ", ".join(summary["skipped_sheets"])])
+            ws0.cell(ws0.max_row, 1).fill = _WARN_FILL
     ws0.append([f"대조율: {summary['matched']}/{summary['total']} "
                 f"({(summary['match_rate'] or 0):.1%}) · "
                 f"허용오차 {summary['tolerance']} · "
