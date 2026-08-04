@@ -49,8 +49,10 @@ def _session(sid):
     if meta.get("editver"):
         from dsd_tool.version import is_known
         meta["editver_known"] = bool(is_known(meta["editver"]))
+    # UI-7: 구버전 상태값을 읽기 시점에 화면 용어로 정규화
+    state = "반영완료" if row[4] == "repack" + "완료" else row[4]
     return {"session_id": row[0], "dsd_path": row[1], "created": row[2],
-            "meta": meta, "state": row[4],
+            "meta": meta, "state": state,
             "xlsx_path": row[5],
             "diff": json.loads(row[6]) if row[6] else None,
             "diff_options": json.loads(row[7]) if row[7] else None,
@@ -69,6 +71,11 @@ def _update(sid, **cols):
 @router.post("/sessions", status_code=201)
 def create_session(body: dict):
     dsd_path = body.get("dsd_path") or ""
+    if dsd_path.lower().endswith(".ixd"):
+        # UI-7 델타 g: IXD 가드 — 침묵 실패 금지
+        raise HTTPException(
+            400, "IXD는 편집기 프로젝트 파일입니다. 편집기에서 생성한 "
+                 "제출용 XBRL 패키지(또는 DSD 파일)를 투입하세요")
     if not os.path.isfile(dsd_path):
         raise HTTPException(400, f"DSD 파일이 없습니다: {dsd_path}")
     from dsd_tool.version import is_known, read_version_info
@@ -116,10 +123,10 @@ def get_session(sid: str):
     # 파이프라인 단계 상태 (추출 → 엑셀 편집(외부) → 변경검토 → repack → DART 확인)
     s["pipeline"] = [
         {"key": "extract", "label": "추출", "done": bool(s["xlsx_path"])},
-        {"key": "edit", "label": "엑셀 편집 (외부)",
+        {"key": "edit", "label": "엑셀에서 수정",
          "done": bool(s["diff"] or s["repack"])},
-        {"key": "diff", "label": "변경검토", "done": bool(s["diff"])},
-        {"key": "repack", "label": "repack", "done": bool(s["repack"])},
+        {"key": "diff", "label": "수정 확인", "done": bool(s["diff"])},
+        {"key": "repack", "label": "DSD에 반영", "done": bool(s["repack"])},
         {"key": "confirm", "label": "DART 확인", "done": False},
     ]
     return s
@@ -188,7 +195,7 @@ def diff_session(sid: str, body: dict = None):
     """dry-run — 변경 목록. repack 승인 게이트의 입력."""
     s = _session(sid)
     if not s["xlsx_path"] or not os.path.exists(s["xlsx_path"]):
-        raise HTTPException(409, "extract 미실행 — 변경검토 대상 엑셀이 없습니다")
+        raise HTTPException(409, "추출 미실행 — 수정 확인 대상 엑셀이 없습니다")
     options = (body or {}).get("options") or {}
     clean_cr = bool(options.get("clean_cr", True))
     from dsd_tool.repack import diff
@@ -218,28 +225,28 @@ def repack_session(sid: str, body: dict = None):
     s = _session(sid)
     body = body or {}
     if s["diff"] is None:
-        # ★ 변경검토가 승인 게이트 — 서버가 강제
+        # ★ 수정 확인이 반영 전 확인 관문 — 서버가 강제
         raise HTTPException(
-            409, "변경검토(diff) 미실행 — repack 전에 변경 내용을 검토·"
-                 "승인해야 합니다")
+            409, "수정 확인 미실행 — DSD에 반영하기 전에 수정 내용을 "
+                 "확인·승인해야 합니다")
     options = body.get("options") or {}
     clean_cr = bool(options.get("clean_cr",
                                 s["diff"]["options"]["clean_cr"]))
     if clean_cr != s["diff"]["options"]["clean_cr"]:
-        raise HTTPException(409, "옵션이 변경검토 시점과 다릅니다 — "
-                                 "동일 옵션으로 diff를 다시 실행하세요")
+        raise HTTPException(409, "옵션이 수정 확인 시점과 다릅니다 — "
+                                 "동일 옵션으로 다시 비교를 실행하세요")
     approved = body.get("approved_change_ids", "all")
     all_ids = [c["id"] for c in s["diff"]["changes"]]
     if approved != "all":
         if sorted(approved) != sorted(all_ids):
             raise HTTPException(
-                422, "부분 승인 미지원 — repack은 편집본 기준 전체 일괄 "
-                     "적용입니다. 제외할 변경은 엑셀에서 되돌린 뒤 다시 "
-                     "변경검토를 실행하세요 (백엔드 수정 금지 원칙)")
+                422, "부분 승인 미지원 — 반영은 수정본 기준 전체 일괄 "
+                     "적용입니다. 제외할 수정은 엑셀에서 되돌린 뒤 다시 "
+                     "수정 확인을 실행하세요 (백엔드 수정 금지 원칙)")
     dsd, xlsx = s["dsd_path"], s["xlsx_path"]
 
     def _run(progress):
-        progress("repack 실행 중…")
+        progress("DSD에 반영 실행 중…")
         from dsd_tool.repack import repack
         info = repack(xlsx, dsd, clean_cr=clean_cr)
         result = {"output_path": info["out_path"],
@@ -247,7 +254,7 @@ def repack_session(sid: str, body: dict = None):
                   "n_changes": len(info["changes"]),
                   "checklist": _CHECKLIST}
         _update(sid, repack=json.dumps(result, ensure_ascii=False),
-                state="repack완료")
+                state="반영완료")
         return result
 
     return {"job_id": jobs.submit("repack", _run)}

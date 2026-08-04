@@ -103,9 +103,10 @@ export default function Home({ openSession }: {
   const stChip: Record<string, React.CSSProperties> = {
     "추출됨": chip("#001e40", "#d5e3ff"),
     "수정중": chip("#7a4f00", "#ffecc7"),
-    "repack완료": chip("#3a5a2e", "#dcead2"),
+    "반영완료": chip("#3a5a2e", "#dcead2"),
     "생성됨": chip("#43474f", "#edeeef"),
   };
+  const stLabel = (v: string) => v;   // 구버전 값은 서버가 정규화
 
   const corpus = overview?.corpus;
   const gates = overview?.gates || [];
@@ -121,7 +122,7 @@ export default function Home({ openSession }: {
           <Journey tag="결산" tagFg="#001e40" tagBg="#d5e3ff"
             title="DSD 결산 작업" cta="작업 파일 열기" onGo={pick}
             steps={[["엑셀 변환", "cur"], ["엑셀 편집", "todo"],
-              ["검증", "todo"], ["변경검토", "todo"],
+              ["검증", "todo"], ["수정 확인", "todo"],
               ["DSD 반영", "todo"], ["DART 확인", "todo"]]} />
           <Journey tag="시즌 착수" tagFg="#3a5a2e" tagBg="#dcead2"
             title="2026 택소노미 착수 준비" cta="전사 가이드 작성"
@@ -146,7 +147,7 @@ export default function Home({ openSession }: {
                   ? `ok ${(corpus.by_status?.ok ?? 0).toLocaleString()}사 / `
                     + `처리 ${(corpus.processed ?? 0).toLocaleString()}사`
                   : corpus ? "코퍼스 없음" : "조회 중…" },
-              { icon: "verified", color: "#001e40", title: "게이트 현황",
+              { icon: "verified", color: "#001e40", title: "품질 점검 현황",
                 detail: gates.length
                   ? `${passed}/${gates.length} 통과` : "조회 중…" },
               { icon: "check_circle", color: "#3a5a2e", title: "편집기 버전",
@@ -242,8 +243,9 @@ export default function Home({ openSession }: {
                 }}>{s.meta?.company}</div>
               </div>
               <span style={{
-                ...(stChip[s.state] || stChip["생성됨"]), flex: "none",
-              }}>{s.state}</span>
+                ...(stChip[stLabel(s.state)] || stChip["생성됨"]),
+                flex: "none",
+              }}>{stLabel(s.state)}</span>
             </div>
             <div style={{
               display: "flex", alignItems: "center", gap: 6,

@@ -23,7 +23,7 @@ export default function StatusPage() {
             : "조회 중…"} first />
         <Row label="최근 XBRL 수신"
           value={`${ov?.recent_runs?.length ?? "—"}건`} />
-        <Row label="repack 이력"
+        <Row label="반영 이력"
           value={`${ov?.history?.length ?? "—"}건`} />
         <Row label="편집기 버전 등재"
           value={`${ov?.known_versions?.length ?? "—"}종`} />
@@ -34,7 +34,7 @@ export default function StatusPage() {
         margin: "20px 0 10px",
       }}>
         <h2 style={{ margin: 0, font: `700 15px ${F_HEAD}`,
-          color: "#191c1d" }}>게이트 현황</h2>
+          color: "#191c1d" }}>품질 점검 현황</h2>
         <span style={{ font: `500 12px ${F_LABEL}`, color: "#737780" }}>
           GATES.json</span>
       </div>

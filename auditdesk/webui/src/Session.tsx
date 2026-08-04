@@ -1,4 +1,5 @@
-// 세션 상세 — 개요(파이프라인)·시트 뷰·변경검토(승인 게이트)·이력 + repack 모달
+// 세션 상세 — 개요(파이프라인)·시트 뷰·수정 확인(반영 전 확인)·이력 + 반영 완료 모달
+// (UI-7: 화면 용어는 GLOSSARY 기준 — API 경로·reason 코드는 계약 불변)
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api, Job, pollJob } from "./api";
 import {
@@ -12,10 +13,16 @@ type Change = {
 };
 
 const GROUPS: [string, string, [string, string]][] = [
-  ["edit", "수정", ["#001e40", "#d5e3ff"]],
-  ["clean-cr", "&cr; 정리", ["#7a4f00", "#ffecc7"]],
-  ["note-dedup", "번호 정리", ["#4e6874", "#cbe7f5"]],
+  ["edit", "값 수정", ["#001e40", "#d5e3ff"]],
+  ["clean-cr", "표기 자동 보정", ["#7a4f00", "#ffecc7"]],
+  ["note-dedup", "표기 자동 보정", ["#4e6874", "#cbe7f5"]],
 ];
+
+// 작업 종류 표시명 (내부 작업 코드 → 화면 용어)
+const JOB_LABEL: Record<string, string> = {
+  extract: "추출", diff: "수정 확인", repack: "DSD에 반영",
+  foot: "합계검증", recon: "전기대사", "xbrl-recon": "제출파일 대사",
+};
 
 export default function Session({ sessionId, initialTab }: {
   sessionId: string; initialTab?: string;
@@ -59,8 +66,9 @@ export default function Session({ sessionId, initialTab }: {
     "생성됨": chip("#43474f", "#edeeef"),
     "추출됨": chip("#001e40", "#d5e3ff"),
     "수정중": chip("#7a4f00", "#ffecc7"),
-    "repack완료": chip("#3a5a2e", "#dcead2"),
+    "반영완료": chip("#3a5a2e", "#dcead2"),
   };
+  const stateLabel = s.state;   // 구버전 값은 서버가 읽기 시 정규화
   const diffCounts = s.diff?.counts;
   const footBad = s.foot
     ? (s.foot.summary.mismatch + s.foot.summary.rounding +
@@ -69,10 +77,14 @@ export default function Session({ sessionId, initialTab }: {
   const tabs = [
     { key: "overview", label: "개요" },
     { key: "sheets", label: "시트 뷰" },
+    // 검증 배지: 합계 불일치·단수차·크로스 미발견 건수 — DSD 반영을
+    // 차단하지 않으므로 중립색 (UI-7 ③)
     { key: "footing", label: "검증",
       count: footBad !== undefined ? String(footBad) : undefined,
-      countBad: (footBad || 0) > 0 },
-    { key: "change", label: "변경검토",
+      countBad: false,
+      countTitle: "합계 불일치·단수차·크로스 미발견 건수 — " +
+        "DSD 반영을 차단하지 않습니다 (확인용)" },
+    { key: "change", label: "수정 확인",
       count: diffCounts ? String(diffCounts.total) : undefined },
     { key: "history", label: "이력" },
   ];
@@ -93,8 +105,8 @@ export default function Session({ sessionId, initialTab }: {
             {meta.file}</span>
           <span style={{ font: `500 12px ${F_LABEL}`, color: "#737780" }}>
             {meta.company}</span>
-          <span style={stateChip[s.state] || stateChip["생성됨"]}>
-            {s.state}</span>
+          <span style={stateChip[stateLabel] || stateChip["생성됨"]}>
+            {stateLabel}</span>
           <div style={{ flex: 1 }} />
           <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
             SHA1 <code style={{
@@ -119,7 +131,7 @@ export default function Session({ sessionId, initialTab }: {
                 color: active ? "#001e40" : "#737780",
               }}>
               <span>{t.label}</span>
-              {t.count && <span style={{
+              {t.count && <span title={(t as any).countTitle} style={{
                 font: `700 10px ${F_LABEL}`,
                 color: (t as any).countBad ? "#930010" : "#001e40",
                 background: (t as any).countBad ? "#ffdad6" : "#d5e3ff",
@@ -139,7 +151,8 @@ export default function Session({ sessionId, initialTab }: {
           font: `600 12px ${F_LABEL}`, color: "#001e40",
         }}>
           <Icon name="progress_activity" size={16} />
-          {job.kind} — {job.progress?.message || job.state}
+          {JOB_LABEL[job.kind] || job.kind} — {
+            job.progress?.message || job.state}
         </div>
       )}
       <div style={{ padding: err ? "0 24px" : 0 }}>
@@ -256,7 +269,7 @@ function Overview({ s, onExtract, goChange }: {
                   .split("\\").pop()}
               </GhostBtn>
               <PrimaryBtn onClick={goChange}>
-                <Icon name="rule" size={17} />편집 완료 — 변경 검토
+                <Icon name="rule" size={17} />수정 완료 — 수정 확인
               </PrimaryBtn>
             </>
           )}
@@ -290,7 +303,7 @@ function Overview({ s, onExtract, goChange }: {
               gap: 6,
             }}>
               {meta.editver || "(없음)"}
-              <span title="클릭 → version-check 즉석 실행 (G2 스모크 포함)"
+              <span title="클릭 → 편집기 버전 확인 즉석 실행 (왕복 점검 포함)"
                 onClick={runVersionCheck} style={{
                   ...(meta.editver_known
                     ? chip("#3a5a2e", "#dcead2")
@@ -307,10 +320,10 @@ function Overview({ s, onExtract, goChange }: {
                   : vcheck.error || vcheck.g2_smoke === "fail"
                     ? chip("#930010", "#ffdad6")
                     : chip("#3a5a2e", "#dcead2")}>
-                  {vcheck.running ? "version-check 실행 중…(G2 왕복)"
+                  {vcheck.running ? "버전 확인 중… (왕복 점검)"
                     : vcheck.error ? vcheck.error
-                      : `version-check: ${vcheck.known ? "등재" : "미등재"}
-                         · G2 ${vcheck.g2_smoke.toUpperCase()}`}
+                      : `버전 확인: ${vcheck.known ? "등재" : "미등재"}
+                         · 왕복 점검 ${vcheck.g2_smoke.toUpperCase()}`}
                 </span>
               )}
             </span>
@@ -323,7 +336,7 @@ function Overview({ s, onExtract, goChange }: {
             <span style={{
               color: "#191c1d", fontVariantNumeric: "tabular-nums",
             }}>{meta.notes ?? "—"}</span>
-            <span style={{ color: "#737780" }}>&cr;-only 셀</span>
+            <span style={{ color: "#737780" }}>개행만 있는 셀</span>
             <span style={{
               color: "#191c1d", fontVariantNumeric: "tabular-nums",
             }}>{meta.cr_only ?? "—"}</span>
@@ -332,24 +345,24 @@ function Overview({ s, onExtract, goChange }: {
         <Card style={{ padding: 20 }}>
           <div style={{
             font: `700 13px ${F_HEAD}`, color: "#191c1d", marginBottom: 14,
-          }}>repack 옵션</div>
+          }}>반영 옵션</div>
           <div style={{
             display: "flex", flexDirection: "column", gap: 12,
             font: `500 12px ${F_LABEL}`,
           }}>
             <div>
               <div style={{ font: `600 12px ${F_LABEL}`, color: "#191c1d" }}>
-                &cr; 정리 — 기본 켜짐</div>
+                개행 표기 보정 — 기본 켜짐</div>
               <div style={{ color: "#737780" }}>
-                &cr;만 남은 셀 {meta.cr_only ?? "?"}개를 빈 셀로 정리.
-                변경검토 화면에서 옵션과 함께 dry-run 됩니다.</div>
+                개행만 남은 셀 {meta.cr_only ?? "?"}개를 빈 셀로 정리합니다.
+                수정 확인 화면의 적용 전 점검에 함께 표시됩니다.</div>
             </div>
             <div>
               <div style={{ font: `600 12px ${F_LABEL}`, color: "#191c1d" }}>
-                주석번호 정리 — extract 시 결정</div>
+                주석 번호 보정 — 추출 시 결정</div>
               <div style={{ color: "#737780" }}>
                 중복 번호 {meta.deduped_notes ?? "?"}건은 추출 시 정리되어
-                repack에 반영됩니다.</div>
+                DSD에 반영 시 함께 적용됩니다.</div>
             </div>
           </div>
         </Card>
@@ -1213,7 +1226,7 @@ function PriorSub({ sessionId, recon, runJob, priorPath, setPriorPath }: {
   );
 }
 
-// ======== TAB: 변경검토 (repack 승인 게이트) ========
+// ======== TAB: 수정 확인 (반영 전 확인) ========
 function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
   sessionId: string; s: any; setErr: (m: string) => void;
   reload: () => void;
@@ -1250,16 +1263,17 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
           }}>
             <Icon name="rule" size={18} color="#43474f" />
             <span style={{ font: `600 13px ${F_LABEL}`, color: "#191c1d" }}>
-              repack 전 승인 게이트</span>
+              반영 전 확인</span>
           </div>
           <div style={{
             font: `500 12px ${F_LABEL}`, color: "#737780", marginBottom: 14,
           }}>
-            변경검토(dry-run)를 실행해 편집 내용을 확인·승인해야 repack이
-            가능합니다. 서버가 이 순서를 강제합니다 (미실행 시 409).
+            수정 확인(적용 전 점검)을 실행해 수정 내용을 확인·승인해야
+            DSD에 반영할 수 있습니다. 서버가 이 순서를 강제합니다.
+            원본은 그대로 둡니다.
           </div>
           <PrimaryBtn onClick={runDiff}>
-            <Icon name="play_arrow" size={17} />변경검토 실행 (dry-run)
+            <Icon name="play_arrow" size={17} />수정 확인 실행 (적용 전 점검)
           </PrimaryBtn>
         </Card>
       </div>
@@ -1278,14 +1292,17 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
       }}>
         <Icon name="rule" size={18} color="#43474f" />
         <span style={{ font: `600 13px ${F_LABEL}`, color: "#191c1d" }}>
-          repack 전 승인 게이트</span>
-        <span style={{ font: `500 12px ${F_LABEL}`, color: "#737780" }}>
-          수정 {counts.edit} · &cr; 정리 {counts.clean_cr} · 번호 정리{" "}
-          {counts.note_dedup} — dry-run 결과 ({diff.ts})
+          반영 전 확인</span>
+        <span title={`개행 정리 ${counts.clean_cr}건 · 주석 번호 정리 ${
+            counts.note_dedup}건 — 상세는 목록·이력 참조`}
+          style={{ font: `500 12px ${F_LABEL}`, color: "#737780" }}>
+          값 수정 {counts.edit}건 · 표기 자동 보정{" "}
+          {counts.clean_cr + counts.note_dedup}건 — 적용 전 점검 결과
+          ({diff.ts})
         </span>
         <div style={{ flex: 1 }} />
         <GhostBtn onClick={runDiff}>
-          <Icon name="refresh" size={15} />다시 diff
+          <Icon name="refresh" size={15} />다시 비교
         </GhostBtn>
         <span style={{
           font: `500 12px ${F_LABEL}`, color: "#43474f",
@@ -1327,7 +1344,7 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
                   font: `600 13px ${F_LABEL}`, color: "#191c1d",
                 }}>{reason === "edit" ? "사용자 수정 셀"
                   : reason === "clean-cr"
-                    ? "&cr;만 남은 셀 정리" : "주석 번호 중복 정리"}</span>
+                    ? "개행만 남은 셀 정리" : "주석 번호 중복 정리"}</span>
                 <span style={{
                   font: `500 12px ${F_LABEL}`, color: "#737780",
                   fontVariantNumeric: "tabular-nums",
@@ -1415,7 +1432,9 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
         {!changes.length && (
           <div style={{
             font: `500 13px ${F_LABEL}`, color: "#737780", padding: 8,
-          }}>변경 없음 — repack 시 원본 바이트 그대로 복사됩니다 (G2).</div>
+          }}>수정 0건 — 엑셀에서 값을 수정·저장한 뒤 [수정 확인]을 다시
+            실행하세요. 지금 반영하면 원본과 동일한 사본이 만들어집니다.
+          </div>
         )}
       </div>
 
@@ -1430,16 +1449,24 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
             fontFamily: MONO, fontSize: 11, background: "#edeeef",
             borderRadius: 4, padding: "1px 6px",
           }}>{s.meta?.file?.replace(/\.dsd$/i, "") + "_수정.dsd"}</code>
+          {" "}— 원본은 그대로 둡니다
         </span>
         <div style={{ flex: 1 }} />
-        <PrimaryBtn disabled={running} onClick={async () => {
-          setRunning(true);
-          const ids = changes.filter((c) => !excluded[c.id]).map((c) => c.id);
-          await onRepack(ids.length === changes.length ? "all" : ids);
-          setRunning(false);
-        }}>
+        {!changes.length ? (
+          <GhostBtn onClick={() => onRepack("all")}>
+            <Icon name="content_copy" size={15} />원본 사본 만들기
+          </GhostBtn>
+        ) : null}
+        <PrimaryBtn disabled={running || !changes.length}
+          onClick={async () => {
+            setRunning(true);
+            const ids = changes.filter((c) => !excluded[c.id])
+              .map((c) => c.id);
+            await onRepack(ids.length === changes.length ? "all" : ids);
+            setRunning(false);
+          }}>
           <Icon name="play_arrow" size={17} />
-          repack 실행 ({selCount}건)
+          선택한 {selCount}건 DSD에 반영
         </PrimaryBtn>
       </div>
     </div>
@@ -1466,7 +1493,7 @@ function History({ sessionId }: { sessionId: string }) {
       </div>
       {!runs.length && (
         <div style={{ font: `500 13px ${F_LABEL}`, color: "#737780" }}>
-          이 DSD에 대한 repack 이력이 없습니다.</div>
+          이 DSD에 대한 반영 이력이 없습니다.</div>
       )}
       {runs.map((h) => (
         <div key={h.id} style={{
@@ -1479,13 +1506,15 @@ function History({ sessionId }: { sessionId: string }) {
           }} onClick={() => setOpen({ ...open, [h.id]: !open[h.id] })}>
             <Icon size={18} color="#737780"
               name={open[h.id] ? "expand_more" : "chevron_right"} />
-            <span style={chip("#001e40", "#d5e3ff")}>repack</span>
+            <span style={chip("#001e40", "#d5e3ff")}>DSD에 반영</span>
             <span style={{
               font: `600 12px ${F_LABEL}`, color: "#191c1d",
               fontVariantNumeric: "tabular-nums",
             }}>{h.ts}</span>
-            <span style={{ font: `500 12px ${F_LABEL}`, color: "#43474f" }}>
-              수정 {h.edits} · &cr; 정리 {h.cleans} · 번호 정리 {h.dedups}
+            <span title={`개행 정리 ${h.cleans}건 · 주석 번호 정리 ${
+                h.dedups}건`}
+              style={{ font: `500 12px ${F_LABEL}`, color: "#43474f" }}>
+              값 수정 {h.edits}건 · 표기 자동 보정 {h.cleans + h.dedups}건
             </span>
             <div style={{ flex: 1 }} />
             <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
@@ -1500,7 +1529,7 @@ function History({ sessionId }: { sessionId: string }) {
               <div style={{
                 font: `500 11px ${F_LABEL}`, color: "#737780",
                 marginBottom: 8,
-              }}>옵션: {h.clean_cr ? "기본(&cr; 정리)" : "keep-cr"} ·
+              }}>옵션: {h.clean_cr ? "기본(개행 표기 보정)" : "원문 유지"} ·
                 출력 {h.out_path}</div>
               {(h.changes || []).slice(0, 30).map((c: any, i: number) => (
                 <div key={i} style={{
@@ -1527,7 +1556,7 @@ function History({ sessionId }: { sessionId: string }) {
   );
 }
 
-// ======== MODAL: repack 완료 ========
+// ======== MODAL: DSD에 반영 완료 ========
 function RepackModal({ result, onClose }: {
   result: any; onClose: () => void;
 }) {
@@ -1546,7 +1575,7 @@ function RepackModal({ result, onClose }: {
         }}>
           <Icon name="check_circle" size={24} color="#3a5a2e" />
           <h2 style={{ margin: 0, font: `700 17px ${F_HEAD}`,
-            color: "#191c1d" }}>repack 완료</h2>
+            color: "#191c1d" }}>DSD에 반영 완료</h2>
         </div>
         <p style={{
           margin: "0 0 14px", font: `500 12px ${F_LABEL}`, color: "#737780",

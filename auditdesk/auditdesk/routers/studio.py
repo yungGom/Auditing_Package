@@ -368,6 +368,12 @@ def xbrl_recon_route(body: dict):
     # V-1b: "current"(당기, 기본) | "prior"(전기 컨텍스트 대상 —
     # 세션 DSD가 전기 공시본일 때 당기 인스턴스의 전기 비교표시와 대사)
     target = body.get("target") or "current"
+    if package.lower().rstrip("\\/").endswith(".ixd"):
+        # UI-7 델타 g: IXD 가드 — 인스턴스 입력 자리에 .ixd 투입 시
+        # 침묵 실패 금지, 정체와 대안을 안내
+        raise HTTPException(
+            400, "IXD는 편집기 프로젝트 파일입니다. 편집기에서 생성한 "
+                 "제출용 XBRL 패키지를 투입하세요")
     if not os.path.isdir(package):
         raise HTTPException(400, f"XBRL 패키지 폴더 없음: {package}")
     with jobs.connect() as con:
@@ -382,8 +388,8 @@ def xbrl_recon_route(body: dict):
     # OpenDART 래핑 수신물 경고 (meta.xml 없음 → editver 미검출)
     warning = None
     if not meta.get("editver"):
-        warning = ("⚠ OpenDART 래핑 수신물 — 주석 분할 부정확, 참고용 "
-                   "(B-2 구조대조 §2 · UI-5 주의사항 준용)")
+        warning = ("⚠ OpenDART 래핑 수신물 — 주석 분할이 부정확할 "
+                   "수 있어 참고용입니다 (편집기 DSD 기준 사용)")
 
     def _run(progress):
         progress("인스턴스 파싱 중… (XbrlInstance)")
@@ -452,7 +458,7 @@ def taxdiff_route(body: dict):
         raise HTTPException(400, "old/new 버전 필요")
 
     def _run(progress):
-        progress("세대 간 diff 중…")
+        progress("세대 간 비교 중…")
         from dart_explorer.xbrl.taxonomy_diff import taxdiff
         res = taxdiff(old, new, progress=lambda m: progress(m))
         return {"xlsx_path": res["out_path"],
