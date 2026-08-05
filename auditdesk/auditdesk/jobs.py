@@ -101,7 +101,10 @@ def _humanize_error(e):
                 f"없습니다 — 닫고 다시 시도하세요. ({e})")
     if isinstance(e, FileNotFoundError):
         return f"파일을 찾을 수 없습니다: {e}"
-    return f"{type(e).__name__}: {e}"
+    # H-2: 예외 원문을 배너에 그대로 노출하지 않는다 — 요지 + 로그 위치
+    # (원문 전체는 작업 기록의 trace로 저장됨)
+    return (f"작업 중 오류가 발생했습니다 ({type(e).__name__}) — "
+            "상세 내용은 작업 기록(jobs)의 오류 로그에 저장되었습니다")
 
 
 def get(job_id):

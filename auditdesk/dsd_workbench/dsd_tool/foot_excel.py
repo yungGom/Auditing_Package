@@ -15,10 +15,10 @@ import os
 import re
 
 from openpyxl import load_workbook
-from openpyxl.comments import Comment
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from .cellsafe import put as safe_put
 from .excel_out import MAP_SHEET, META_SHEET
 from .foot import (DEFAULT_LIMIT, FOOT_SHEET, FUZZY, MISMATCH,
                    FootingContext)
@@ -128,6 +128,10 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
             cross_err.setdefault(r["sheet"], []).append(r)
 
     # --- 오류 셀 표시 (노란 채우기 + 메모 — A-4 정확 좌표) ------------------
+    # H-2: 추출 시트에는 원문 표의 병합이 그대로 있어 병합 내부 좌표
+    # 기입이 터진다 — 안전 헬퍼(앵커 리다이렉트·메모 이어붙임·실패
+    # 축적)로 기입. 한 셀 실패로 전체 생성을 중단하지 않는다.
+    write_failures = []
     for sheet, errs in foot_err.items():
         if sheet not in wb.sheetnames:
             continue
@@ -136,30 +140,29 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
             m = re.match(r"R(\d+)", str(e["loc"]))
             if not m:
                 continue
-            row = int(m.group(1))
-            cell = ws.cell(row=row, column=1)
-            cell.fill = _YELLOW
             note = (f"[푸팅 {e['verdict']}] Σ자식 {e['expected']:,.0f} vs "
                     f"기재 {e['actual']:,.0f} (차이 {e['diff']:,.0f}) — "
                     f"{e['scope']}/{e['direction']}")
-            cell.comment = Comment(note, "dsd_tool foot")
+            safe_put(ws, int(m.group(1)), 1, fill=_YELLOW,
+                     comment=(note, "dsd_tool foot"),
+                     failures=write_failures, what="푸팅 오류 표시")
     for sheet, errs in cross_err.items():
         if sheet not in wb.sheetnames:
             continue
         ws = wb[sheet]
         for e in errs:
-            cell = ws.cell(row=e["row"], column=1)
-            cell.fill = _YELLOW
-            cell.comment = Comment(
-                f"[크로스 미매칭] 주석 {e['refs']} 에서 값 "
-                f"{e['value']:,.0f} ({e['period']}) 미발견", "dsd_tool foot")
+            safe_put(ws, e["row"], 1, fill=_YELLOW,
+                     comment=(f"[크로스 미매칭] 주석 {e['refs']} 에서 값 "
+                              f"{e['value']:,.0f} ({e['period']}) 미발견",
+                              "dsd_tool foot"),
+                     failures=write_failures, what="크로스 오류 표시")
 
     # --- 각 시트 복귀 링크 (M2 — 예시 위치 그대로) ---------------------------
     for sheet in data_sheets:
-        ws = wb[sheet]
-        c = ws.cell(row=2, column=13)
-        c.value = '=HYPERLINK("#총괄표!A1","총괄표로 이동")'
-        c.font = _LINK_FONT
+        safe_put(wb[sheet], 2, 13,
+                 value='=HYPERLINK("#총괄표!A1","총괄표로 이동")',
+                 font=_LINK_FONT, failures=write_failures,
+                 what="총괄표 복귀 링크")
 
     # --- 원문 시트 (전체 통합 뷰 — 시트 내용 세로 연결) ----------------------
     src_order = list(data_sheets)
@@ -354,12 +357,24 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
     for col, w in (("C", 28), ("D", 34), ("F", 18), ("G", 22), ("K", 26)):
         wsd.column_dimensions[col].width = w
 
-    # 개별 시트 → 검증내역 왕복 링크 (오류 행 N열)
+    # 개별 시트 → 검증내역 왕복 링크 (오류 행 N열) — H-2 안전 기입
     for (sheet, row), dr in detail_of.items():
         if sheet in wb.sheetnames:
-            c = wb[sheet].cell(row=row, column=14)
-            c.value = f'=HYPERLINK("#{DETAIL_SHEET}!A{dr}","검증내역")'
-            c.font = _LINK_FONT
+            safe_put(wb[sheet], row, 14,
+                     value=f'=HYPERLINK("#{DETAIL_SHEET}!A{dr}","검증내역")',
+                     font=_LINK_FONT, failures=write_failures,
+                     what="검증내역 왕복 링크")
+
+    # H-2: 기입 불가 항목 노출 — 침묵 금지, 생성은 계속
+    if write_failures:
+        wsd.append([])
+        wsd.append([f"⚠ 표시 기입 불가 {len(write_failures)}건 — 아래"
+                    " 항목은 시트에 표시하지 못했습니다 (검증 결과"
+                    " 자체는 이 목록과 총괄표에 반영됨)"])
+        wsd.cell(wsd.max_row, 1).fill = _YELLOW
+        for f in write_failures:
+            wsd.append(["기입 불가", f["sheet"], f["cell"], f["what"],
+                        "", "", "", "", "", "", f["reason"], ""])
 
     # --- 저장 ---------------------------------------------------------------
     if MAP_SHEET in wb.sheetnames:
@@ -380,4 +395,6 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
             # A-6: 수행 모수·사유별 집계 — "오류/수행"이 해석 가능하게
             "checks": {"foot_total": n_foot, "cross_total": n_cross,
                        "cross_found": n_found,
-                       "missing_reasons": dict(reason_counts)}}
+                       "missing_reasons": dict(reason_counts)},
+            # H-2: 기입 불가 항목 (0이 정상 — 침묵 금지 노출용)
+            "write_failures": list(write_failures)}

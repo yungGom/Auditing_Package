@@ -23,6 +23,8 @@ import re
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from .cellsafe import put as _safe_put
+
 _BOLD = Font(bold=True)
 _HDR_FILL = PatternFill("solid", start_color="D9E1F2")
 _FALSE_FILL = PatternFill("solid", start_color="FFC7CE")
@@ -147,6 +149,7 @@ def attach_guide_check(xlsx_path, inputs=None, scope=None, rules=None):
     """
     inputs = inputs or {}
     scope = scope or {}
+    write_failures = []                         # H-2: 기입 불가 축적
     rules = rules if rules is not None else load_active_rules()
     wb = load_workbook(xlsx_path)
     name = "가이드 체크"
@@ -155,10 +158,12 @@ def attach_guide_check(xlsx_path, inputs=None, scope=None, rules=None):
     ws = wb.create_sheet(name)
     ws.append(["2026 XBRL 작성가이드 체크 — 활성(승인) 규칙 "
                f"{len(rules)}조항 기준"])
-    ws.cell(1, 1).font = Font(bold=True, size=12)
+    _safe_put(ws, 1, 1, font=Font(bold=True, size=12),
+              failures=write_failures, what="제목 서식")
     ws.append(["검증형 4종은 기계 판정, 나머지는 '판단필요' — 자동은 "
                "추천, 확정은 회계사. 근거 페이지는 2026 작성가이드 기준"])
-    ws.cell(2, 1).fill = _WARN_FILL
+    _safe_put(ws, 2, 1, fill=_WARN_FILL,
+              failures=write_failures, what="안내 서식")
     ws.append([])
     ws.append(["조항ID", "유형", "요지", "p.", "적용 지점", "판정", "비고"])
     hr = ws.max_row
@@ -167,7 +172,7 @@ def attach_guide_check(xlsx_path, inputs=None, scope=None, rules=None):
         c.fill = _HDR_FILL
 
     stats = {"rows": 0, "machine": 0, "violations": 0,
-             "need_judge": 0, "na": 0}
+             "need_judge": 0, "na": 0, "write_failures": write_failures}
     for r in rules:
         if r["id"] in MACHINE_RULES:
             for spot, verdict, note in machine_check(r["id"], inputs):
@@ -182,7 +187,8 @@ def attach_guide_check(xlsx_path, inputs=None, scope=None, rules=None):
                         c.fill = _FALSE_FILL
                 elif verdict == "판단필요":
                     stats["need_judge"] += 1
-                    ws.cell(ws.max_row, 6).fill = _WARN_FILL
+                    _safe_put(ws, ws.max_row, 6, fill=_WARN_FILL,
+                              failures=write_failures, what="판정 서식")
         else:
             if _scope_hit(r, scope):
                 verdict = "판단필요"
@@ -194,7 +200,8 @@ def attach_guide_check(xlsx_path, inputs=None, scope=None, rules=None):
                        r["target"], verdict, ""])
             stats["rows"] += 1
             if verdict == "판단필요":
-                ws.cell(ws.max_row, 6).fill = _WARN_FILL
+                _safe_put(ws, ws.max_row, 6, fill=_WARN_FILL,
+                          failures=write_failures, what="판정 서식")
         for cell in ws[ws.max_row]:
             cell.alignment = Alignment(wrap_text=True, vertical="top")
     covered = stats["machine"] + stats["need_judge"]
