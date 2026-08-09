@@ -85,7 +85,10 @@ def total_col_idx(G, hdr, ncol, numcols):
 
 # ── 적용 부적합 제외 ───────────────────────────────────────
 EXCL_TABLE = ("시간", "인원")        # 감사시간·투입인원 표 → 풋팅 대상 아님 (SKIP)
-EXCL_LABEL = ("법인세효과", "세후")   # 세효과 가감 구조 → 단순 합산 부적합 (SKIP)
+# EXCL_LABEL(법인세효과·세후 데이터 행 라벨 트리거)은 폐지됨 — 4축 SKIP 감사에서
+# 조선내화 이연법인세 일시적차이 표(단순 가산) 12건을 과잉 제외한 것이 확인됨.
+# 제외 트리거는 헤더 열 구성으로 판정한다는 원칙. 종전 대상이던 삼성 p38(세효과
+# 가감 표)은 역방향 역산(기말 = 기초+평가+대체 커버)이 대신 정확히 검증한다.
 
 def _excl_table(G, hdr, ncol, nrow, labels=None):
     """헤더나 라벨에 시간·인원이 있는 표 — 검증은 등재하되 미검증(SKIP)"""
@@ -333,8 +336,7 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
             if K[ti][j] != "NUM": continue
             parts = [V[i][j] for i in body if K[i][j] in ("NUM","BLANK")]
             if len(parts) < 2: continue
-            # 적용 부적합: 시간·인원 표, 또는 합산 대상에 법인세효과·세후 라벨 포함
-            skip = excl_tab or dual or any(kw in LBL[i] for i in body for kw in EXCL_LABEL)
+            skip = excl_tab or dual
             res.append(dict(kind="A1", row=ti, col=j, label=LBL[ti][:24] or "계",
                             disp=V[ti][j], calc=sum(parts), n=(0 if skip else len(parts))))
 
