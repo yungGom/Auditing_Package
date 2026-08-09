@@ -51,7 +51,7 @@ def cross(c,x,y,col,s=6.5):
     c.line(x,y,x+s,y+s); c.line(x,y+s,x+s,y)
 
 FCON = consist.report(PDF)
-CIR, TAGS, RDIFF, RLINKS, RUN, RMAIN = refmap.marks(PDF, TOL)
+CIR, TAGS, RDIFF, RLINKS, RUN, RMAIN, REXCL = refmap.marks(PDF, TOL)
 cirmap=collections.defaultdict(list); dmap=collections.defaultdict(list)
 for x in CIR: cirmap[(x["page"], x["table"])].append(x)
 for x in RDIFF: dmap[(x["page"], x["table"])].append(x)
@@ -212,7 +212,9 @@ sheet("C_본표주석레퍼",["구분","페이지","항목","금액","대상","�
         " ".join(sorted({f"FN{n}" for c_ in cs for n in (c_["notes"] & m["refs"])})),
         f"주석 p{sorted({c_['page'] for c_ in cs})}"] for m,cs in RLINKS]
     + [["미성립",m["page"],m["label"],m["val"],
-        " ".join(f"FN{n}" for n in sorted(m["refs"])),"주석에서 동일 금액 미발견"] for m,_ in RUN],
+        " ".join(f"FN{n}" for n in sorted(m["refs"])),"주석에서 동일 금액 미발견"] for m,_ in RUN]
+    + [["단위제외",m["page"],m["label"],m["val"],
+        " ".join(f"FN{n}" for n in sorted(m["refs"])),"복합·판독 불가 단위 — 대사 미수행(?)"] for m in REXCL],
       [10,8,28,18,16,30])
 _frows=[]
 for p_ in FCON["F1_단위누락"]:
@@ -255,7 +257,8 @@ sheet("요약",["항목","값"],
 wb.save(OUT_XLSX)
 print(f"A 산술 {tot}건 → OK {stat['OK']} ({stat['OK']/tot*100:.1f}%) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']}")
 print(f"B 연계 {len(B)}건 → OK {sum(1 for r in B if r[4]=='OK')} / 차이 {sum(1 for r in B if r[4]=='차이')} / 미검증 {sum(1 for r in B if r[4]=='미검증')}")
-print(f"C 레퍼 → 성립 {len(RLINKS)} / 미성립 {len(RUN)} / 차이 {len(RDIFF)}")
+print(f"C 레퍼 → 성립 {len(RLINKS)} / 미성립 {len(RUN)} / 차이 {len(RDIFF)}" +
+      (f" · 단위제외 {len(REXCL)}건" if REXCL else ""))
 print(f"F 일관성 → 단위누락 {len(FCON['F1_단위누락'])}p / 표현불일치 {len(FCON['F2_표현불일치'])}그룹 / 라벨불일치 {len(FCON['F3_라벨불일치'])}건 / 다중공백 {len(FCON['F4_다중공백'])}건")
 print(f"D 줄글 → 검토완료(/) {npara}문단 / 표기 지적 {len(pros)}건")
 print(f"C7 주석 → 결번 {gap or '없음'} / 참조무주석 {miss or '없음'}")
