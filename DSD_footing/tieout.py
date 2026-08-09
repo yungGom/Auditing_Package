@@ -30,6 +30,7 @@ ALIAS = {
  "현금및현금성자산의증가": ("현금및현금성자산의증가","현금및현금성자산의순증가",
                "현금및현금성자산의증가감소","현금및현금성자산의감소"),
  "환율변동효과": ("현금및현금성자산의환율변동효과","외화환산으로인한현금의변동",
+               "외화표시현금및현금성자산의환율변동효과",
                "외화표시현금및현금성자산의환산","환율변동효과"),
  # 자본 구성요소 — 자본변동표 '열 이름'과 재무상태표 '행 이름'을 같은 목록으로 푼다
  "주식발행초과금": ("주식발행초과금","자본잉여금"),
@@ -185,8 +186,26 @@ def run(pdf_path):
         r_inc, r_fx, r_end = ri("현금및현금성자산의증가"), ri("환율변동효과"), ri("기말의현금및현금성자산")
         sep = None not in (r_inc, r_fx, r_end) and r_inc < r_fx < r_end
         extra = (fx or 0.0) if sep else 0.0
-        add("B10", s_+"CF 증감 = 기말 − 기초" + (" − 환율변동효과" if sep else ""),
-            inc, (b_end - b_beg - extra) if (b_end is not None and b_beg is not None) else None)
+        # 구조적 안전장치: 증가행~기말행 사이에 값이 있는데 공식의 어느 개념으로도
+        # 해석되지 않는 행이 있으면 미검증으로 낸다. 별칭 누락이 조용한 미검증이 아니라
+        # 가짜 '차이'를 만드는 것이 결함이다 (휴맥스 B10 사례) — 가짜 차이 금지.
+        _ax, _npc = axis.get("CF", ({}, 0))
+        _p = pick_period(_ax, _npc, side)
+        mid_unres = False
+        if None not in (r_inc, r_end, _p):
+            known = {kk for c_ in ("현금및현금성자산의증가", "환율변동효과",
+                                    "기초의현금및현금성자산", "기말의현금및현금성자산")
+                     for kk in [_hit(o, c_)] if kk is not None}
+            for kk_, rr_ in o.items():
+                if r_inc < rr_ < r_end and kk_ not in known \
+                   and book.get("CF", {}).get(kk_, {}).get(_p) is not None:
+                    mid_unres = True; break
+        if mid_unres:
+            CHK.append(("B10", s_+"CF 증감 = 기말 − 기초 [증가~기말 사이 미해석 행 — 별칭 확인 필요]",
+                        None, None, "미검증", "미해석 중간 행"))
+        else:
+            add("B10", s_+"CF 증감 = 기말 − 기초" + (" − 환율변동효과" if sep else ""),
+                inc, (b_end - b_beg - extra) if (b_end is not None and b_beg is not None) else None)
     return CHK, cons
 
 if __name__ == "__main__":
