@@ -242,6 +242,29 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
         if R in used or cs & used: continue
         covered |= cs; used |= cs | {R}
 
+    # 역방향 역산 — 순액 3행 그룹 (gross − 차감 = 순액, 예: 매출채권/차감: 손실충당금/
+    # 매출채권(순액)). 행 R의 값이 바로 위 연속 n개 행(n>=2)의 합과 R의 모든 금액열에서
+    # 일치하면 위 행들을 covered에 넣고 R(순액)을 합산에 남긴다. '차감:' 라벨은 신호일
+    # 뿐 단독 트리거가 아니다 — 수치 정합이 확정한다 (들여쓰기 격하와 같은 필터 패턴).
+    cand_up = []
+    for R in range(hdr, nrow):
+        if R in trows or R in secs: continue
+        rcols = [j for j in numcols if K[R][j] == "NUM"]
+        if not rcols or any(abs(V[R][j]) < 1000 for j in rcols): continue
+        comps = []
+        for i in range(R-1, hdr-1, -1):
+            if i in trows or i in secs: break
+            comps.append(i)
+            if len(comps) < 2: continue
+            if all(any(K[x][j] == "NUM" for x in comps) and
+                   abs(sum(V[x][j] for x in comps if K[x][j] in ("NUM","BLANK")) - V[R][j]) < 1e-9
+                   for j in rcols):
+                cand_up.append((R, tuple(comps)))
+    for R, comps in sorted(cand_up, key=lambda c: (-len(c[1]), c[0])):
+        cs = set(comps)
+        if R in used or cs & used: continue
+        covered |= cs; used |= cs | {R}
+
     # 콜론 구간 경계 — ':'로 끝나는 라벨 행은 '계' 자유행 합산의 시작 경계
     # (예: '단기차입금:' 구간의 행이 다음 구간 계에 합산되는 것을 차단)
     colon = [i for i in range(hdr, nrow) if G[i][0].endswith(":")]
