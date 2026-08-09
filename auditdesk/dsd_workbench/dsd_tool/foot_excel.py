@@ -92,7 +92,9 @@ def _classify_missing(ctx, pools, refs, value):
                 continue
             if abs(abs(nv) - abs(value) / 1000) <= limit or \
                     abs(abs(nv) - abs(value) * 1000) <= limit:
-                return "②단위·집계 상이(천배 스케일 후보)"
+                # A-7 이후: 배율 확정 쌍은 환산까지 시도되므로, 여기
+                # 도달 = 단위 마커 미상 상태의 자릿수 후보 (참고용)
+                return "②단위·집계 상이(천배 후보 — 단위 마커 미상)"
     return "③매칭 불가(기타)"
 
 
@@ -200,7 +202,9 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         c.fill = _HDR_FILL
     # A-6: 수행 건수 병기 — 원형 5열(G~K)은 불가침, 우측에 추가
     # ("0/0 검증불능"과 "0/N 전부 일치" 구분 — 침묵 무결 금지)
-    for j, h in enumerate(("푸팅 수행", "크로스 수행")):
+    # A-7: 일치(단위환산) 별도 열 — 기존 일치와 분리 집계
+    for j, h in enumerate(("푸팅 수행", "크로스 수행",
+                           "크로스 일치(단위환산)")):
         c = ws0.cell(row=4, column=12 + j, value=h)
         c.font = _BOLD
         c.fill = _HDR_FILL
@@ -242,6 +246,8 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         nfa, nca = len(foot_all.get(name, [])), len(cross_all.get(name, []))
         cf = ws0.cell(row=r, column=12, value=float(nfa))
         cc = ws0.cell(row=r, column=13, value=float(nca))
+        ws0.cell(row=r, column=14, value=float(
+            sum(1 for x in cross_all.get(name, []) if x.get("conv"))))
         if name in verify_targets:              # 검증 대상인데 모수 0
             if nfa == 0:
                 cf.fill = _WARN
@@ -316,19 +322,41 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         lref = _ref(nr["sheet"], nr["row"], lc) if lc else ""
         left_val = "=" + lref if lref else nr["value"]
         kind = "크로스" if nr["refs"] != "(폴백)" else "크로스(폴백)"
+        conv = nr.get("conv")
+        if conv:
+            kind = "크로스(단위환산)"           # A-7: 분리 집계·표기
         if nr["found"]:
             m = re.match(r"(?:주석)?(.+?) R(\d+)C(\d+)$",
                          str(nr["where"] or ""))
             if m and m.group(1) in wb.sheetnames:
                 tref = _ref(m.group(1), int(m.group(2)), int(m.group(3)))
-                wsd.append([
-                    kind, nr["sheet"], lref,
-                    f"{nr['label']} ({nr['period']} · 주석 {nr['refs']})",
-                    left_val, tref, nr["where"], "=" + tref,
-                    f"=ABS(ABS(E{r})-ABS(H{r}))<={limit}",
-                    f"=ABS(E{r})-ABS(H{r})", "",
-                    f'=HYPERLINK("#{_quote(nr["sheet"])}!A{nr["row"]}",'
-                    f'"이동")'])
+                if conv:
+                    # A-7: 좌·우를 원 단위로 환산하는 수식 — 배율·허용
+                    # 오차까지 셀에서 추적 가능 (증적)
+                    sf, sn, tol = (conv["fs_scale"], conv["note_scale"],
+                                   conv["tol"])
+                    wsd.append([
+                        kind, nr["sheet"], lref,
+                        f"{nr['label']} ({nr['period']} · 주석 "
+                        f"{nr['refs']}) · 배율 좌×{sf:,}/우×{sn:,}"
+                        f" (허용 ±{tol:,})",
+                        (f"={lref}*{sf}" if lref else nr["value"] * sf),
+                        tref, nr["where"] + " 표시값",
+                        f"={tref}*{sn}",
+                        f"=ABS(ABS(E{r})-ABS(H{r}))<={tol}",
+                        f"=ABS(E{r})-ABS(H{r})", "",
+                        f'=HYPERLINK("#{_quote(nr["sheet"])}!'
+                        f'A{nr["row"]}","이동")'])
+                else:
+                    wsd.append([
+                        kind, nr["sheet"], lref,
+                        f"{nr['label']} ({nr['period']} · 주석 "
+                        f"{nr['refs']})",
+                        left_val, tref, nr["where"], "=" + tref,
+                        f"=ABS(ABS(E{r})-ABS(H{r}))<={limit}",
+                        f"=ABS(E{r})-ABS(H{r})", "",
+                        f'=HYPERLINK("#{_quote(nr["sheet"])}!'
+                        f'A{nr["row"]}","이동")'])
             else:
                 wsd.append([kind, nr["sheet"], lref,
                             f"{nr['label']} ({nr['period']})", left_val,
@@ -338,7 +366,12 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         else:
             refs = [t for t in re.findall(r"\d+", str(nr["refs"]))
                     if t in ctx.note_sheets]
-            reason = _classify_missing(ctx, pools, refs, nr["value"])
+            if nr.get("conv_tried"):
+                # A-7: 배율이 확정된 상이 쌍은 환산까지 시도한 결과 —
+                # 스케일 후보(②)가 아니라 환산 후에도 미발견(③)
+                reason = "③매칭 불가(단위환산 시도 후 미발견)"
+            else:
+                reason = _classify_missing(ctx, pools, refs, nr["value"])
             reason_counts[reason.split("(")[0]] += 1
             wsd.append([kind, nr["sheet"], lref,
                         f"{nr['label']} ({nr['period']} · 주석 "
@@ -351,8 +384,10 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         wsd.cell(r, 12).font = _LINK_FONT
 
     rc = " · ".join(f"{k} {v}" for k, v in reason_counts.items())
+    n_conv = sum(1 for x in foot_result["notes"] if x.get("conv"))
     wsd.cell(3, 1).value = (
-        f"크로스: 수행 {n_cross} — 발견 {n_found} / 미발견 "
+        f"크로스: 수행 {n_cross} — 발견 {n_found}"
+        f" (단위환산 일치 {n_conv} 분리 집계) / 미발견 "
         f"{n_cross - n_found} (사유별: {rc}) — 사유 없는 미발견 없음")
     for col, w in (("C", 28), ("D", 34), ("F", 18), ("G", 22), ("K", 26)):
         wsd.column_dimensions[col].width = w
@@ -395,6 +430,7 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
             # A-6: 수행 모수·사유별 집계 — "오류/수행"이 해석 가능하게
             "checks": {"foot_total": n_foot, "cross_total": n_cross,
                        "cross_found": n_found,
+                       "cross_conv": n_conv,   # A-7: 일치(단위환산)
                        "missing_reasons": dict(reason_counts)},
             # H-2: 기입 불가 항목 (0이 정상 — 침묵 금지 노출용)
             "write_failures": list(write_failures)}

@@ -420,6 +420,10 @@ def run_note_matching(ctx):
     results = []
     pools = {s: _numeric_cells(ctx, s) for s in ctx.note_sheets}
     fs_pools = {s: _numeric_cells(ctx, s) for s in ctx.fs_sheets}
+    # A-7: 단위 인지 — FS 시트 배율·주석 표별 배율 (미감지 None=보류)
+    from .units import region_scales, sheet_scale
+    fs_scales = {s: sheet_scale(ctx, s) for s in ctx.fs_sheets}
+    note_scales = {s: region_scales(ctx, s) for s in ctx.note_sheets}
     for sheet in ctx.fs_sheets:
         periods, data_rows = ctx.fs_sequences(sheet)
         values_by_row = collections.defaultdict(list)
@@ -435,8 +439,9 @@ def run_note_matching(ctx):
             if not values_by_row.get(r):
                 continue
             if refs:
+                s_fs = fs_scales.get(sheet)
                 for name, v in values_by_row[r]:
-                    hit = None
+                    hit, conv, conv_tried = None, None, False
                     for ref in refs:
                         for (nr, nc, nv) in pools[ref]:
                             if abs(abs(nv) - abs(v)) <= ctx.limit:
@@ -444,12 +449,33 @@ def run_note_matching(ctx):
                                 break
                         if hit:
                             break
+                    if hit is None and s_fs is not None:
+                        # A-7: 배율 상이 쌍 — 원 단위 환산 후 비교.
+                        # 허용오차 = 굵은 쪽 배율 미만(천원 ±999).
+                        # 단위 미상(None)은 환산 보류 — 추정 금지.
+                        for ref in refs:
+                            scales = note_scales.get(ref, {})
+                            for (nr, nc, nv) in pools[ref]:
+                                s_n = scales.get(nr)
+                                if s_n is None or s_n == s_fs:
+                                    continue
+                                conv_tried = True
+                                tol = max(s_fs, s_n) - 1
+                                if abs(abs(nv) * s_n - abs(v) * s_fs) <= tol:
+                                    hit = (ref, nr, nc, nv)
+                                    conv = {"fs_scale": s_fs,
+                                            "note_scale": s_n, "tol": tol}
+                                    break
+                            if hit:
+                                break
                     results.append({
                         "sheet": sheet, "row": r, "label": _label(ws, r),
                         "refs": ", ".join(refs), "period": name, "value": v,
                         "found": hit is not None,
                         "where": (f"주석{hit[0]} R{hit[1]}C{hit[2]}"
                                   if hit else ""),
+                        # A-7: 단위환산 발견은 분리 집계 (기존 일치 불변)
+                        "conv": conv, "conv_tried": conv_tried,
                     })
             else:
                 # 폴백: 전 시트 값 탐색 (정보성 — 발견 시에만 기록)
@@ -622,5 +648,7 @@ def foot(xlsx_path, limit=DEFAULT_LIMIT, prior_path=None, save=True):
         "mismatch": counts[MISMATCH],
         "note_found": sum(1 for r in note_results if r["found"]),
         "note_missing": sum(1 for r in note_results if not r["found"]),
+        # A-7: 일치(단위환산) 분리 집계
+        "note_found_conv": sum(1 for r in note_results if r.get("conv")),
         "manual_overrides": len(ctx.manual_levels),
     }

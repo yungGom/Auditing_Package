@@ -53,24 +53,21 @@ def _std_label(resolver, eid):
     return hit["ko"] if hit["standard"] else "(확장)"
 
 
-_UNIT_RE = re.compile(r"단\s*위\s*[:：]\s*([^\)\s]+)")
-_UNIT_SCALE = {"원": 1, "천원": 1_000, "천 원": 1_000,
-               "백만원": 1_000_000, "백만 원": 1_000_000,
-               "십억원": 1_000_000_000, "억원": 100_000_000}
-
-
 def _detect_unit(ws, max_scan=8):
-    """시트 상단의 '(단위 : 백만원)' 행 → 원 환산 배수."""
-    for r in range(1, max_scan + 1):
+    """시트 상단의 '(단위 : 백만원)' 행 → 원 환산 배수.
+
+    A-7: 정규식·배율 표는 units 모듈로 단일화 — 여기서는 V-1 관례
+    (미인식/미표기 → 원 가정)만 유지한다.
+    """
+    from .units import UNIT_RE, detect_sheet_unit
+    hit = detect_sheet_unit(ws, max_scan=max_scan, max_col=3)
+    if hit:
+        return hit
+    for r in range(1, max_scan + 1):            # 마커는 있으나 미인식 표기
         for c in range(1, 4):
-            m = _UNIT_RE.search(str(ws.cell(r, c).value or ""))
+            m = UNIT_RE.search(str(ws.cell(r, c).value or ""))
             if m:
-                unit = m.group(1).strip()
-                for k, s in _UNIT_SCALE.items():
-                    if unit.startswith(k.replace(" ", "")[0]) and \
-                            k.replace(" ", "") in unit.replace(" ", ""):
-                        return s, unit
-                return 1, unit                  # 미인식 단위 → 원 가정
+                return 1, m.group(1).strip()    # 미인식 단위 → 원 가정
     return 1, "원(표기 없음)"
 
 
