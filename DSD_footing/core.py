@@ -159,6 +159,12 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
     # NUM 1개짜리 열도 포함한다. 단 텍스트 섞인 열(라벨·비고)과 주석열은 여전히 제외.
     # numcols 조건 자체는 완화하지 않는다 — A1 세로합·A3/A5에 파급 금지.
     if tcols:
+        # 요약 재무현황 표 — 자산·부채·자본 계열 열이 헤더에 공존하면 자본 열은
+        # 자산 − 부채 가감구조라 가로합 부적합 (IS에 A3 미적용과 같은 논리,
+        # 휴맥스 p18 종속기업 현황표). 헤더 열 구성 판정 — 데이터 행 라벨 미사용.
+        hs = [G[i][j] for i in range(hdr) for j in range(ncol) if G[i][j]]
+        a2_off = excl_a2 or (any("자산" in h for h in hs) and any("부채" in h for h in hs)
+                             and any("자본" in h for h in hs))
         a2cols = [j for j in range(ncol) if j not in tcols
                   and sum(1 for i in range(hdr, nrow) if K[i][j] == "NUM") >= 1
                   and not any(K[i][j] == "TEXT" for i in range(hdr, nrow))
@@ -171,10 +177,18 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
                 lo = max([tc for tc in tcols if tc < tj], default=-1)
                 parts = [V[i][j] for j in a2cols if lo < j < tj and K[i][j] in ("NUM","BLANK")]
                 if len(parts) < 2: continue
+                # % 행 — 금액과 비율의 가로합은 무의미. 주 신호(전 값이 콤마 없는
+                # |v|<=100) + 보조 신호(라벨에 률·율·비율·%)를 모두 요구한다.
+                # 주 신호 단독은 소액 금액 행을 오발화한다 (LGES 특수관계자 표 실측 9건)
+                cells_ = [(G[i][j], V[i][j]) for j in a2cols if lo < j < tj and K[i][j] == "NUM"]
+                pct = (bool(cells_)
+                       and all(abs(v) <= 100 and "," not in t_
+                               for t_, v in cells_ + [(G[i][tj], V[i][tj])])
+                       and any(tk in LBL[i] for tk in ("률", "율", "비율", "%")))
                 s = sum(parts)
                 res.append(dict(kind="A2", row=i, label=LBL[i][:24],
                                 disp=V[i][tj], calc=s,
-                                n=(0 if (excl_tab or excl_a2) else len(parts))))
+                                n=(0 if (excl_tab or a2_off or pct) else len(parts))))
 
     # ── A1 세로합 (계 행) ──
     trows = [i for i in range(hdr, nrow) if is_total_label(LBL[i])]
