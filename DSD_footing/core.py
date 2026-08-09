@@ -375,6 +375,12 @@ def verdict(r, tol=0.0, round_steps=0):
     if r["n"] == 0: return "SKIP"
     d = r["calc"] - r["disp"]
     if abs(d) < 1e-9: return "OK"
+    # 부호 규약 상이 — 소계와 성분합의 부호가 반대인데 절대값이 일치 (예: 휴맥스 CF
+    # 유출액 소계는 음수 표기, 성분은 양수 표기). 절대값 비교로 OK 처리하면 진짜
+    # 부호 오류를 영원히 못 잡으므로 별도 판정으로 분리한다: 지면은 ?(미검증),
+    # 예외 색인에 '부호규약' 태그. 절대값이 다르면 여기 안 걸리고 DIFF로 남는다.
+    if r["disp"] * r["calc"] < 0 and abs(abs(r["calc"]) - abs(r["disp"])) < 1e-9:
+        return "SIGN"
     if abs(d) <= tol: return "ROUND"
     if round_steps and abs(d) <= round_steps: return "ROUND"
     return "DIFF"

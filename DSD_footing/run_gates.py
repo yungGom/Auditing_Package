@@ -27,7 +27,7 @@ finally:
 stat = g["stat"]; B = g["B"]; FCON = g["FCON"]
 metrics = {
     "A_total": sum(stat.values()), "A_OK": stat["OK"], "A_ROUND": stat["ROUND"],
-    "A_DIFF": stat["DIFF"], "A_SKIP": stat["SKIP"],
+    "A_DIFF": stat["DIFF"], "A_SKIP": stat["SKIP"], "A_SIGN": stat["SIGN"],
     "B_total": len(B), "B_OK": sum(1 for r in B if r[4] == "OK"),
     "B_DIFF": sum(1 for r in B if r[4] == "차이"),
     "B_SKIP": sum(1 for r in B if r[4] == "미검증"),

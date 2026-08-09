@@ -12,7 +12,8 @@ import tieout, notes, prose, refmap, consist
 _args = [a for a in sys.argv[1:] if not a.startswith("--")]
 PDF = _args[0] if _args else "samples/삼성전자_감사보고서.pdf"
 TOL = float(_args[1]) if len(_args) > 1 else 0.0
-RSTEPS = 0                                     # 표 단위 스텝 허용(A7) — 기본 0, 측정용 파라미터
+RSTEPS = 1     # 표 단위 스텝 허용(A7) — 기본 1 확정(2026-08-09): 다수 성분의 독립 반올림
+               # 표시 구조가 4축 실물 확인됨. ROUND는 예외 색인에 '단수차이'로 분리 표시
 for _a in sys.argv[1:]:
     if _a.startswith("--round-steps="): RSTEPS = int(_a.split("=", 1)[1])
 OUT_PDF = "풋팅_틱마크_v3.pdf"; OUT_XLSX = "풋팅_예외색인_v3.xlsx"
@@ -167,14 +168,15 @@ with pdfplumber.open(PDF) as pdf:
                     else:
                         c.setFont("Helvetica-Bold",7.5); c.setFillColor(AMB)
                         c.drawString(x,y,"?"); drew=True
-                if v in ("DIFF","ROUND","SKIP"):
+                if v in ("DIFF","ROUND","SKIP","SIGN"):
                     # '1원차이' 태그 — 원 단위 표에서 |차이|<=1이면 일괄 확인용 표시.
                     # 판정은 바꾸지 않는다 (원 단위는 반올림이 없어 흡수 금지 — 회계사 확인 대상)
-                    tg = ("1원차이" if v == "DIFF" and abs(r["calc"]-r["disp"]) <= 1
+                    tg = ("부호규약" if v == "SIGN" else
+                          "1원차이" if v == "DIFF" and abs(r["calc"]-r["disp"]) <= 1
                           and (TUNIT.get((pi,ti)) or "").strip() == "원" else "")
                     exc.append([pi,ti,r["kind"],r["label"],unit or "미표기",
                                 r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],
-                                {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증"}[v],tg])
+                                {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증","SIGN":"미검증"}[v],tg])
         try:
             _,_,_,_,ncL,_,_=grid_info(tobjs[-1].extract()); carry=(tobjs[-1].extract(),ncL)
         except Exception: carry=None
@@ -265,7 +267,7 @@ sheet("요약",["항목","값"],
        ["단위 미표기 페이지",str(nounit or "없음")],
        ["범위","표시 수치 상호 정합성 한정. 원장·조서 대사는 별도 절차."]],[30,60])
 wb.save(OUT_XLSX)
-print(f"A 산술 {tot}건 → OK {stat['OK']} ({stat['OK']/tot*100:.1f}%) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']}")
+print(f"A 산술 {tot}건 → OK {stat['OK']} ({stat['OK']/tot*100:.1f}%) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']} / SIGN {stat['SIGN']}")
 print(f"B 연계 {len(B)}건 → OK {sum(1 for r in B if r[4]=='OK')} / 차이 {sum(1 for r in B if r[4]=='차이')} / 미검증 {sum(1 for r in B if r[4]=='미검증')}")
 print(f"C 레퍼 → 성립 {len(RLINKS)} / 미성립 {len(RUN)} / 차이 {len(RDIFF)}" +
       (f" · 단위제외 {len(REXCL)}건" if REXCL else ""))
