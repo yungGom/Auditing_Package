@@ -146,16 +146,18 @@ def foot_hier(tb):
     rows, nper = read_rows(tb)
     res = []
 
-    def pop_to(stack, p, depth):
+    def pop_to(stack, p, depth, force_skip=False):
         """depth 이하가 될 때까지 스택을 닫고 결과를 낸다. depth=None이면 전량 정산."""
         while stack and (depth is None or stack[-1][0] <= depth):
             dd, kk, rr, dv, acc, rri, rcj = stack.pop()
+            n = 0 if force_skip else (len(acc) if len(acc) >= 2 else 0)
             res.append(dict(kind="A3", period=p, label=rr[:26], row=rri, col=rcj,
-                            disp=dv, calc=sum(acc), n=(len(acc) if len(acc) >= 2 else 0)))
+                            disp=dv, calc=sum(acc), n=n))
             if stack: stack[-1][4].append(dv)
 
     for p in range(nper):
         stack = []
+        last_ri = None
         for d, k, raw, vals, is_parent, is_tot, ri, colof in rows:
             # 총계행(자산총계·부채총계·자본총계…)은 구간의 끝이다. 값은 A1이 검증하므로
             # 여기서 집계하지 않되, 반드시 스택을 닫아야 한다. 닫지 않으면 다음 구간의
@@ -165,12 +167,19 @@ def foot_hier(tb):
                 pop_to(stack, p, None)
                 continue
             if p not in vals: continue
+            last_ri = ri
             pop_to(stack, p, d)
             if not is_parent:
                 if stack: stack[-1][4].append(vals[p])
             else:
                 stack.append((d, k, raw, vals[p], [], ri, colof.get(p)))
-        pop_to(stack, p, None)
+        # 분할 미완결 — 표의 마지막 행이 부모로 판정됐고(다음 행이 없어 부모가 됨)
+        # 자식을 하나도 받지 못했다면 페이지 분할로 잘린 표다. 그 행과 열린 조상
+        # 전부를 미검증(?)으로 낸다 — 자식 일부만 받은 조상을 합산하면 오탐이 된다
+        # (휴맥스 p8 유동부채: 충당부채가 페이지 마지막 행, p9의 구성 항목 누락).
+        # 삼성 p10 'I.자본금'은 종전에도 acc<2로 n=0였고 사유만 '분할 미완결'로 정확해진다.
+        incomplete = bool(stack) and not stack[-1][4] and stack[-1][5] == last_ri
+        pop_to(stack, p, None, force_skip=incomplete)
     return res
 
 # ── A5: 가감 관계식 (고정 템플릿) ─────────────────────────
