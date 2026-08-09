@@ -95,6 +95,52 @@ def read_rows(tb):
         out[i][4] = nxt < out[i][0]
     return out, len(pcs)
 
+# ── 기간 축 판정: (당/전) × (3개월/누적) ───────────────────
+# 연차보고서는 기간 축이 (당,전) 1차원이라 위치(0=당, 1=전)로 충분했지만,
+# 중간재무보고는 손익계산서·포괄손익계산서가 (당/전) × (3개월/누적) 2차원이다.
+# 위치 가정을 유지하면 '전기' 자리에 당반기 누적이 들어와 조용히 틀린다.
+SIDE_CUR = re.compile(r"\(\s*당\s*\)|당\s*(?:기|반기|분기|회계연도)")
+SIDE_PRV = re.compile(r"\(\s*전\s*\)|전\s*(?:기|반기|분기|회계연도)")
+SPAN_3M  = re.compile(r"3\s*개\s*월|삼\s*개\s*월")
+SPAN_CUM = re.compile(r"누\s*적")
+
+def _fill_merged(row, start, ncol):
+    """헤더행 병합셀 전파. '제6(당)기 반기'가 첫 열에만 있고 '누적' 열은 비어 있으므로
+    왼쪽 값을 오른쪽으로 흘려야 각 기간의 당/전을 읽을 수 있다.
+    라벨열이 새어들지 않도록 첫 숫자열부터만 채운다."""
+    out = list(row); last = ""
+    for j in range(start, ncol):
+        v = out[j] if j < len(out) else ""
+        if v: last = v
+        else:  out[j] = last
+    return out
+
+def period_axis(tb):
+    """→ ({(side, span): periodIdx}, nper)
+    side∈{'당','전'} · span∈{'3M','누적',None}. 판정 불가한 기간은 넣지 않는다(추측 금지)."""
+    G, K, V, hdr, ncol, nrow, numcols = grid_info(tb)
+    if not numcols: return {}, 0
+    pcs = period_cols(numcols, K, hdr, nrow)
+    rows = [_fill_merged(G[i], min(numcols), ncol) for i in range(hdr)]
+    axis = {}
+    for p, cols in enumerate(pcs):
+        txt = " ".join(rows[i][j] for i in range(hdr) for j in cols)
+        cur, prv = bool(SIDE_CUR.search(txt)), bool(SIDE_PRV.search(txt))
+        if cur == prv: continue                      # 표시 없음 또는 양쪽 다 → 판정 불가
+        side = "당" if cur else "전"
+        span = "3M" if SPAN_3M.search(txt) else ("누적" if SPAN_CUM.search(txt) else None)
+        axis.setdefault((side, span), p)
+    return axis, len(pcs)
+
+def pick_period(axis, nper, side):
+    """본표 간 대사에 쓸 기간 인덱스.
+    3개월 열은 재무상태표(시점)·현금흐름표(누적)와 대사 대상이 아니므로 절대 고르지 않는다."""
+    for span in ("누적", None):
+        if (side, span) in axis: return axis[(side, span)]
+    if not axis and nper == 2:                       # 헤더 판독 실패 + 연차 2기간 관행
+        return 0 if side == "당" else 1
+    return None                                      # 미매칭≠0 — 0/1로 추측하지 않는다
+
 # ── A3v2: 라벨계층 기반 누적 풋팅 ─────────────────────────
 def foot_hier(tb):
     rows, nper = read_rows(tb)

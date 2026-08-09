@@ -3,14 +3,14 @@
 import re
 import pdfplumber
 from core import grid_info, norm
-from statements import read_rows, stmt_type, key
+from statements import read_rows, stmt_type, key, period_axis, pick_period
 
 SCE_END = re.compile(r"(당기말|전기말)\)?$")
 SCE_BEG = re.compile(r"(당기초|전기초)\)?$")
 
 def collect(pdf_path):
     """본표에서 지표 수집 → book[stmt][key][period] = value"""
-    book = {}; sce = {}; consolidated = False
+    book = {}; axis = {}; sce = {}; consolidated = False
     with pdfplumber.open(pdf_path) as pdf:
         carry = None
         for pi, page in enumerate(pdf.pages, 1):
@@ -27,6 +27,10 @@ def collect(pdf_path):
                 except Exception: pass
             if st in ("BS","IS","CI","CF"):
                 rows, nper = read_rows(data)
+                ax, npc = period_axis(data)          # 기간 축(당/전 × 3개월/누적)
+                prev = axis.get(st)
+                if prev is None or (not prev[0] and ax):   # 판독된 축을 우선 보존
+                    axis[st] = (ax, npc)
                 d = book.setdefault(st, {})
                 for dep,k,raw,vals,ip,it,ri,cof in rows:
                     if k and k not in d: d[k] = vals
@@ -51,9 +55,13 @@ def collect(pdf_path):
                         else:   sce.setdefault((cur, kk, col), V[i][j])
                 carry = None
             else: carry = None
-    return book, sce, consolidated
+    return book, axis, sce, consolidated
 
-def g(book, st, k, p=0):
+def g(book, axis, st, k, side):
+    """side='당'|'전'. 기간 인덱스는 헤더에서 해석한다. 해석 불가면 None → '미검증'."""
+    ax, npc = axis.get(st, ({}, 0))
+    p = pick_period(ax, npc, side)
+    if p is None: return None
     d = book.get(st, {})
     for kk, v in d.items():
         if kk == k or kk.startswith(k): return v.get(p)
@@ -66,38 +74,38 @@ def add(no, name, a, b, note=""):
     CHK.append((no, name, a, b, "OK" if abs(a-b) < 1e-9 else "차이", note))
 
 def run(pdf_path):
-    book, sce, cons = collect(pdf_path)
+    book, axis, sce, cons = collect(pdf_path)
     CHK.clear()
-    for p, tag in ((0, "당기"), (1, "전기")):
+    for side, tag in (("당", "당기"), ("전", "전기")):
         s = f"({tag}) "
         add("B1", s+"자산총계 = 부채와자본총계",
-            g(book,"BS","자산총계",p), g(book,"BS","부채와자본총계",p))
+            g(book,axis,"BS","자산총계",side), g(book,axis,"BS","부채와자본총계",side))
         add("B2", s+"IS 당기순이익 = 포괄손익 당기순이익",
-            g(book,"IS","당기순이익",p), g(book,"CI","당기순이익",p))
+            g(book,axis,"IS","당기순이익",side), g(book,axis,"CI","당기순이익",side))
         add("B3", s+"포괄손익 총포괄손익 = 자본변동표 총포괄손익",
-            g(book,"CI","총포괄손익",p), sce.get((tag,"총포괄손익","총계")))
+            g(book,axis,"CI","총포괄손익",side), sce.get((tag,"총포괄손익","총계")))
         add("B4", s+"IS 당기순이익 = 자본변동표 당기순이익",
-            g(book,"IS","당기순이익",p), sce.get((tag,"당기순이익","총계")))
+            g(book,axis,"IS","당기순이익",side), sce.get((tag,"당기순이익","총계")))
         add("B5", s+"IS 당기순이익 = CF 당기순이익",
-            g(book,"IS","당기순이익",p), g(book,"CF","당기순이익",p))
+            g(book,axis,"IS","당기순이익",side), g(book,axis,"CF","당기순이익",side))
         add("B6", s+"자본변동표 기말 총계 = BS 자본총계",
-            sce.get(("END", tag, "총계")), g(book,"BS","자본총계",p))
+            sce.get(("END", tag, "총계")), g(book,axis,"BS","자본총계",side))
         for nm, bk in (("자본금","자본금"),("주식발행초과금","주식발행초과금"),
                        ("이익잉여금","이익잉여금"),("기타자본항목","기타자본항목")):
             add("B6", s+f"자본변동표 기말 {nm} = BS {nm}",
-                sce.get(("END", tag, nm)), g(book,"BS",bk,p))
+                sce.get(("END", tag, nm)), g(book,axis,"BS",bk,side))
         add("B7", s+"자본변동표 기초 총계 = 전기말 자본총계",
             sce.get(("BEG", tag, "총계")),
             sce.get(("END","전기","총계")) if tag=="당기" else None)
         add("B8", s+"CF 기말현금 = BS 현금및현금성자산",
-            g(book,"CF","기말의현금및현금성자산",p), g(book,"BS","현금및현금성자산",p))
+            g(book,axis,"CF","기말의현금및현금성자산",side), g(book,axis,"BS","현금및현금성자산",side))
         add("B9", s+"CF 기초현금 = 전기말 BS 현금",
-            g(book,"CF","기초의현금및현금성자산",p),
-            g(book,"BS","현금및현금성자산",p+1) if p==0 else None)
-        b_end = g(book,"CF","기말의현금및현금성자산",p)
-        b_beg = g(book,"CF","기초의현금및현금성자산",p)
+            g(book,axis,"CF","기초의현금및현금성자산",side) if side=="당" else None,
+            g(book,axis,"BS","현금및현금성자산","전") if side=="당" else None)
+        b_end = g(book,axis,"CF","기말의현금및현금성자산",side)
+        b_beg = g(book,axis,"CF","기초의현금및현금성자산",side)
         add("B10", s+"CF 증감 = 기말 − 기초",
-            g(book,"CF","현금및현금성자산의증가",p),
+            g(book,axis,"CF","현금및현금성자산의증가",side),
             (b_end - b_beg) if (b_end is not None and b_beg is not None) else None)
     return CHK, cons
 
