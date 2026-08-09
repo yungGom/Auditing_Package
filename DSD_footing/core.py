@@ -126,6 +126,16 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
     # 복합 표 전원이 이 구조, 열별 통화 표는 0개).
     cur_col = any(re.fullmatch(r"통\s*화", G[i][j]) for i in range(hdr) for j in range(ncol))
     if excl_a2 and cur_col: excl_tab = True
+    # 민감도 분석 표 — 상승시/하락시가 '행'으로 섞이면 부호 대칭 쌍이라 세로합
+    # 부적합 (SKIP). 헤더 '열'로 분리된 민감도 표(10% 상승시 | 10% 하락시)는 열 내
+    # 단일 시나리오라 세로합 유효 — 본문 행에서만 신호를 찾는다.
+    if any("상승" in G[i][j] for i in range(hdr, nrow) for j in range(ncol)) and \
+       any("하락" in G[i][j] for i in range(hdr, nrow) for j in range(ncol)):
+        excl_tab = True
+    # 지표 산정 표 — 라벨에 '비율'이 있으면 총계류 라벨(차입금총계 등)이 합계행이
+    # 아니라 비율 계산의 입력 항목이다 (참조형 총계, 휴맥스 p144 순차입금비율)
+    if any("비율" in G[i][0] for i in range(hdr, nrow)):
+        excl_tab = True
     tcols = total_col_idx(G, hdr, ncol, numcols)
 
     # ── A2 가로합 ──
@@ -297,12 +307,22 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
             free  = [i for i in range(prev+1, ti)
                      if i not in trows and i not in secs_eff and i not in covered]
             body = sorted(inner + free)
+        # 이중 분해 표 — 계 아래 소계 중 전 금액열에서 서로 같은 값의 쌍이 있으면
+        # 같은 총액을 두 관점(유형별·시기별)으로 분해한 것: 둘 다 합산하면 이중계상
+        # → 미검증. (유형별 소계 = 시기별 소계 자체의 검증은 별도 과제)
+        dual = False
+        if ti not in subs and len(inner) >= 2:
+            dual = any(
+                all(K[a][j] != "NUM" or K[b][j] != "NUM" or abs(V[a][j]-V[b][j]) < 1e-9
+                    for j in numcols)
+                and any(K[a][j] == "NUM" and K[b][j] == "NUM" for j in numcols)
+                for x_, a in enumerate(inner) for b in inner[x_+1:])
         for j in numcols:
             if K[ti][j] != "NUM": continue
             parts = [V[i][j] for i in body if K[i][j] in ("NUM","BLANK")]
             if len(parts) < 2: continue
             # 적용 부적합: 시간·인원 표, 또는 합산 대상에 법인세효과·세후 라벨 포함
-            skip = excl_tab or any(kw in G[i][0] for i in body for kw in EXCL_LABEL)
+            skip = excl_tab or dual or any(kw in G[i][0] for i in body for kw in EXCL_LABEL)
             res.append(dict(kind="A1", row=ti, col=j, label=G[ti][0][:24] or "계",
                             disp=V[ti][j], calc=sum(parts), n=(0 if skip else len(parts))))
 
