@@ -164,18 +164,33 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None):
            and x0s[i] >= base + 3.0: return "들여쓰기(x0)"
         return None
 
-    cur_parent = None
+    # 접두 기호는 구조가 명시적이라 그대로 채택한다. 들여쓰기(공백·x0)는 정렬 목적
+    # 오탐이 많아(재고·사채 병렬 항목) 독립 판정 경로가 아니라 경계 '추정기'다:
+    # 좌표는 후보만 제안하고, 수치 정합(부모 = 하위 연속행 합)을 통과할 때만 채택한다.
+    cur_parent = None; grp = {}
     for i in range(hdr, nrow):
         if i in trows or i in secs: cur_parent = None; continue
         p = sub_path(i)
         if p:
-            if cur_parent is not None:
-                covered.add(i)
-                if sublog is not None:
-                    sublog.append(dict(ctx=ctx, row=i, path=p,
-                                       label=G[i][0][:24], parent=G[cur_parent][0][:24]))
+            if cur_parent is not None: grp.setdefault(cur_parent, []).append((i, p))
         else:
             cur_parent = i
+    for R, members in grp.items():
+        take = [(i, p) for i, p in members if p == "접두"]
+        ind = [(i, p) for i, p in members if p != "접두"]
+        if ind:
+            cand = [i for i, _ in members]           # 부모 = 접두+들여쓰기 전체 합 검증
+            rcols = [j for j in numcols if K[R][j] == "NUM"]
+            fit = bool(rcols) and all(
+                any(K[x][j] == "NUM" for x in cand) and
+                abs(sum(V[x][j] for x in cand if K[x][j] in ("NUM","BLANK")) - V[R][j]) < 1e-9
+                for j in rcols)
+            if fit: take = members
+        for i, p in take:
+            covered.add(i)
+            if sublog is not None:
+                sublog.append(dict(ctx=ctx, row=i, path=p,
+                                   label=G[i][0][:24], parent=G[R][0][:24]))
 
     # 역산 소계 — '소계' 라벨 없이 계정과목명이 소계 역할을 하는 행 (라벨 방식과 병행).
     # 행 R의 값이 바로 아래 연속 n개 행(n>=2)의 합과 R의 모든 금액열에서 일치하면
