@@ -25,11 +25,15 @@ def key(t):
 # ── 기간 열 그룹핑: numcols를 (세부, 합계) 쌍으로 ──────────
 TOTAL_KEY = re.compile(r"^(자산총계|부채총계|자본총계|부채와자본총계|합계|계|총계)$")
 
-STMT = [("BS", re.compile(r"(연결|별도)?재무상태표")),
-        ("CI", re.compile(r"(연결|별도)?포괄손익계산서")),
-        ("IS", re.compile(r"(연결|별도)?손익계산서")),
-        ("CF", re.compile(r"(연결|별도)?현금흐름표")),
-        ("SCE",re.compile(r"(연결|별도)?자본변동표"))]
+# 표제 접두어. 감사보고서는 '연결/별도'뿐이지만 중간재무보고(1034호)는
+# '요약반기재무상태표'처럼 요약·반기·분기·중간이 붙는다. 순서·개수를 고정하지
+# 않기 위해 반복 허용 그룹으로 둔다. 접미(계산서/표) 쪽은 건드리지 않는다.
+_PFX = r"(?:요약|중간|반기|분기|연결|별도)*"
+STMT = [("BS", re.compile(_PFX + r"재무상태표")),
+        ("CI", re.compile(_PFX + r"포괄손익계산서")),
+        ("IS", re.compile(_PFX + r"손익계산서")),
+        ("CF", re.compile(_PFX + r"현금흐름표")),
+        ("SCE",re.compile(_PFX + r"자본변동표"))]
 
 def stmt_type(page_text):
     """본표 페이지만 인식: 제목이 첫 3줄 안(공백 제거 후 완전일치) + '과목/구분' 헤더"""
@@ -95,24 +99,32 @@ def read_rows(tb):
 def foot_hier(tb):
     rows, nper = read_rows(tb)
     res = []
+
+    def pop_to(stack, p, depth):
+        """depth 이하가 될 때까지 스택을 닫고 결과를 낸다. depth=None이면 전량 정산."""
+        while stack and (depth is None or stack[-1][0] <= depth):
+            dd, kk, rr, dv, acc, rri, rcj = stack.pop()
+            res.append(dict(kind="A3", period=p, label=rr[:26], row=rri, col=rcj,
+                            disp=dv, calc=sum(acc), n=(len(acc) if len(acc) >= 2 else 0)))
+            if stack: stack[-1][4].append(dv)
+
     for p in range(nper):
         stack = []
         for d, k, raw, vals, is_parent, is_tot, ri, colof in rows:
-            if p not in vals or is_tot: continue
-            while stack and stack[-1][0] <= d:
-                dd, kk, rr, dv, acc, rri, rcj = stack.pop()
-                res.append(dict(kind="A3", period=p, label=rr[:26], row=rri, col=rcj,
-                                disp=dv, calc=sum(acc), n=(len(acc) if len(acc)>=2 else 0)))
-                if stack: stack[-1][4].append(dv)
+            # 총계행(자산총계·부채총계·자본총계…)은 구간의 끝이다. 값은 A1이 검증하므로
+            # 여기서 집계하지 않되, 반드시 스택을 닫아야 한다. 닫지 않으면 다음 구간의
+            # 항목이 직전 구간의 미정산 소계에 흡수된다(삼성 조판에서는 자본 항목이
+            # 합계열에 있어 depth가 같아 우연히 pop됐고, 세부열에 찍는 조판에서 노출).
+            if is_tot:
+                pop_to(stack, p, None)
+                continue
+            if p not in vals: continue
+            pop_to(stack, p, d)
             if not is_parent:
                 if stack: stack[-1][4].append(vals[p])
             else:
                 stack.append((d, k, raw, vals[p], [], ri, colof.get(p)))
-        while stack:
-            dd, kk, rr, dv, acc, rri, rcj = stack.pop()
-            res.append(dict(kind="A3", period=p, label=rr[:26], row=rri, col=rcj,
-                            disp=dv, calc=sum(acc), n=(len(acc) if len(acc)>=2 else 0)))
-            if stack: stack[-1][4].append(dv)
+        pop_to(stack, p, None)
     return res
 
 # ── A5: 가감 관계식 (고정 템플릿) ─────────────────────────
