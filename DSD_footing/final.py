@@ -9,8 +9,12 @@ from core import check_table, verdict, find_unit, grid_info, mixed_currency
 from statements import foot_hier, foot_a5, stmt_type, APPLY
 import tieout, notes, prose, refmap, consist
 
-PDF = sys.argv[1] if len(sys.argv) > 1 else "/mnt/user-data/uploads/_삼성전자_감사보고서_2026_03_10_.pdf"
-TOL = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
+_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+PDF = _args[0] if _args else "samples/삼성전자_감사보고서.pdf"
+TOL = float(_args[1]) if len(_args) > 1 else 0.0
+RSTEPS = 0                                     # 표 단위 스텝 허용(A7) — 기본 0, 측정용 파라미터
+for _a in sys.argv[1:]:
+    if _a.startswith("--round-steps="): RSTEPS = int(_a.split("=", 1)[1])
 OUT_PDF = "풋팅_틱마크_v3.pdf"; OUT_XLSX = "풋팅_예외색인_v3.xlsx"
 RED=Color(0.78,0.08,0.08)          # 감사조서 관행: 빨간펜 단일
 GRN=RED; AMB=RED                   # 구분은 색이 아니라 마크 모양으로
@@ -142,7 +146,7 @@ with pdfplumber.open(PDF) as pdf:
                     c.setFont("Helvetica-Bold",5.4); c.setFillColor(RED)
                     c.drawString(bb[2]+9, H-bb[3]+2.0, f"{x['diff']:+,.0f} {x['where']}")
             for r in rs:
-                v=verdict(r,TOL); stat[v]+=1
+                v=verdict(r,TOL,RSTEPS); stat[v]+=1
                 gi=r.get("row"); bbox=None
                 if gi is not None:
                     gi-=off

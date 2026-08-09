@@ -87,10 +87,11 @@ def total_col_idx(G, hdr, ncol, numcols):
 EXCL_TABLE = ("시간", "인원")        # 감사시간·투입인원 표 → 풋팅 대상 아님 (SKIP)
 EXCL_LABEL = ("법인세효과", "세후")   # 세효과 가감 구조 → 단순 합산 부적합 (SKIP)
 
-def _excl_table(G, hdr, ncol, nrow):
-    """헤더나 첫 열 라벨에 시간·인원이 있는 표 — 검증은 등재하되 미검증(SKIP)"""
+def _excl_table(G, hdr, ncol, nrow, labels=None):
+    """헤더나 라벨에 시간·인원이 있는 표 — 검증은 등재하되 미검증(SKIP)"""
+    lab = labels if labels is not None else [G[i][0] for i in range(nrow)]
     return any(kw in G[i][j] for kw in EXCL_TABLE for i in range(hdr) for j in range(ncol)) \
-        or any(kw in G[i][0] for kw in EXCL_TABLE for i in range(hdr, nrow))
+        or any(kw in lab[i] for kw in EXCL_TABLE for i in range(hdr, nrow))
 
 # 전기 재작성(정책 변경·오류 수정) 내역표 — 영향 계정과 그 상위 계층만 발췌된 표라
 # 표시 행이 완전한 가산 집합이 아니다(상위+하위 이중 합산 → 정확히 2배 서명).
@@ -120,7 +121,18 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
     G, K, V, hdr, ncol, nrow, numcols = grid_info(tb)
     res = []
     if not numcols: return res
-    excl_tab = _excl_table(G, hdr, ncol, nrow) or _restate_table(G, hdr, ncol)
+    # 라벨 좌표 병합 — 라벨을 c0 고정이 아니라 '첫 금액열 왼쪽의 첫 TEXT 셀'로 정한다.
+    # 구분류가 c0(병합·희소)이고 계정·소계가 c1인 조판(조선내화 p48~50)에서 c1의
+    # '소 계'가 보이게 한다. c0에 라벨이 있으면 종전과 완전히 동일하게 동작한다.
+    first_num = min(numcols)
+    LC = []
+    for i in range(nrow):
+        lj = 0
+        for j in range(first_num):
+            if G[i][j] and K[i][j] == "TEXT": lj = j; break
+        LC.append(lj)
+    LBL = [G[i][LC[i]] for i in range(nrow)]
+    excl_tab = _excl_table(G, hdr, ncol, nrow, LBL) or _restate_table(G, hdr, ncol)
     # 복합 통화 + '통화' 헤더 열 = 행별 통화 표(합계행도 통화별 분리) — 세로합도
     # 통화를 섞으므로 표 전체 SKIP. 헤더 열 구성 판정 원칙 부합 (휴맥스 실측:
     # 복합 표 전원이 이 구조, 열별 통화 표는 0개).
@@ -134,7 +146,7 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
         excl_tab = True
     # 지표 산정 표 — 라벨에 '비율'이 있으면 총계류 라벨(차입금총계 등)이 합계행이
     # 아니라 비율 계산의 입력 항목이다 (참조형 총계, 휴맥스 p144 순차입금비율)
-    if any("비율" in G[i][0] for i in range(hdr, nrow)):
+    if any("비율" in LBL[i] for i in range(hdr, nrow)):
         excl_tab = True
     tcols = total_col_idx(G, hdr, ncol, numcols)
 
@@ -157,17 +169,17 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
                 parts = [V[i][j] for j in a2cols if lo < j < tj and K[i][j] in ("NUM","BLANK")]
                 if len(parts) < 2: continue
                 s = sum(parts)
-                res.append(dict(kind="A2", row=i, label=G[i][0][:24],
+                res.append(dict(kind="A2", row=i, label=LBL[i][:24],
                                 disp=V[i][tj], calc=s,
                                 n=(0 if (excl_tab or excl_a2) else len(parts))))
 
     # ── A1 세로합 (계 행) ──
-    trows = [i for i in range(hdr, nrow) if is_total_label(G[i][0])]
-    subs  = [i for i in trows if is_sub_label(G[i][0])]
+    trows = [i for i in range(hdr, nrow) if is_total_label(LBL[i])]
+    subs  = [i for i in trows if is_sub_label(LBL[i])]
     mains = [i for i in trows if i not in subs]
     # 구간 제목행(라벨만 있고 숫자 없음) = 하위그룹 시작 경계
     secs  = [i for i in range(hdr, nrow)
-             if G[i][0] and all(K[i][j] != "NUM" for j in numcols)]
+             if LBL[i] and all(K[i][j] != "NUM" for j in numcols)]
 
     def sub_body(si):
         lo = max([x+1 for x in subs+mains+secs if x < si] + [hdr])
@@ -189,11 +201,11 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
             base = sum(left) / len(left)
 
     def sub_path(i):
-        lab = G[i][0]
+        lab = LBL[i]
         if not lab: return None
         if len(lab) > 1 and lab[0] in PRE: return "접두"
         raw = ""
-        try: raw = str(tb[i][0] or "")
+        try: raw = str(tb[i][LC[i]] or "")
         except Exception: pass
         if raw[:1].isspace() and raw.strip(): return "들여쓰기(공백)"
         if base is not None and x0s and i < len(x0s) and x0s[i] is not None \
@@ -226,7 +238,7 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
             covered.add(i)
             if sublog is not None:
                 sublog.append(dict(ctx=ctx, row=i, path=p,
-                                   label=G[i][0][:24], parent=G[R][0][:24]))
+                                   label=LBL[i][:24], parent=LBL[R][:24]))
 
     # 역산 소계 — '소계' 라벨 없이 계정과목명이 소계 역할을 하는 행 (라벨 방식과 병행).
     # 행 R의 값이 바로 아래 연속 n개 행(n>=2)의 합과 R의 모든 금액열에서 일치하면
@@ -277,7 +289,7 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
 
     # 콜론 구간 경계 — ':'로 끝나는 라벨 행은 '계' 자유행 합산의 시작 경계
     # (예: '단기차입금:' 구간의 행이 다음 구간 계에 합산되는 것을 차단)
-    colon = [i for i in range(hdr, nrow) if G[i][0].endswith(":")]
+    colon = [i for i in range(hdr, nrow) if LBL[i].endswith(":")]
 
     # 구간 마감행 존재 신호(순수 구조, 표 단위): 콜론 구간(콜론~다음 콜론 직전,
     # 마지막은 표 끝까지) 중 마감행(계·소계 trow)이 없는 구간이 하나라도 있으면
@@ -322,8 +334,8 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
             parts = [V[i][j] for i in body if K[i][j] in ("NUM","BLANK")]
             if len(parts) < 2: continue
             # 적용 부적합: 시간·인원 표, 또는 합산 대상에 법인세효과·세후 라벨 포함
-            skip = excl_tab or dual or any(kw in G[i][0] for i in body for kw in EXCL_LABEL)
-            res.append(dict(kind="A1", row=ti, col=j, label=G[ti][0][:24] or "계",
+            skip = excl_tab or dual or any(kw in LBL[i] for i in body for kw in EXCL_LABEL)
+            res.append(dict(kind="A1", row=ti, col=j, label=LBL[ti][:24] or "계",
                             disp=V[ti][j], calc=sum(parts), n=(0 if skip else len(parts))))
 
     # ── A3 계층합 (합계가 별도 열인 본표형) ──
@@ -352,10 +364,15 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
                 if pend is not None: emit(pend, acc)
     return res
 
-def verdict(r, tol=0.0):
-    """A7 단수차이 분류 포함"""
+def verdict(r, tol=0.0, round_steps=0):
+    """A7 단수차이 분류 포함.
+
+    round_steps: '표 단위 스텝' 허용 개수 — 표시 숫자 공간에서 1스텝 = 1
+    (백만원 표 = 1백만원, 천원 표 = 1천원, 원 표 = 1원). 전역 절대값 tol과 달리
+    단위가 달라도 같은 강도로 작동한다. 기본 0 = 현행 동작 보존 (확정은 회계사)."""
     if r["n"] == 0: return "SKIP"
     d = r["calc"] - r["disp"]
     if abs(d) < 1e-9: return "OK"
     if abs(d) <= tol: return "ROUND"
+    if round_steps and abs(d) <= round_steps: return "ROUND"
     return "DIFF"
