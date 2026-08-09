@@ -121,6 +121,11 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
     res = []
     if not numcols: return res
     excl_tab = _excl_table(G, hdr, ncol, nrow) or _restate_table(G, hdr, ncol)
+    # 복합 통화 + '통화' 헤더 열 = 행별 통화 표(합계행도 통화별 분리) — 세로합도
+    # 통화를 섞으므로 표 전체 SKIP. 헤더 열 구성 판정 원칙 부합 (휴맥스 실측:
+    # 복합 표 전원이 이 구조, 열별 통화 표는 0개).
+    cur_col = any(re.fullmatch(r"통\s*화", G[i][j]) for i in range(hdr) for j in range(ncol))
+    if excl_a2 and cur_col: excl_tab = True
     tcols = total_col_idx(G, hdr, ncol, numcols)
 
     # ── A2 가로합 ──
