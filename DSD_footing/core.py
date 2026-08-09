@@ -223,6 +223,18 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None):
     # (예: '단기차입금:' 구간의 행이 다음 구간 계에 합산되는 것을 차단)
     colon = [i for i in range(hdr, nrow) if G[i][0].endswith(":")]
 
+    # 구간 마감행 존재 신호(순수 구조, 표 단위): 콜론 구간(콜론~다음 콜론 직전,
+    # 마지막은 표 끝까지) 중 마감행(계·소계 trow)이 없는 구간이 하나라도 있으면
+    # 콜론은 단순 구분이므로 이 표에서 경계로 쓰지 않고 free로 흘려보낸다
+    # (LGES 특수관계자 표: 나열 구간 + 말미 합 계 1개 → 표 전체가 합산 단위).
+    # 전 구간이 마감되면 진짜 구간 경계다(삼성 p51 — 구간별 계).
+    colon_bound = bool(colon)
+    for _ci, _c in enumerate(colon):
+        _end = colon[_ci+1] if _ci+1 < len(colon) else nrow
+        if not any(t in trows for t in range(_c+1, _end)):
+            colon_bound = False; break
+    secs_eff = secs if colon_bound else [i for i in secs if i not in colon]
+
     for ti in trows:
         if ti in subs:
             body = sub_body(ti)
@@ -232,12 +244,12 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None):
             # 자유행 창의 시작 경계로 쓴다. 소계로 마감된 콜론 구간은 covered가 이미
             # 격리하므로 경계로 쓰지 않는다 — 경계로 쓰면 구간 앞의 정당한 합산 행이
             # 잘려나간다 (예: 연체되지 않은 채권 + 연체채권 소계 = 계).
-            open_cols = [c for c in colon if prevm < c < ti
-                         and not any(c < s < ti for s in subs)]
+            open_cols = ([c for c in colon if prevm < c < ti
+                          and not any(c < s < ti for s in subs)] if colon_bound else [])
             prev = max([prevm] + open_cols)
             inner = [i for i in subs if prevm < i < ti]
             free  = [i for i in range(prev+1, ti)
-                     if i not in trows and i not in secs and i not in covered]
+                     if i not in trows and i not in secs_eff and i not in covered]
             body = sorted(inner + free)
         for j in numcols:
             if K[ti][j] != "NUM": continue
