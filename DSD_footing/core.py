@@ -30,8 +30,11 @@ TOTAL_LAB = re.compile(r"^(합\s*계|계|총\s*계|소\s*계|합|Total|계\(.*\)
 SUB_LAB   = re.compile(r"^(소\s*계)$")
 
 def is_total_label(t):
+    """조선내화 교차검증에서 확장: '비파생상품 합계'처럼 짧은 수식어가 붙는 구간
+    합계행을 총계행으로 인식 ([가-힣]{0,6}). 미인식 시 구간 검증이 침묵 소실되고
+    말미 총합이 구간 합계를 이중 합산한다 (LGES p21)."""
     t = norm(t).replace(" ", "")
-    return bool(re.fullmatch(r"(합계|계|총계|소계|Total|자산총계|부채총계|자본총계|부채와자본총계)", t, re.I))
+    return bool(re.fullmatch(r"(합계|계|총계|소계|Total|[가-힣]{0,6}(총계|합계))", t, re.I))
 
 def is_sub_label(t):
     return norm(t).replace(" ", "") == "소계"
