@@ -5,7 +5,7 @@ import pdfplumber
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import Color
-from core import check_table, verdict, find_unit, grid_info
+from core import check_table, verdict, find_unit, grid_info, mixed_currency
 from statements import foot_hier, foot_a5, stmt_type, APPLY
 import tieout, notes, prose, refmap, consist
 
@@ -52,6 +52,7 @@ def cross(c,x,y,col,s=6.5):
 
 FCON = consist.report(PDF)
 CIR, TAGS, RDIFF, RLINKS, RUN, RMAIN, REXCL = refmap.marks(PDF, TOL)
+TUNIT = refmap.unit_texts(PDF)                 # 표 귀속 단위 원문 — 복합 통화 A2 제외용
 cirmap=collections.defaultdict(list); dmap=collections.defaultdict(list)
 for x in CIR: cirmap[(x["page"], x["table"])].append(x)
 for x in RDIFF: dmap[(x["page"], x["table"])].append(x)
@@ -102,7 +103,8 @@ with pdfplumber.open(PDF) as pdf:
                     xw = min(ws_) if ws_ else None
                 x0s.append(xw)
             if off: x0s = [None]*off + x0s               # carry 병합 행은 좌표 미상
-            rs = check_table(data, x0s=x0s, sublog=SUBLOG, ctx=(pi,ti))   # A1·A2 (+구형 A3 제거됨)
+            rs = check_table(data, x0s=x0s, sublog=SUBLOG, ctx=(pi,ti),
+                             excl_a2=mixed_currency(TUNIT.get((pi,ti))))  # A1·A2 (+구형 A3 제거됨)
             rs = [r for r in rs if r["kind"] in ("A1","A2")]
             if "A3" in APPLY.get(st, ()): rs += foot_hier(data)
             if "A5" in APPLY.get(st,()):      rs += foot_a5(data)
@@ -162,9 +164,13 @@ with pdfplumber.open(PDF) as pdf:
                         c.setFont("Helvetica-Bold",7.5); c.setFillColor(AMB)
                         c.drawString(x,y,"?"); drew=True
                 if v in ("DIFF","ROUND","SKIP"):
+                    # '1원차이' 태그 — 원 단위 표에서 |차이|<=1이면 일괄 확인용 표시.
+                    # 판정은 바꾸지 않는다 (원 단위는 반올림이 없어 흡수 금지 — 회계사 확인 대상)
+                    tg = ("1원차이" if v == "DIFF" and abs(r["calc"]-r["disp"]) <= 1
+                          and (TUNIT.get((pi,ti)) or "").strip() == "원" else "")
                     exc.append([pi,ti,r["kind"],r["label"],unit or "미표기",
                                 r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],
-                                {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증"}[v]])
+                                {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증"}[v],tg])
         try:
             _,_,_,_,ncL,_,_=grid_info(tobjs[-1].extract()); carry=(tobjs[-1].extract(),ncL)
         except Exception: carry=None
@@ -195,8 +201,8 @@ def sheet(name, hdr, rows, widths):
     ws.freeze_panes="A2"; ws.auto_filter.ref=ws.dimensions
     return ws
 wb.remove(wb.active)
-ws=sheet("A_예외색인",["페이지","표","유형","항목","단위","표시금액","계산금액","차이","항목수","판정"],
-         exc,[8,6,8,30,10,18,18,16,8,10])
+ws=sheet("A_예외색인",["페이지","표","유형","항목","단위","표시금액","계산금액","차이","항목수","판정","태그"],
+         exc,[8,6,8,30,10,18,18,16,8,10,10])
 for row in ws.iter_rows(min_row=2):
     for cc in row[5:8]: cc.number_format="#,##0"
     if row[9].value=="차이": row[9].fill=PatternFill("solid",fgColor="FFC7CE")

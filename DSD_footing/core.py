@@ -92,18 +92,35 @@ def _excl_table(G, hdr, ncol, nrow):
     return any(kw in G[i][j] for kw in EXCL_TABLE for i in range(hdr) for j in range(ncol)) \
         or any(kw in G[i][0] for kw in EXCL_TABLE for i in range(hdr, nrow))
 
+# 전기 재작성(정책 변경·오류 수정) 내역표 — 영향 계정과 그 상위 계층만 발췌된 표라
+# 표시 행이 완전한 가산 집합이 아니다(상위+하위 이중 합산 → 정확히 2배 서명).
+# 헤더에 아래 신호 2개 이상 공존할 때만 발화(단일 라벨 트리거 금지).
+RESTATE_HDR = ("이전보고금액", "수정금액", "재작성후금액")
+
+def _restate_table(G, hdr, ncol):
+    flat = [G[i][j].replace(" ", "") for i in range(hdr) for j in range(ncol) if G[i][j]]
+    return sum(1 for kw in RESTATE_HDR if any(kw in c for c in flat)) >= 2
+
+# 복합 통화 표 — 단위 문자열에 통화 토큰이 2종 이상이면 발화 (표 단위 신호).
+# 서로 다른 통화를 더한 값은 어떤 단위로도 존재하지 않는 수다 → A2 가로합 제외.
+CUR_TOK = re.compile(r"(USD|VND|PLN|EUR|JPY|CNY|GBP|원)")
+
+def mixed_currency(unit_text):
+    return len(set(CUR_TOK.findall(norm(unit_text or "")))) >= 2
+
 # ── 검증 ───────────────────────────────────────────────────
-def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None):
+def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
     """A1 세로합 · A2 가로합 · A3 계층합 수행 → 결과 리스트
 
     x0s    : 행별 첫 열 라벨의 x0 좌표 (들여쓰기 하위항목 판정용, 없으면 None)
     sublog : 하위항목 판정 로그 수집 리스트 (경로별 검증용)
     ctx    : (page, table) — 로그 표기용
+    excl_a2: 복합 통화 표 — A2 가로합만 미검증(SKIP), A1 세로합은 유지
     """
     G, K, V, hdr, ncol, nrow, numcols = grid_info(tb)
     res = []
     if not numcols: return res
-    excl_tab = _excl_table(G, hdr, ncol, nrow)
+    excl_tab = _excl_table(G, hdr, ncol, nrow) or _restate_table(G, hdr, ncol)
     tcols = total_col_idx(G, hdr, ncol, numcols)
 
     # ── A2 가로합 ──
@@ -126,7 +143,8 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None):
                 if len(parts) < 2: continue
                 s = sum(parts)
                 res.append(dict(kind="A2", row=i, label=G[i][0][:24],
-                                disp=V[i][tj], calc=s, n=(0 if excl_tab else len(parts))))
+                                disp=V[i][tj], calc=s,
+                                n=(0 if (excl_tab or excl_a2) else len(parts))))
 
     # ── A1 세로합 (계 행) ──
     trows = [i for i in range(hdr, nrow) if is_total_label(G[i][0])]

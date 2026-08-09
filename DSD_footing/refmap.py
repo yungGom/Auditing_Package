@@ -24,6 +24,25 @@ def _mult_of(unit_text):
     if not u or "," in u: return None
     return UNIT_MULT.get(u)
 
+def unit_texts(pdf_path):
+    """(page, table) → 표 귀속 단위 원문 문자열 (table_units와 같은 귀속 규칙).
+    복합 통화 판정(core.mixed_currency) 등 원문이 필요한 소비자용."""
+    out = {}
+    with pdfplumber.open(pdf_path) as pdf:
+        carry = None
+        for pi, page in enumerate(pdf.pages, 1):
+            try:
+                found = page.search(UNIT.pattern, regex=True)
+            except Exception:
+                found = []
+            ms = sorted((f["top"], (f.get("groups") or ("",))[0]) for f in found)
+            for ti, tb in enumerate(page.find_tables(), 1):
+                above = [u_ for t_, u_ in ms if t_ < tb.bbox[1]]
+                if above: carry = above[-1]
+                out[(pi, ti)] = carry
+            if ms: carry = ms[-1][1]
+    return out
+
 def table_units(pdf):
     """(page, table) → 원 환산 배수. 단위는 페이지가 아니라 표에 귀속:
     표 bbox 위쪽 최근접 (단위:) 표기. 같은 페이지 위쪽에 없으면 직전 표기를

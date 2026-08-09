@@ -38,8 +38,10 @@ def check(metrics, pdf, tol):
     if update:
         doc.setdefault("comment",
             "final.py 회귀 스냅샷 — 등록된 샘플·허용오차로 실행 시 자동 대조. 갱신: --update-gates")
-        doc["samples"][name] = {"tol": tol, "recorded": datetime.date.today().isoformat(),
-                                "metrics": metrics}
+        ent = doc["samples"].get(name, {})           # _메모 필드는 보존하고 지표만 갱신
+        ent.update({"tol": tol, "recorded": datetime.date.today().isoformat(),
+                    "metrics": metrics})
+        doc["samples"][name] = ent
         with open(GATES, "w", encoding="utf-8") as f:
             json.dump(doc, f, ensure_ascii=False, indent=2); f.write("\n")
         print(f"[GATES] 기준 스냅샷 기록: {name} (tol={tol:g}, 지표 {len(metrics)}개, 축 {len(doc['samples'])}개)")
