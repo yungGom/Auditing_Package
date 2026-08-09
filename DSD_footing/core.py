@@ -116,7 +116,10 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None):
         for i in range(hdr, nrow):
             for tj in tcols:
                 if K[i][tj] != "NUM": continue
-                parts = [V[i][j] for j in a2cols if K[i][j] in ("NUM","BLANK")]
+                # 이중 합계열: 각 합계열의 성분은 직전 합계열 이후 ~ 현재 합계열 이전.
+                # (특수관계자 채권·채무표처럼 '계' 열이 2개면 서로의 성분을 침범한다)
+                lo = max([tc for tc in tcols if tc < tj], default=-1)
+                parts = [V[i][j] for j in a2cols if lo < j < tj and K[i][j] in ("NUM","BLANK")]
                 if len(parts) < 2: continue
                 s = sum(parts)
                 res.append(dict(kind="A2", row=i, label=G[i][0][:24],
