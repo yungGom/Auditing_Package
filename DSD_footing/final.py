@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """DSD 풋팅 엔진 — 통합 실행 (A1·A2·A3·A5·A7·B·C7·F1). 완전 오프라인."""
-import io, sys, collections
+import argparse, io, os, sys, collections
 import pdfplumber
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
@@ -9,14 +9,33 @@ from core import check_table, verdict, find_unit, grid_info, mixed_currency
 from statements import foot_hier, foot_a5, stmt_type, APPLY
 import tieout, notes, prose, refmap, consist
 
-_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-PDF = _args[0] if _args else "samples/삼성전자_감사보고서.pdf"
-TOL = float(_args[1]) if len(_args) > 1 else 0.0
-RSTEPS = 1     # 표 단위 스텝 허용(A7) — 기본 1 확정(2026-08-09): 다수 성분의 독립 반올림
-               # 표시 구조가 4축 실물 확인됨. ROUND는 예외 색인에 '단수차이'로 분리 표시
-for _a in sys.argv[1:]:
-    if _a.startswith("--round-steps="): RSTEPS = int(_a.split("=", 1)[1])
-OUT_PDF = "풋팅_틱마크_v3.pdf"; OUT_XLSX = "풋팅_예외색인_v3.xlsx"
+_ap = argparse.ArgumentParser(prog="foot",
+    description="DSD 풋팅 — 표시 수치 정합성 검증 → <원본>_틱마크.pdf / <원본>_예외색인.xlsx "
+                "(완전 오프라인 · 자동은 추천, 확정은 회계사 — candidate only)")
+_ap.add_argument("pdf", nargs="?", help="감사보고서 PDF 경로")
+_ap.add_argument("tol_pos", nargs="?", type=float, help=argparse.SUPPRESS)  # 구형: final.py 보고서.pdf 0
+_ap.add_argument("--tol", type=float, default=None, help="A7 허용오차 (기본 0)")
+_ap.add_argument("--round-steps", dest="round_steps", type=int, default=1,
+                 help="표 단위 스텝 허용 — 백만원 표=1백만원, 천원 표=1천원 (기본 1, 2026-08-09 확정)")
+_ap.add_argument("--min-won", dest="min_won", type=float, default=refmap.MIN_WON,
+                 help="C 대사 소액 제외, 원 환산 절대금액 (기본 1억)")
+_ap.add_argument("--out", default=None, help="산출물 폴더 (기본: 입력 PDF와 같은 폴더)")
+_ap.add_argument("--quiet", action="store_true", help="요약 출력 생략")
+_cli, _ = _ap.parse_known_args()                 # --update-gates 등은 gates.py가 처리
+if not _cli.pdf:
+    _ap.print_help(); sys.exit(2)
+
+PDF = _cli.pdf
+TOL = _cli.tol if _cli.tol is not None else (_cli.tol_pos if _cli.tol_pos is not None else 0.0)
+RSTEPS = _cli.round_steps
+MINWON = _cli.min_won
+QUIET = _cli.quiet
+
+_base = os.path.splitext(os.path.basename(PDF))[0]
+_outdir = _cli.out or (os.path.dirname(os.path.abspath(PDF)) or ".")
+os.makedirs(_outdir, exist_ok=True)
+OUT_PDF = os.path.join(_outdir, _base + "_틱마크.pdf")
+OUT_XLSX = os.path.join(_outdir, _base + "_예외색인.xlsx")
 RED=Color(0.78,0.08,0.08)          # 감사조서 관행: 빨간펜 단일
 GRN=RED; AMB=RED                   # 구분은 색이 아니라 마크 모양으로
 
@@ -56,7 +75,7 @@ def cross(c,x,y,col,s=6.5):
     c.line(x,y,x+s,y+s); c.line(x,y+s,x+s,y)
 
 FCON = consist.report(PDF)
-CIR, TAGS, RDIFF, RLINKS, RUN, RMAIN, REXCL = refmap.marks(PDF, TOL)
+CIR, TAGS, RDIFF, RLINKS, RUN, RMAIN, REXCL = refmap.marks(PDF, TOL, MINWON)
 TUNIT = refmap.unit_texts(PDF)                 # 표 귀속 단위 원문 — 복합 통화 A2 제외용
 cirmap=collections.defaultdict(list); dmap=collections.defaultdict(list)
 for x in CIR: cirmap[(x["page"], x["table"])].append(x)
@@ -267,16 +286,18 @@ sheet("요약",["항목","값"],
        ["단위 미표기 페이지",str(nounit or "없음")],
        ["범위","표시 수치 상호 정합성 한정. 원장·조서 대사는 별도 절차."]],[30,60])
 wb.save(OUT_XLSX)
-print(f"A 산술 {tot}건 → OK {stat['OK']} ({stat['OK']/tot*100:.1f}%) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']} / SIGN {stat['SIGN']}")
-print(f"B 연계 {len(B)}건 → OK {sum(1 for r in B if r[4]=='OK')} / 차이 {sum(1 for r in B if r[4]=='차이')} / 미검증 {sum(1 for r in B if r[4]=='미검증')}")
-print(f"C 레퍼 → 성립 {len(RLINKS)} / 미성립 {len(RUN)} / 차이 {len(RDIFF)}" +
-      (f" · 단위제외 {len(REXCL)}건" if REXCL else ""))
-print(f"F 일관성 → 단위누락 {len(FCON['F1_단위누락'])}p / 표현불일치 {len(FCON['F2_표현불일치'])}그룹 / 라벨불일치 {len(FCON['F3_라벨불일치'])}건 / 다중공백 {len(FCON['F4_다중공백'])}건")
-print(f"D 줄글 → 검토완료(/) {npara}문단 / 표기 지적 {len(pros)}건")
-print(f"C7 주석 → 결번 {gap or '없음'} / 참조무주석 {miss or '없음'}")
-_sub_pre = sum(1 for e in SUBLOG if e["path"]=="접두")
-_sub_ind = [e for e in SUBLOG if e["path"].startswith("들여쓰기")]
-print(f"하위항목 인식 → 총 {len(SUBLOG)}건 (접두 {_sub_pre} / 들여쓰기 {len(_sub_ind)})")
-for e in _sub_ind:
-    print(f"  [들여쓰기] p{e['ctx'][0]} 표{e['ctx'][1]} 행{e['row']} '{e['label']}' ← 상위 '{e['parent']}' ({e['path']})")
-print(f"연결 감지 {cons} · 단위 미표기 {nounit or '없음'} · 허용오차 ±{TOL:g}")
+if not QUIET:
+    print(f"A 산술 {tot}건 → OK {stat['OK']} ({stat['OK']/tot*100:.1f}%) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']} / SIGN {stat['SIGN']}")
+    print(f"B 연계 {len(B)}건 → OK {sum(1 for r in B if r[4]=='OK')} / 차이 {sum(1 for r in B if r[4]=='차이')} / 미검증 {sum(1 for r in B if r[4]=='미검증')}")
+    print(f"C 레퍼 → 성립 {len(RLINKS)} / 미성립 {len(RUN)} / 차이 {len(RDIFF)}" +
+          (f" · 단위제외 {len(REXCL)}건" if REXCL else ""))
+    print(f"F 일관성 → 단위누락 {len(FCON['F1_단위누락'])}p / 표현불일치 {len(FCON['F2_표현불일치'])}그룹 / 라벨불일치 {len(FCON['F3_라벨불일치'])}건 / 다중공백 {len(FCON['F4_다중공백'])}건")
+    print(f"D 줄글 → 검토완료(/) {npara}문단 / 표기 지적 {len(pros)}건")
+    print(f"C7 주석 → 결번 {gap or '없음'} / 참조무주석 {miss or '없음'}")
+    _sub_pre = sum(1 for e in SUBLOG if e["path"]=="접두")
+    _sub_ind = [e for e in SUBLOG if e["path"].startswith("들여쓰기")]
+    print(f"하위항목 인식 → 총 {len(SUBLOG)}건 (접두 {_sub_pre} / 들여쓰기 {len(_sub_ind)})")
+    for e in _sub_ind:
+        print(f"  [들여쓰기] p{e['ctx'][0]} 표{e['ctx'][1]} 행{e['row']} '{e['label']}' ← 상위 '{e['parent']}' ({e['path']})")
+    print(f"연결 감지 {cons} · 단위 미표기 {nounit or '없음'} · 허용오차 ±{TOL:g}")
+print(f"산출물: {OUT_PDF} · {OUT_XLSX}")
