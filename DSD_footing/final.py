@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """DSD 풋팅 엔진 — 통합 실행 (A1·A2·A3·A5·A7·B·C7·F1). 완전 오프라인."""
-import argparse, io, os, sys, collections
+import argparse, datetime, io, os, subprocess, sys, collections
 import pdfplumber
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
@@ -31,11 +31,31 @@ RSTEPS = _cli.round_steps
 MINWON = _cli.min_won
 QUIET = _cli.quiet
 
+# ── 입력 검증 ──
+if not os.path.isfile(PDF):
+    print(f"[오류] 파일이 없습니다: {PDF}"); sys.exit(2)
+if not PDF.lower().endswith(".pdf"):
+    print(f"[오류] PDF 파일이 아닙니다: {PDF}"); sys.exit(2)
+with pdfplumber.open(PDF) as _p:
+    _chars = sum(len(pg.extract_text() or "") for pg in _p.pages[:5])
+if _chars < 100:
+    print("[오류] 텍스트 레이어가 없습니다(스캔본 추정). OCR은 조용히 틀리므로 설계상 "
+          "사용하지 않습니다 — 이 파일은 처리를 거부합니다."); sys.exit(2)
+
 _base = os.path.splitext(os.path.basename(PDF))[0]
 _outdir = _cli.out or (os.path.dirname(os.path.abspath(PDF)) or ".")
 os.makedirs(_outdir, exist_ok=True)
 OUT_PDF = os.path.join(_outdir, _base + "_틱마크.pdf")
 OUT_XLSX = os.path.join(_outdir, _base + "_예외색인.xlsx")
+
+# ── 버전 스탬프 (감사조서 추적성) ──
+try:
+    VER = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
+                         text=True, cwd=os.path.dirname(os.path.abspath(__file__))
+                         ).stdout.strip() or "nogit"
+except Exception:
+    VER = "nogit"
+RUN_TS = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 RED=Color(0.78,0.08,0.08)          # 감사조서 관행: 빨간펜 단일
 GRN=RED; AMB=RED                   # 구분은 색이 아니라 마크 모양으로
 
@@ -201,7 +221,8 @@ with pdfplumber.open(PDF) as pdf:
         except Exception: carry=None
         if drew:
             c.setFillColor(Color(0.35,0.35,0.35)); c.setFont("Helvetica",5.4)
-            c.drawString(36,10,"tick=agreed  X=difference/wording  ?=not tested  /=narrative reviewed | local offline, candidate only")
+            c.drawString(36,10,"tick=agreed  X=difference/wording  ?=not tested  /=narrative reviewed | local offline, candidate only"
+                         f" | v{VER} {RUN_TS} tol={TOL:g} steps={RSTEPS}")
             c.save(); overlays[pi]=buf.getvalue()
 
 B,cons = tieout.run(PDF)
@@ -282,8 +303,10 @@ sheet("요약",["항목","값"],
        ["B 연계검증 총건수",len(B)],["  OK",sum(1 for r in B if r[4]=='OK')],
        ["  차이",sum(1 for r in B if r[4]=='차이')],["  미검증",sum(1 for r in B if r[4]=='미검증')],
        ["D 검토완료(/) 문단 수",npara],["D 표기 지적 건수",len(pros)],
-       ["허용오차(A7)",TOL],["연결 구조 감지",str(cons)],
+       ["허용오차(A7)",TOL],["round_steps(표 단위 스텝)",RSTEPS],
+       ["min_won(C 소액 제외, 원)",MINWON],["연결 구조 감지",str(cons)],
        ["단위 미표기 페이지",str(nounit or "없음")],
+       ["도구 버전(커밋)",VER],["실행 일시",RUN_TS],
        ["범위","표시 수치 상호 정합성 한정. 원장·조서 대사는 별도 절차."]],[30,60])
 wb.save(OUT_XLSX)
 if not QUIET:
