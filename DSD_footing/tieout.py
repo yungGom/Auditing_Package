@@ -209,7 +209,10 @@ def run(pdf_path):
     return CHK, cons
 
 if __name__ == "__main__":
-    P = "/mnt/user-data/uploads/_삼성전자_감사보고서_2026_03_10_.pdf"
+    import sys
+    if len(sys.argv) < 2:
+        print("사용법: python tieout.py <보고서.pdf>"); sys.exit(2)
+    P = sys.argv[1]
     res, cons = run(P)
     ok = sum(1 for r in res if r[4]=="OK"); ng = sum(1 for r in res if r[4]=="차이")
     sk = sum(1 for r in res if r[4]=="미검증")

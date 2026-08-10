@@ -30,7 +30,10 @@ def run(pdf_path):
     return declared, refs, missing, unref, seq_gap
 
 if __name__ == "__main__":
-    d,r,m,u,g = run("/mnt/user-data/uploads/_삼성전자_감사보고서_2026_03_10_.pdf")
+    import sys
+    if len(sys.argv) < 2:
+        print("사용법: python notes.py <보고서.pdf>"); sys.exit(2)
+    d,r,m,u,g = run(sys.argv[1])
     print(f"선언된 주석 {len(d)}개: {sorted(d)[:40]}")
     print(f"본표 참조 {len(r)}개: {sorted(r)}")
     print(f"참조됐으나 주석 없음: {m or '없음'}")

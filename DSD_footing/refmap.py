@@ -208,7 +208,10 @@ def marks(pdf_path, tol=0.0, min_won=MIN_WON):
     return circles, tags, diffs, links, un, mains, mexcl
 
 if __name__ == "__main__":
-    P = "samples/삼성전자_감사보고서.pdf"
+    import sys
+    if len(sys.argv) < 2:
+        print("사용법: python refmap.py <보고서.pdf>"); sys.exit(2)
+    P = sys.argv[1]
     rng, mains, nts, links, un, mexcl, nexcl = build(P)
     withref = [m for m in mains if m["refs"]]
     print(f"주석 구간 {len(rng)}개 · 본표 금액 {len(mains)}건(주석참조 {len(withref)}건) · 주석 금액 {len(nts)}건")

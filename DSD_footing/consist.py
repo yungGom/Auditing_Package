@@ -102,7 +102,10 @@ def report(pdf_path):
     return out
 
 if __name__ == "__main__":
-    r = report("/mnt/user-data/uploads/_삼성전자_감사보고서_2026_03_10_.pdf")
+    import sys
+    if len(sys.argv) < 2:
+        print("사용법: python consist.py <보고서.pdf>"); sys.exit(2)
+    r = report(sys.argv[1])
     print(f"F1 단위 누락 (금액표 있는데 단위 없음): {len(r['F1_단위누락'])}p → {r['F1_단위누락'][:20]}")
     print(f"\nF2 표현 불일치 {len(r['F2_표현불일치'])}그룹")
     for g, forms in r["F2_표현불일치"]:
