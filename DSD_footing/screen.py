@@ -25,7 +25,9 @@ import pdfplumber
 import core, refmap
 from statements import stmt_type, period_axis, STMT
 
-A_DENSITY = (2.0, 7.0)      # 등록 4축 실측 2.88~5.72 (삼성·LGES·조선내화·휴맥스) ± 여유
+# A 밀도 = A_total / 표 개수. 페이지 기반(2.88~5.72, 대역폭 1.99배)보다 표 기반이
+# 좁고(2.44~4.07, 1.67배) 표가 적은 중소형 보고서에도 안정적이라 채택 (2026-08-09 측정).
+A_DENSITY = (1.7, 5.0)
 # 표제 판정 — 줄(공백 제거)이 표제로 '끝나고' 전체가 짧을 것(접두 포함 <=14자).
 # contains 판정은 주석 문장('...재무상태표에 인식된 금액은...')에 전량 오발화한다(4축 보정 실측)
 TITLE_END = re.compile(r".{0,6}(재무상태표|손익계산서|포괄손익계산서|현금흐름표|자본변동표)$")
@@ -49,14 +51,15 @@ def run_pipeline(pdf_path):
 
 
 def scan(pdf_path):
-    """보조 스캔 — 본표 미인식·기간축·단위 구조"""
-    miss = []; nper_max = 0
+    """보조 스캔 — 본표 미인식·기간축·단위 구조·표 개수"""
+    miss = []; nper_max = 0; n_tables = 0
     with pdfplumber.open(pdf_path) as pdf:
         npages = len(pdf.pages)
         for pi, page in enumerate(pdf.pages, 1):
             txt = page.extract_text() or ""
             st = stmt_type(txt)
             tbs = page.find_tables()
+            n_tables += len(tbs)
             if st in ("BS", "IS", "CI", "CF") and tbs:   # SCE는 열 구조상 nper가 원래 5~8
                 try:
                     _, npc = period_axis(tbs[0].extract())
@@ -76,7 +79,7 @@ def scan(pdf_path):
         if u is not None: kinds.add(core.norm(u).replace(" ", ""))
         if m is None: nofit += 1
     ratio_nofit = nofit / max(len(units), 1)
-    return dict(pages=npages, stmt_miss=miss, nper_max=nper_max,
+    return dict(pages=npages, n_tables=n_tables, stmt_miss=miss, nper_max=nper_max,
                 unit_kinds=len(kinds), unit_nofit_ratio=ratio_nofit)
 
 
@@ -89,7 +92,7 @@ def screen_one(pdf_path):
     except Exception as e:
         row["flags"].append(f"CRASH({type(e).__name__})")
         return row
-    dens = m["A_total"] / max(s["pages"], 1)
+    dens = m["A_total"] / max(s["n_tables"], 1)
     b_ratio = m["B_unv"] / max(m["B_total"], 1)
     c_tot = m["C_ok"] + m["C_un"]
     c_rate = m["C_ok"] / c_tot if c_tot else None
@@ -111,11 +114,20 @@ def screen_one(pdf_path):
 
 
 if __name__ == "__main__":
-    args = sys.argv[1:] or ["samples"]
+    import argparse
+    ap = argparse.ArgumentParser(prog="screen",
+        description="스크리너 — 신규 샘플 축 붕괴 자동 탐지, 정밀 축 승격 후보 선별 (완전 오프라인)")
+    ap.add_argument("paths", nargs="*", help="PDF 파일들 또는 폴더")
+    a_ = ap.parse_args()
+    if not a_.paths:
+        ap.print_help(); sys.exit(2)
     paths = []
-    for a in args:
+    for a in a_.paths:
         if os.path.isdir(a): paths += sorted(glob.glob(os.path.join(a, "*.pdf")))
-        else: paths.append(a)
+        elif os.path.isfile(a): paths.append(a)
+        else: print(f"[경고] 없음: {a}")
+    if not paths:
+        print("[오류] 처리할 PDF가 없습니다."); sys.exit(2)
     rows = [screen_one(p) for p in paths]
     print(f"\n{'샘플':44s} {'판정':10s} 신호/참고")
     print("-" * 110)
