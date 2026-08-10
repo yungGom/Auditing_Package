@@ -69,7 +69,11 @@ screen.py      스크리너 — 신규 샘플 축 붕괴 자동 탐지, 정밀 �
 intake_check.py 파일 반입 무결성 가드 (pre-commit 훅이 강제)
 ```
 
-실행: `python final.py <보고서.pdf> <허용오차>`
+실행: `python foot.py <보고서.pdf>` (또는 run.bat에 PDF 드래그)
+  옵션: `--tol 0` `--round-steps 1` `--min-won 100000000` `--out <폴더>` `--quiet`
+  산출물: 입력 PDF 폴더에 `<원본이름>_틱마크.pdf` / `<원본이름>_예외색인.xlsx`
+  구형 `python final.py <보고서.pdf> <허용오차>` 형태도 계속 동작.
+  run.bat은 ASCII 전용 유지 — 배치 내 한글은 콘솔 코드페이지에 따라 깨진다.
 
 ## 현재 성능 (삼성전자 FY25 별도, 120p)
 ```
