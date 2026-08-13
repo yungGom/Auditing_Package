@@ -81,13 +81,17 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
     const pick = await api("/api/fs/save-pick", {
       method: "POST",
       body: JSON.stringify({
-        suggest: `${d.corp_name}_${d.rcept_no}${tag ? "_" + tag : ""}.dsd`,
+        // N-1: 친화명 제안 — {회사명}_{보고서명}
+        suggest: `${d.corp_name}_${(d.report_nm || d.rcept_no)
+          .replace(/[\/:*?"<>|]/g, "_")}${tag ? "_" + tag : ""}.dsd`,
       }),
     });
     if (!pick.path) return;
     const r = await runAction("/api/explorer/dsd", {
       corp_code: d.corp_code || res.corp_code, rcept_no: d.rcept_no,
       save_to: pick.path, attach,
+      corp_name: d.corp_name, report_nm: d.report_nm,
+      rcept_dt: d.rcept_dt,
     });
     if (r) setNotice(`DSD 저장됨: ${r.dsd_path}`);
   };
@@ -116,6 +120,8 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
     const r = await runAction("/api/explorer/to-excel", {
       corp_code: d.corp_code || res.corp_code, rcept_no: d.rcept_no,
       attach,
+      corp_name: d.corp_name, report_nm: d.report_nm,
+      rcept_dt: d.rcept_dt,
     });
     if (r) {
       setNotice(`열람용 엑셀 생성 — 셀 ${r.cells?.toLocaleString()} · ` +

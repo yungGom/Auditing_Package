@@ -102,7 +102,7 @@ export default function Session({ sessionId, initialTab }: {
         }}>
           <Icon name="description" size={20} color="#48626e" />
           <span style={{ font: `700 15px ${F_HEAD}`, color: "#191c1d" }}>
-            {meta.file}</span>
+            {meta.display_name || meta.file}</span>
           <span style={{ font: `500 12px ${F_LABEL}`, color: "#737780" }}>
             {meta.company}</span>
           <span style={stateChip[stateLabel] || stateChip["생성됨"]}>
@@ -297,23 +297,49 @@ function Overview({ s, onExtract, goChange }: {
               color: "#191c1d", fontFamily: MONO, fontSize: 11,
               wordBreak: "break-all",
             }}>{meta.sha1}</span>
-            <span style={{ color: "#737780" }}>editver</span>
+            <span style={{ color: "#737780" }}>편집기 버전</span>
             <span style={{
               color: "#191c1d", display: "flex", alignItems: "center",
-              gap: 6,
+              gap: 6, flexWrap: "wrap",
             }}>
-              {meta.editver || "(없음)"}
-              <span title="클릭 → 편집기 버전 확인 즉석 실행 (왕복 점검 포함)"
-                onClick={runVersionCheck} style={{
-                  ...(meta.editver_known
-                    ? chip("#3a5a2e", "#dcead2")
-                    : chip("#930010", "#ffdad6")),
-                  cursor: "pointer",
-                }}>
-                <Icon name={meta.editver_known ? "check" : "warning"}
-                  size={12} />
-                {meta.editver_known ? "검증됨" : "미검증"}
-              </span>
+              {meta.editver || "(정보 없음)"}
+              {/* UI-9: 상태 3분리 — a.검증됨 b.미등재 c.버전 없음
+                  (수신물/비수신물). 수신물 판정 = 추출 산출의 열람용
+                  표식(소스 식별 자산), 추출 전엔 수신물 파일명 규약
+                  (접수번호 14자리)으로 잠정 판정 */}
+              {(() => {
+                const wrapped = meta.viewonly ??
+                  /^\d{14}/.test(String(meta.file || ""));
+                if (meta.editver && meta.editver_known) return (
+                  <span title="클릭 → 편집기 버전 확인 즉석 실행 (왕복 점검 포함)"
+                    onClick={runVersionCheck}
+                    style={{ ...chip("#3a5a2e", "#dcead2"),
+                      cursor: "pointer" }}>
+                    <Icon name="check" size={12} />검증된 편집기
+                  </span>
+                );
+                if (meta.editver) return (
+                  <span title="클릭 → 편집기 버전 확인 즉석 실행"
+                    onClick={runVersionCheck}
+                    style={{ ...chip("#7a4f00", "#ffecc7"),
+                      cursor: "pointer" }}>
+                    <Icon name="schedule" size={12} />
+                    {`편집기 버전 ${meta.editver} — 아직 검증 목록에 없음. 무수정 반영 1회로 지문 일치 확인 시 등록됩니다`}
+                  </span>
+                );
+                if (wrapped) return (
+                  <span style={chip("#43474f", "#edeeef")}>
+                    <Icon name="visibility" size={12} />
+                    공시 수신물 — 열람용 (편집기 버전 정보 없음이 정상)
+                  </span>
+                );
+                return (
+                  <span style={chip("#7a4f00", "#ffecc7")}>
+                    <Icon name="warning" size={12} />
+                    버전 정보 없는 파일 — 반영 전 무결성 확인 권장
+                  </span>
+                );
+              })()}
               {vcheck && (
                 <span style={vcheck.running
                   ? chip("#43474f", "#edeeef")

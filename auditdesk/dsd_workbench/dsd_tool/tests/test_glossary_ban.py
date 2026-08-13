@@ -21,7 +21,9 @@ _BAN_ID = re.compile(r"(?<![A-Za-z0-9가-힣_])(?:UI|[A-Z]{1,2})-\d[0-9a-z]*")
 _BAN_WORDS = ("Workbench", "Studio", "Explorer", "TOOLKIT", "워크벤치",
               "스튜디오",
               # UI-7 확장: 내부 동작·마크업 용어의 사용자 노출 금지
-              "repack", "dry-run", "diff", "게이트", "&cr;")
+              "repack", "dry-run", "diff", "게이트", "&cr;",
+              # UI-9 확장: 언어 내부값 표기의 사용자 노출 금지
+              "null", "undefined", "None")
 # UI-7: G1·G2 등 내부 점검 ID (한국어 노출 문자열 한정 검사)
 _BAN_G_RE = re.compile(r"(?<![A-Za-z0-9가-힣_])G\d(?![0-9A-Za-z])")
 _ALLOW = ("AI_Footing",)

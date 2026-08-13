@@ -38,6 +38,12 @@ def connect():
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass
+    for col in ("pinned", "hidden"):           # UI-8: 핀·숨김 (삭제 아님)
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} "
+                        "INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
     return con
 
 

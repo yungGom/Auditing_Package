@@ -40,6 +40,93 @@ def wrap_as_contents(xml_bytes: bytes, out_path: str) -> str:
     return out_path
 
 
+# ---------------------------------------------------------------------------
+# N-1: 수신물 친화명 — rcept_no 정체성(캐시 파일·폴더명 규약)은 불변,
+# 표시 계층만 {회사명}_{보고서명}_{기간}. 수신 시 사이드카
+# {rcept_no}.name.json 기록, 표시 시점에 읽는다. 사이드카 없는 기존
+# 캐시는 corp_code 폴더명 → 회사명 소급(가능한 만큼 — 보고서명은
+# 오프라인 확인 불가라 접수번호 유지).
+# ---------------------------------------------------------------------------
+import json as _json
+import re as _re
+
+_SAFE_RE = _re.compile(r'[\\/:*?"<>|\r\n]+')
+_RCEPT_RE = _re.compile(r"^(\d{14})")
+_PERIOD_RE = _re.compile(r"\(\s*([\d.]+)\s*\)")
+
+
+def sanitize_name(name: str) -> str:
+    """파일명 안전 문자 치환 (표시·산출물 명명 공용)."""
+    return _SAFE_RE.sub("_", str(name or "")).strip(" ._")
+
+
+def save_name_meta(dsd_or_dir: str, rcept_no: str, corp_name=None,
+                   report_nm=None, rcept_dt=None) -> str:
+    """수신 시 친화명 사이드카 기록 — 있는 필드만, 캐시 이름 불변."""
+    folder = (dsd_or_dir if os.path.isdir(dsd_or_dir)
+              else os.path.dirname(dsd_or_dir))
+    path = os.path.join(folder, f"{rcept_no}.name.json")
+    data = {}
+    if os.path.exists(path):
+        try:
+            data = _json.load(io.open(path, encoding="utf-8"))
+        except (ValueError, OSError):
+            data = {}
+    for k, v in (("corp_name", corp_name), ("report_nm", report_nm),
+                 ("rcept_dt", rcept_dt)):
+        if v:
+            data[k] = v
+    io.open(path, "w", encoding="utf-8").write(
+        _json.dumps(data, ensure_ascii=False))
+    return path
+
+
+def friendly_name(dsd_path: str, corp_resolver=None):
+    """수신물 표시명 — {회사명}_{보고서명}_{기간} (표시 계층 전용).
+
+    사이드카 없으면 corp_code 폴더명으로 회사명만 소급(corp_resolver:
+    corp_code → 회사명, 실패·부재 시 None 반환 항목 생략). 아무것도
+    확정 못 하면 None — 호출자는 기존 파일명 표시 유지.
+    """
+    base = os.path.basename(dsd_path)
+    m = _RCEPT_RE.match(base)
+    if not m:
+        return None
+    rcept = m.group(1)
+    folder = os.path.dirname(os.path.abspath(dsd_path))
+    side = os.path.join(folder, f"{rcept}.name.json")
+    corp = report = period = None
+    if os.path.exists(side):
+        try:
+            data = _json.load(io.open(side, encoding="utf-8"))
+        except (ValueError, OSError):
+            data = {}
+        corp = data.get("corp_name")
+        rn = str(data.get("report_nm") or "")
+        pm = _PERIOD_RE.search(rn)
+        if pm:
+            period = pm.group(1).strip(".")
+            report = _PERIOD_RE.sub("", rn).strip()
+        elif rn:
+            report = rn
+    if corp is None and corp_resolver is not None:
+        code = os.path.basename(folder)
+        if code.isdigit() and len(code) == 8:
+            try:
+                corp = corp_resolver(code)
+            except Exception:
+                corp = None
+    parts = [p for p in (corp, report, period) if p]
+    if not parts:
+        return None
+    if report is None:                      # 보고서명 미상 — 접수번호 유지
+        parts.append(rcept)
+    suffix = base[len(rcept):-4].strip("_")  # 첨부 표식(별도감사보고서 등)
+    if suffix:
+        parts.append(suffix)
+    return sanitize_name("_".join(parts))
+
+
 def _classify_attachment(name: str, xml_text: str, rcept_no: str):
     """B-4: 쳊부 문서 분류 — 본문/연결감사보고서/별도감사보고서/검토보고서."""
     if name.startswith(rcept_no) and "_" not in name[len(rcept_no):-4]:

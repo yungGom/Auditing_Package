@@ -76,19 +76,44 @@ def create_session(body: dict):
         raise HTTPException(
             400, "IXD는 편집기 프로젝트 파일입니다. 편집기에서 생성한 "
                  "제출용 XBRL 패키지(또는 DSD 파일)를 투입하세요")
+    # N-2: 폴더 경로(스캔)·파일 경로(직접) 이중 수용 — 실패 시
+    # 파일별 제외 사유까지 안내 (침묵 실패 금지)
+    from dsd_tool.discover import resolve_dsd_path
+    resolved = resolve_dsd_path(dsd_path)
+    if resolved["error"]:
+        raise HTTPException(400, resolved["error"])
+    dsd_path = resolved["file"]
     if not os.path.isfile(dsd_path):
         raise HTTPException(400, f"DSD 파일이 없습니다: {dsd_path}")
     from dsd_tool.version import is_known, read_version_info
     with open(dsd_path, "rb") as f:
         data = f.read()
     v = read_version_info(data)
+    # N-1: 수신물 친화명 — 사이드카·회사코드 소급 (표시 계층 전용,
+    # 실패 시 None → 기존 파일명 표시 유지)
+    display = None
+    try:
+        from dart_explorer.converters.document_wrap import friendly_name
+
+        def _corp(code):
+            from dart_explorer.client.opendart import OpenDartClient
+            for c in OpenDartClient().corp_codes():
+                if c["corp_code"] == code:
+                    return c["corp_name"]
+            return None
+        display = friendly_name(dsd_path, corp_resolver=_corp)
+    except Exception:
+        display = None
     meta = {
         "file": os.path.basename(dsd_path),
+        "display_name": display,            # N-1 (UI-8 메타 재사용 지점)
         "sha1": _sha1(dsd_path),
         "size": os.path.getsize(dsd_path),
         "editver": v.get("editver"), "docver": v.get("docver"),
         "editver_known": bool(is_known(v.get("editver"))),
-        "company": os.path.basename(dsd_path).split("_")[0].strip("[]"),
+        "company": (display.split("_")[0] if display
+                    else os.path.basename(dsd_path).split("_")[0]
+                    .strip("[]")),
         "cells": None, "notes": None, "cr_only": None,   # extract 후 채움
     }
     sid = uuid.uuid4().hex[:10]
@@ -109,12 +134,32 @@ def create_session(body: dict):
 def list_sessions():
     with jobs.connect() as con:
         rows = con.execute(
-            "SELECT id FROM sessions ORDER BY created DESC LIMIT 50")
-        ids = [r[0] for r in rows]
-    return [
-        {k: s[k] for k in ("session_id", "dsd_path", "created", "meta",
-                           "state", "xlsx_path")}
-        for s in (_session(i) for i in ids)]
+            "SELECT id, pinned, hidden FROM sessions "
+            "ORDER BY created DESC LIMIT 200")
+        flags = {r[0]: (bool(r[1]), bool(r[2])) for r in rows}
+    out = []
+    for i, (pin, hid) in flags.items():
+        s = _session(i)
+        row = {k: s[k] for k in ("session_id", "dsd_path", "created",
+                                 "meta", "state", "xlsx_path")}
+        row["pinned"], row["hidden"] = pin, hid   # UI-8
+        out.append(row)
+    return out
+
+
+@router.post("/sessions/{sid}/flags")
+def set_flags(sid: str, body: dict):
+    """UI-8: 핀 고정·목록 숨김 — 숨김은 표시 제외일 뿐, 세션·원본
+    파일은 보존된다 (삭제 아님)."""
+    _session(sid)                               # 존재 확인 (404 전파)
+    cols = {}
+    for k in ("pinned", "hidden"):
+        if k in body:
+            cols[k] = 1 if body[k] else 0
+    if not cols:
+        raise HTTPException(400, "pinned/hidden 중 하나가 필요합니다")
+    _update(sid, **cols)
+    return {"session_id": sid, **{k: bool(v) for k, v in cols.items()}}
 
 
 @router.get("/sessions/{sid}")
@@ -148,6 +193,7 @@ def extract_session(sid: str):
         meta.update(cells=info["mapped_cells"], notes=info["note_count"],
                     cr_only=info["cr_only_cells"],
                     fs_sheets=info["fs_sheets"],
+                    viewonly=info["viewonly"],   # UI-9: 수신물 판정(B-5 자산)
                     deduped_notes=info["deduped_notes"])
         _update(sid, xlsx_path=info["out_path"], state="추출됨",
                 meta=json.dumps(meta, ensure_ascii=False))

@@ -72,6 +72,17 @@ export default function Home({ openSession }: {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [pathInput, setPathInput] = useState("");
+  // UI-8: 목록 정리 — 접기/펼침·숨김 보기·30일 자동 숨김(기본 꺼짐)
+  const [expanded, setExpanded] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
+  const [autoHide, setAutoHide] = useState(
+    localStorage.getItem("ui8_auto_hide_30d") === "1");
+  const setFlag = async (sid: string, body: any) => {
+    await api(`/api/workbench/sessions/${sid}/flags`, {
+      method: "POST", body: JSON.stringify(body),
+    });
+    reload();
+  };
 
   const reload = () => {
     api("/api/workbench/sessions").then(setSessions).catch(() => {});
@@ -86,7 +97,7 @@ export default function Home({ openSession }: {
       const r = await api("/api/workbench/sessions", {
         method: "POST", body: JSON.stringify({ dsd_path: dsdPath }),
       });
-      openSession(r.session_id, r.meta.file);
+      openSession(r.session_id, r.meta.display_name || r.meta.file);
     } catch (e: any) {
       setErr(e.message);
     } finally {
@@ -193,9 +204,10 @@ export default function Home({ openSession }: {
       <div style={{
         display: "flex", gap: 8, marginTop: 8, alignItems: "center",
       }}>
+        {/* N-2: 폴더(스캔)·파일 경로 이중 수용 */}
         <input value={pathInput} data-testid="path-input"
           onChange={(e) => setPathInput(e.target.value)}
-          placeholder="또는 DSD 경로 직접 입력"
+          placeholder="또는 폴더 또는 파일 경로 직접 입력 (폴더는 자동 탐색)"
           style={{
             flex: 1, font: `500 12px ${F_LABEL}`, padding: "8px 10px",
             border: "1px solid #c3c6d1", borderRadius: 8,
@@ -208,78 +220,142 @@ export default function Home({ openSession }: {
           }}>열기</button>
       </div>
 
-      <div style={{
-        display: "flex", alignItems: "baseline", gap: 8,
-        margin: "24px 0 12px",
-      }}>
-        <h2 style={{ margin: 0, font: `700 15px ${F_HEAD}`,
-          color: "#191c1d" }}>최근 작업 파일</h2>
-        <span style={{ font: `500 12px ${F_LABEL}`, color: "#737780" }}>
-          {sessions.length}건</span>
-      </div>
-      <div style={{
-        display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16,
-      }}>
-        {sessions.map((s) => (
+      {(() => {
+        // UI-8: 핀 우선 정렬·숨김 분리·30일 자동 숨김(핀 제외)
+        const now = Date.now();
+        const auto = (s: SessionRow & any) => autoHide && !s.pinned &&
+          now - new Date(s.created).getTime() > 30 * 864e5;
+        const rows = sessions as any[];
+        const hiddenRows = rows.filter((s) => s.hidden || auto(s));
+        const shown = rows.filter((s) => !s.hidden && !auto(s))
+          .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+        const list = showHidden ? hiddenRows
+          : expanded ? shown : shown.slice(0, 5);
+        const groups: [string, any[]][] = [];
+        if (expanded && !showHidden) {
+          const m = new Map<string, any[]>();
+          list.forEach((s) => {
+            const k = s.meta?.company || "기타";
+            if (!m.has(k)) m.set(k, []);
+            m.get(k)!.push(s);
+          });
+          m.forEach((v, k) => groups.push([k, v]));
+        } else {
+          groups.push(["", list]);
+        }
+        const Row = ({ s }: { s: any }) => (
           <div key={s.session_id} className="hoverable"
-            onClick={() => openSession(s.session_id, s.meta?.file)}
+            onClick={() => openSession(s.session_id,
+              s.meta?.display_name || s.meta?.file)}
             style={{
+              display: "flex", alignItems: "center", gap: 10,
               background: "#fff", border: "1px solid #c3c6d1",
-              borderRadius: 8, padding: 16, display: "flex",
-              flexDirection: "column", gap: 10, cursor: "pointer",
+              borderRadius: 8, padding: "8px 12px", cursor: "pointer",
+              marginBottom: 6, opacity: showHidden ? 0.75 : 1,
             }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <Icon name="description" size={22} color="#48626e"
-                style={{ marginTop: 2 }} />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{
-                  font: `600 13px ${F_LABEL}`, color: "#191c1d",
-                  overflow: "hidden", textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}>{s.meta?.file}</div>
-                <div style={{
-                  font: `500 12px ${F_LABEL}`, color: "#43474f",
-                  marginTop: 2,
-                }}>{s.meta?.company}</div>
-              </div>
-              <span style={{
-                ...(stChip[stLabel(s.state)] || stChip["생성됨"]),
-                flex: "none",
-              }}>{stLabel(s.state)}</span>
-            </div>
-            <div style={{
-              display: "flex", alignItems: "center", gap: 6,
-              flexWrap: "wrap",
-            }}>
-              <span style={s.meta?.editver_known
-                ? chip("#3a5a2e", "#dcead2") : chip("#930010", "#ffdad6")}>
-                <Icon name={s.meta?.editver_known ? "check" : "warning"}
-                  size={13} />
-                {s.meta?.editver_known
-                  ? `editver ${s.meta?.editver}`
-                  : `미검증 편집기 ${s.meta?.editver}`}
-              </span>
-              <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
-                {s.meta?.cells != null
-                  ? `${s.meta.cells.toLocaleString()} 셀 · 주석 ${s.meta.notes}`
-                  : "추출 전"}
-              </span>
-            </div>
-            <div style={{
-              display: "flex", alignItems: "center",
-              justifyContent: "space-between",
-              borderTop: "1px solid rgba(195,198,209,0.5)", paddingTop: 8,
-            }}>
-              <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
-                생성 {s.created?.slice(5, 16).replace("T", " ")}</span>
-              <span style={{
-                font: `600 12px ${F_LABEL}`, color: "#001e40",
-                display: "flex", alignItems: "center", gap: 2,
-              }}>열기<Icon name="chevron_right" size={15} /></span>
-            </div>
+            <Icon name={s.pinned ? "keep" : "description"} size={17}
+              color={s.pinned ? "#7a4f00" : "#48626e"} />
+            <span style={{
+              font: `600 12px ${F_LABEL}`, color: "#191c1d", minWidth: 0,
+              flex: 1, overflow: "hidden", textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}>{s.meta?.display_name || s.meta?.file}</span>
+            <span style={{
+              ...(stChip[stLabel(s.state)] || stChip["생성됨"]),
+              flex: "none",
+            }}>{stLabel(s.state)}</span>
+            <span style={{
+              font: `500 11px ${F_LABEL}`, color: "#737780",
+              flex: "none", fontVariantNumeric: "tabular-nums",
+            }}>{s.created?.slice(5, 16).replace("T", " ")}</span>
+            {showHidden ? (
+              <button className="hoverable" title="목록에 다시 표시"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFlag(s.session_id, { hidden: false });
+                }} style={{
+                  font: `600 11px ${F_LABEL}`, color: "#001e40",
+                  background: "#d5e3ff", border: "none", borderRadius: 6,
+                  padding: "4px 8px", cursor: "pointer",
+                }}>숨김 해제</button>
+            ) : (
+              <>
+                <span title={s.pinned ? "핀 해제" : "핀 고정 (맨 위)"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFlag(s.session_id, { pinned: !s.pinned });
+                  }} style={{ cursor: "pointer", display: "inline-flex" }}>
+                  <Icon name={s.pinned ? "keep_off" : "keep"} size={16}
+                    color="#737780" /></span>
+                <span title="목록에서 숨김 — 원본 파일·작업 기록은 보존"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFlag(s.session_id, { hidden: true });
+                  }} style={{ cursor: "pointer", display: "inline-flex" }}>
+                  <Icon name="visibility_off" size={16}
+                    color="#737780" /></span>
+              </>
+            )}
+            <Icon name="chevron_right" size={15} color="#737780" />
           </div>
-        ))}
-      </div>
+        );
+        return (
+          <>
+            <div style={{
+              display: "flex", alignItems: "baseline", gap: 10,
+              margin: "24px 0 12px", flexWrap: "wrap",
+            }}>
+              <h2 style={{ margin: 0, font: `700 15px ${F_HEAD}`,
+                color: "#191c1d" }}>최근 작업 파일</h2>
+              <span style={{ font: `500 12px ${F_LABEL}`,
+                color: "#737780" }}>
+                {shown.length}건{hiddenRows.length
+                  ? ` · 숨김 ${hiddenRows.length}건 (원본 파일은 보존)`
+                  : ""}</span>
+              <div style={{ flex: 1 }} />
+              <label style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                font: `500 11px ${F_LABEL}`, color: "#737780",
+              }}>
+                <input type="checkbox" checked={autoHide}
+                  onChange={(e) => {
+                    setAutoHide(e.target.checked);
+                    localStorage.setItem("ui8_auto_hide_30d",
+                      e.target.checked ? "1" : "0");
+                  }} style={{ accentColor: "#001e40" }} />
+                30일 지난 파일 자동 숨김 (핀 제외)
+              </label>
+              {hiddenRows.length > 0 && (
+                <button className="hoverable" data-testid="toggle-hidden"
+                  onClick={() => setShowHidden(!showHidden)} style={{
+                    font: `600 11px ${F_LABEL}`, color: "#43474f",
+                    background: "#edeeef", border: "none",
+                    borderRadius: 6, padding: "4px 10px",
+                    cursor: "pointer",
+                  }}>{showHidden ? "목록으로" : "숨김 보기"}</button>
+              )}
+            </div>
+            {groups.map(([g, arr]) => (
+              <div key={g || "flat"}>
+                {g && <div style={{
+                  font: `700 11px ${F_LABEL}`, color: "#737780",
+                  letterSpacing: "0.05em", margin: "10px 0 6px",
+                }}>{g} · {arr.length}건</div>}
+                {arr.map((s) => <Row key={s.session_id} s={s} />)}
+              </div>
+            ))}
+            {!showHidden && shown.length > 5 && (
+              <button className="hoverable" data-testid="toggle-expand"
+                onClick={() => setExpanded(!expanded)} style={{
+                  font: `600 12px ${F_LABEL}`, color: "#001e40",
+                  background: "#d5e3ff", border: "none", borderRadius: 8,
+                  padding: "7px 14px", cursor: "pointer", marginTop: 4,
+                }}>{expanded ? "접기 — 최근 5건만"
+                  : `전체 보기 (${shown.length}건 · 회사별)`}</button>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }

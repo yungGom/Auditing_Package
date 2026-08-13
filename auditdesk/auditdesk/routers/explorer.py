@@ -145,14 +145,18 @@ def dsd_save(body: dict):
         raise HTTPException(400, "corp_code/rcept_no 필요")
 
     attach = body.get("attach")             # B-4: 첨부 단위 수신
+    name_meta = {k: body.get(k) for k in ("corp_name", "report_nm",
+                                          "rcept_dt")}   # N-1
 
     def _run(progress):
         import shutil
         progress("공시원본 수신 중… (캐시 히트 시 재다운로드 없음)")
         from dart_explorer.converters.document_wrap import (
-            fetch_and_wrap, fetch_and_wrap_entry)
+            fetch_and_wrap, fetch_and_wrap_entry, save_name_meta)
         path = fetch_and_wrap_entry(_client(), corp_code, rcept_no,
                                     attach) if attach else             fetch_and_wrap(_client(), corp_code, rcept_no)
+        if any(name_meta.values()):
+            save_name_meta(path, rcept_no, **name_meta)
         if save_to:
             shutil.copyfile(path, save_to)
             path = save_to
@@ -173,18 +177,27 @@ def to_excel(body: dict):
         raise HTTPException(400, "corp_code/rcept_no 필요")
 
     attach = body.get("attach")             # B-4: 첨부 단위 변환
+    # N-1: 친화명 메타 (표시 계층 전용 — rcept_no 캐시 규약 불변)
+    name_meta = {k: body.get(k) for k in ("corp_name", "report_nm",
+                                          "rcept_dt")}
 
     def _run(progress):
         progress("공시원본 수신 중…")
         from dart_explorer.converters.document_wrap import (
-            fetch_and_wrap, fetch_and_wrap_entry)
+            fetch_and_wrap, fetch_and_wrap_entry, friendly_name,
+            save_name_meta)
         dsd = fetch_and_wrap_entry(_client(), corp_code, rcept_no,
                                    attach) if attach else             fetch_and_wrap(_client(), corp_code, rcept_no)
+        if any(name_meta.values()):
+            save_name_meta(dsd, rcept_no, **name_meta)
         progress("DSD → Excel 추출 중…")
         from dsd_tool.excel_out import extract
-        xlsx = os.path.splitext(dsd)[0] + ".xlsx"
+        disp = friendly_name(dsd)           # N-1: 산출물 파일명 통일
+        xlsx = (os.path.join(os.path.dirname(dsd), disp + ".xlsx")
+                if disp else os.path.splitext(dsd)[0] + ".xlsx")
         info = extract(dsd, xlsx)
         return {"xlsx_path": info["out_path"], "dsd_path": dsd,
+                "display_name": disp,
                 "cells": info["mapped_cells"], "notes": info["note_count"]}
 
     return {"job_id": jobs.submit("to-excel", _run)}
