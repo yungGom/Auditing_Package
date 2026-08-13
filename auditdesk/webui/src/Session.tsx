@@ -108,8 +108,9 @@ export default function Session({ sessionId, initialTab }: {
           <span style={stateChip[stateLabel] || stateChip["생성됨"]}>
             {stateLabel}</span>
           <div style={{ flex: 1 }} />
-          <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
-            SHA1 <code style={{
+          <span title="반영 후 무결성 대조용"
+            style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
+            원본 지문 <code style={{
               fontFamily: MONO, fontSize: 11, background: "#edeeef",
               borderRadius: 4, padding: "1px 6px",
             }}>{meta.sha1?.slice(0, 4)}…{meta.sha1?.slice(-4)}</code>
@@ -292,7 +293,8 @@ function Overview({ s, onExtract, goChange }: {
               color: "#191c1d", fontFamily: MONO, fontSize: 11,
               wordBreak: "break-all",
             }}>{s.dsd_path}</span>
-            <span style={{ color: "#737780" }}>SHA1</span>
+            <span style={{ color: "#737780" }}>원본 지문
+              (반영 후 무결성 대조용)</span>
             <span style={{
               color: "#191c1d", fontFamily: MONO, fontSize: 11,
               wordBreak: "break-all",
@@ -302,7 +304,6 @@ function Overview({ s, onExtract, goChange }: {
               color: "#191c1d", display: "flex", alignItems: "center",
               gap: 6, flexWrap: "wrap",
             }}>
-              {meta.editver || "(정보 없음)"}
               {/* UI-9: 상태 3분리 — a.검증됨 b.미등재 c.버전 없음
                   (수신물/비수신물). 수신물 판정 = 추출 산출의 열람용
                   표식(소스 식별 자산), 추출 전엔 수신물 파일명 규약
@@ -315,7 +316,8 @@ function Overview({ s, onExtract, goChange }: {
                     onClick={runVersionCheck}
                     style={{ ...chip("#3a5a2e", "#dcead2"),
                       cursor: "pointer" }}>
-                    <Icon name="check" size={12} />검증된 편집기
+                    <Icon name="check" size={12} />
+                    검증된 편집기 {meta.editver}
                   </span>
                 );
                 if (meta.editver) return (
@@ -362,7 +364,7 @@ function Overview({ s, onExtract, goChange }: {
             <span style={{
               color: "#191c1d", fontVariantNumeric: "tabular-nums",
             }}>{meta.notes ?? "—"}</span>
-            <span style={{ color: "#737780" }}>개행만 있는 셀</span>
+            <span style={{ color: "#737780" }}>줄바꿈 표기만 있는 빈 셀</span>
             <span style={{
               color: "#191c1d", fontVariantNumeric: "tabular-nums",
             }}>{meta.cr_only ?? "—"}</span>
@@ -376,20 +378,34 @@ function Overview({ s, onExtract, goChange }: {
             display: "flex", flexDirection: "column", gap: 12,
             font: `500 12px ${F_LABEL}`,
           }}>
-            <div>
-              <div style={{ font: `600 12px ${F_LABEL}`, color: "#191c1d" }}>
-                개행 표기 보정 — 기본 켜짐</div>
+            {/* UI-7 확장 ④: 해당 0건 옵션은 접힘 — 평문 안내만 */}
+            {(meta.cr_only ?? 0) > 0 && (
+              <div>
+                <div style={{ font: `600 12px ${F_LABEL}`,
+                  color: "#191c1d" }}>
+                  줄바꿈 표기 정리 — 기본 켜짐</div>
+                <div style={{ color: "#737780" }}>
+                  줄바꿈 표기만 있는 빈 셀 {meta.cr_only}개를 빈 셀로
+                  정리합니다. 수정 확인 화면에서 함께 보여드립니다.</div>
+              </div>
+            )}
+            {(meta.deduped_notes ?? 0) > 0 && (
+              <div>
+                <div style={{ font: `600 12px ${F_LABEL}`,
+                  color: "#191c1d" }}>
+                  주석 번호 정리 — 추출 때 결정</div>
+                <div style={{ color: "#737780" }}>
+                  중복 번호 {meta.deduped_notes}건은 추출 때 정리되어
+                  DSD에 반영할 때 함께 적용됩니다.</div>
+              </div>
+            )}
+            {!(meta.cr_only ?? 0) && !(meta.deduped_notes ?? 0) && (
               <div style={{ color: "#737780" }}>
-                개행만 남은 셀 {meta.cr_only ?? "?"}개를 빈 셀로 정리합니다.
-                수정 확인 화면의 적용 전 점검에 함께 표시됩니다.</div>
-            </div>
-            <div>
-              <div style={{ font: `600 12px ${F_LABEL}`, color: "#191c1d" }}>
-                주석 번호 보정 — 추출 시 결정</div>
-              <div style={{ color: "#737780" }}>
-                중복 번호 {meta.deduped_notes ?? "?"}건은 추출 시 정리되어
-                DSD에 반영 시 함께 적용됩니다.</div>
-            </div>
+                {meta.cells == null
+                  ? "추출 후 자동 보정 대상이 표시됩니다."
+                  : "자동 보정 대상이 없습니다 — 값 수정만 반영됩니다."}
+              </div>
+            )}
           </div>
         </Card>
       </div>
@@ -1279,38 +1295,67 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
   const changes: Change[] = diff?.changes || [];
   const selCount = changes.filter((c) => !excluded[c.id]).length;
 
+  // UI-7 확장 ②: 탭 진입 시 점검 자동 실행 — 수동 실행 버튼 없음,
+  // 재실행은 [다시 비교]만
+  useEffect(() => {
+    if (!diff && s.xlsx_path) runDiff();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!diff) {
     return (
       <div style={{ padding: 24, maxWidth: 720 }}>
         <Card style={{ padding: 20 }}>
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
-            marginBottom: 8,
           }}>
-            <Icon name="rule" size={18} color="#43474f" />
+            <Icon name="progress_activity" size={18} color="#43474f" />
             <span style={{ font: `600 13px ${F_LABEL}`, color: "#191c1d" }}>
-              반영 전 확인</span>
+              수정 내용을 점검하고 있습니다…</span>
           </div>
           <div style={{
-            font: `500 12px ${F_LABEL}`, color: "#737780", marginBottom: 14,
+            font: `500 12px ${F_LABEL}`, color: "#737780", marginTop: 8,
           }}>
-            수정 확인(적용 전 점검)을 실행해 수정 내용을 확인·승인해야
-            DSD에 반영할 수 있습니다. 서버가 이 순서를 강제합니다.
-            원본은 그대로 둡니다.
+            엑셀에서 바뀐 내용을 자동으로 찾습니다. 원본은 그대로
+            둡니다.
           </div>
-          <PrimaryBtn onClick={runDiff}>
-            <Icon name="play_arrow" size={17} />수정 확인 실행 (적용 전 점검)
-          </PrimaryBtn>
         </Card>
       </div>
     );
   }
 
   const counts = diff.counts;
+  // UI-7 확장 ⑤: 3단 과업 흐름 — 수정한 엑셀 → 바뀐 내용(자동) →
+  // DSD에 반영
+  const steps: [string, boolean][] = [
+    ["1. 수정한 엑셀", true],
+    [`2. 바뀐 내용 ${changes.length}건 (자동 점검)`, true],
+    ["3. DSD에 반영", false],
+  ];
   return (
     <div style={{
       display: "flex", flexDirection: "column", flex: 1, minHeight: 0,
     }}>
+      <div style={{
+        flex: "none", display: "flex", alignItems: "center", gap: 8,
+        padding: "10px 24px 0", background: "#fff", flexWrap: "wrap",
+      }}>
+        {steps.map(([label, done], i) => (
+          <React.Fragment key={label}>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              font: `600 11px ${F_LABEL}`, borderRadius: 8,
+              padding: "4px 10px", whiteSpace: "nowrap",
+              color: done ? "#3a5a2e" : "#43474f",
+              background: done ? "#dcead2" : "#edeeef",
+            }}>
+              {done && <Icon name="check" size={12} />}{label}
+            </span>
+            {i < steps.length - 1 &&
+              <Icon name="chevron_right" size={14} color="#c3c6d1" />}
+          </React.Fragment>
+        ))}
+      </div>
       <div style={{
         flex: "none", display: "flex", alignItems: "center", gap: 10,
         padding: "12px 24px", background: "#fff",
@@ -1319,7 +1364,7 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
         <Icon name="rule" size={18} color="#43474f" />
         <span style={{ font: `600 13px ${F_LABEL}`, color: "#191c1d" }}>
           반영 전 확인</span>
-        <span title={`개행 정리 ${counts.clean_cr}건 · 주석 번호 정리 ${
+        <span title={`줄바꿈 표기 정리 ${counts.clean_cr}건 · 주석 번호 정리 ${
             counts.note_dedup}건 — 상세는 목록·이력 참조`}
           style={{ font: `500 12px ${F_LABEL}`, color: "#737780" }}>
           값 수정 {counts.edit}건 · 표기 자동 보정{" "}
@@ -1370,7 +1415,7 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
                   font: `600 13px ${F_LABEL}`, color: "#191c1d",
                 }}>{reason === "edit" ? "사용자 수정 셀"
                   : reason === "clean-cr"
-                    ? "개행만 남은 셀 정리" : "주석 번호 중복 정리"}</span>
+                    ? "줄바꿈 표기만 있는 빈 셀 정리" : "주석 번호 중복 정리"}</span>
                 <span style={{
                   font: `500 12px ${F_LABEL}`, color: "#737780",
                   fontVariantNumeric: "tabular-nums",
@@ -1537,7 +1582,7 @@ function History({ sessionId }: { sessionId: string }) {
               font: `600 12px ${F_LABEL}`, color: "#191c1d",
               fontVariantNumeric: "tabular-nums",
             }}>{h.ts}</span>
-            <span title={`개행 정리 ${h.cleans}건 · 주석 번호 정리 ${
+            <span title={`줄바꿈 표기 정리 ${h.cleans}건 · 주석 번호 정리 ${
                 h.dedups}건`}
               style={{ font: `500 12px ${F_LABEL}`, color: "#43474f" }}>
               값 수정 {h.edits}건 · 표기 자동 보정 {h.cleans + h.dedups}건
@@ -1555,7 +1600,7 @@ function History({ sessionId }: { sessionId: string }) {
               <div style={{
                 font: `500 11px ${F_LABEL}`, color: "#737780",
                 marginBottom: 8,
-              }}>옵션: {h.clean_cr ? "기본(개행 표기 보정)" : "원문 유지"} ·
+              }}>옵션: {h.clean_cr ? "기본(줄바꿈 표기 정리)" : "원문 유지"} ·
                 출력 {h.out_path}</div>
               {(h.changes || []).slice(0, 30).map((c: any, i: number) => (
                 <div key={i} style={{

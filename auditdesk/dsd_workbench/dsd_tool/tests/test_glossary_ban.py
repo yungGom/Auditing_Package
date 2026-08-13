@@ -23,9 +23,15 @@ _BAN_WORDS = ("Workbench", "Studio", "Explorer", "TOOLKIT", "워크벤치",
               # UI-7 확장: 내부 동작·마크업 용어의 사용자 노출 금지
               "repack", "dry-run", "diff", "게이트", "&cr;",
               # UI-9 확장: 언어 내부값 표기의 사용자 노출 금지
-              "null", "undefined", "None")
+              "null", "undefined", "None",
+              # UI-7 확장(델타 h): 시스템 강제 문구 금지
+              "서버가 강제", "서버가 이 순서를 강제")
 # UI-7: G1·G2 등 내부 점검 ID (한국어 노출 문자열 한정 검사)
 _BAN_G_RE = re.compile(r"(?<![A-Za-z0-9가-힣_])G\d(?![0-9A-Za-z])")
+# UI-7 확장(델타 h): HTTP 상태코드의 사용자 노출 금지 — 수치·소수
+# 표기(5.114)·단위 수사("400행")와 구분: 앞뒤 숫자·구두점·한글 배제
+_BAN_HTTP_RE = re.compile(
+    r"(?<![\d,.%가-힣])(4\d{2}|5\d{2})(?![\d,.%가-힣])")
 _ALLOW = ("AI_Footing",)
 # 명령줄 예시는 코드 식별자 영역 (GLOSSARY 허용 목록)
 _ALLOW_CHUNK = ("python -m dsd_tool",)
@@ -50,6 +56,8 @@ def _violations(chunks, where):
         for m in _BAN_ID.finditer(text):
             out.append((where, m.group(0), text.strip()[:60]))
         for m in _BAN_G_RE.finditer(text):
+            out.append((where, m.group(0), text.strip()[:60]))
+        for m in _BAN_HTTP_RE.finditer(text):
             out.append((where, m.group(0), text.strip()[:60]))
         for w in _BAN_WORDS:
             if w in text:
