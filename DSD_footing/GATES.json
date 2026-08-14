@@ -3,7 +3,7 @@
   "samples": {
     "삼성전자_감사보고서.pdf": {
       "tol": 0.0,
-      "recorded": "2026-08-09",
+      "recorded": "2026-08-14",
       "metrics": {
         "A_total": 345,
         "A_OK": 325,
@@ -22,7 +22,7 @@
         "C7_missing": 0,
         "C7_unref": 7,
         "D_paragraphs": 229,
-        "D_flags": 1,
+        "D_flags": 2,
         "consolidated": false,
         "pages_no_unit": 44,
         "F1_unit_missing": 0,
@@ -33,7 +33,7 @@
     },
     "[휴맥스홀딩스]연결감사보고서(2025.03.19).pdf": {
       "tol": 0.0,
-      "recorded": "2026-08-09",
+      "recorded": "2026-08-14",
       "_설명": "연결·171p. 4번째 축 — 본표 원 / 주석 천원 혼합 단위 회사 (C 대사 원 환산 검증용)",
       "_단위구조": "본표 4표(p8·10·11·12)=원 / 주석 대부분=천원 / min_won 1억 기준 C 성립 67·미성립 15",
       "_복합단위_제외표": "p71t2(KRW·USD·PLN) p88t2 p89t1 p106t1 p111t3 p141t1 p142t2 p167t2·t3 p168t1 — C 대사 제외 + 통화 헤더 열 있는 행별 통화 표는 A 전체 SKIP, 그 외 복합 단위는 A2만 SKIP",
@@ -56,7 +56,7 @@
         "C7_missing": 0,
         "C7_unref": 13,
         "D_paragraphs": 516,
-        "D_flags": 7,
+        "D_flags": 8,
         "consolidated": true,
         "pages_no_unit": 69,
         "F1_unit_missing": 2,

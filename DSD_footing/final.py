@@ -145,7 +145,7 @@ with pdfplumber.open(PDF) as pdf:
         txt=page.extract_text() or ""
         unit=find_unit(txt); st=stmt_type(txt)
         tobjs=page.find_tables()
-        pr=prose.check_page(page); paras=prose.paragraphs(page)
+        pr=prose.check_page(page)+prose.check_leading_space(page); paras=prose.paragraphs(page)
         if not tobjs and not pr and not paras: carry=None; continue
         if not unit: nounit.append(pi)
         buf=io.BytesIO(); c=canvas.Canvas(buf,pagesize=(W,H)); drew=False
