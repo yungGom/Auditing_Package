@@ -5,7 +5,7 @@ import pdfplumber
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import Color
-from core import check_table, verdict, find_unit, grid_info, mixed_currency
+from core import check_table, verdict, find_unit, grid_info, mixed_currency, is_total_label
 from statements import foot_hier, foot_a5, stmt_type, APPLY
 import tieout, notes, prose, refmap, consist
 
@@ -20,6 +20,8 @@ _ap.add_argument("--round-steps", dest="round_steps", type=int, default=1,
 _ap.add_argument("--min-won", dest="min_won", type=float, default=refmap.MIN_WON,
                  help="C 대사 소액 제외, 원 환산 절대금액 (기본 1억)")
 _ap.add_argument("--out", default=None, help="산출물 폴더 (기본: 입력 PDF와 같은 폴더)")
+_ap.add_argument("--terms", default=None,
+                 help="F2 기준 표현 CSV (한 줄에 표현 하나, # 주석). 미지정 시 빈도 기준")
 _ap.add_argument("--quiet", action="store_true", help="요약 출력 생략")
 _cli, _ = _ap.parse_known_args()                 # --update-gates 등은 gates.py가 처리
 if not _cli.pdf:
@@ -56,6 +58,20 @@ try:
 except Exception:
     VER = "nogit"
 RUN_TS = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+# ── F2 기준 표현 (고정 템플릿, 선택) ──
+# 회계법인/조서 관행상 기준 표현이 정해져 있으면 빈도 대신 그 표현을 주된 표기로 쓴다.
+# 파일이 없거나 미지정이면 현행(빈도 기준) 동작 그대로.
+TERMS = set()
+if _cli.terms:
+    try:
+        with open(_cli.terms, encoding="utf-8-sig") as _tf:
+            for _ln in _tf:
+                _t = _ln.split(",")[0].strip()
+                if _t and not _t.startswith("#"):
+                    TERMS.add(_t.replace(" ", ""))
+    except OSError:
+        print(f"[경고] --terms 파일을 열 수 없습니다: {_cli.terms} — 빈도 기준으로 진행")
 RED=Color(0.78,0.08,0.08)          # 감사조서 관행: 빨간펜 단일
 GRN=RED; AMB=RED                   # 구분은 색이 아니라 마크 모양으로
 
@@ -272,11 +288,16 @@ _frows=[]
 for p_ in FCON["F1_단위누락"]:
     _frows.append(["F1 단위누락", p_, "-", "금액 표가 있으나 (단위: ) 표기 없음", ""])
 for g_, forms in FCON["F2_표현불일치"]:
-    dom = max(forms.items(), key=lambda x: x[1][0])
+    _pref = [f_ for f_ in forms if f_ in TERMS]       # 기준 표현 지정 시 빈도보다 우선
+    if _pref:
+        dom = (_pref[0], forms[_pref[0]]); _why = f"기준 표현 '{dom[0]}'(지정)과 불일치"
+    else:
+        dom = max(forms.items(), key=lambda x: x[1][0])
+        _why = f"주된 표현 '{dom[0]}'({dom[1][0]}회)과 불일치"
     for f_, (n_, ps_) in sorted(forms.items(), key=lambda x: -x[1][0]):
         if f_ == dom[0]: continue
         _frows.append(["F2 표현불일치", ps_[0] if ps_ else "-", f_,
-                       f"주된 표현 '{dom[0]}'({dom[1][0]}회)과 불일치 — {n_}회",
+                       f"{_why} — {n_}회",
                        " ".join(f"p{x}" for x in ps_)])
 for k_, forms, tot in FCON["F3_라벨불일치"]:
     dom = max(forms.items(), key=lambda x: x[1][0])
