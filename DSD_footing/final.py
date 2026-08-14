@@ -121,6 +121,24 @@ for (pg_,tb_,rw_,cl_), lbls in TAGS.items(): tagmap[(pg_,tb_)].append((rw_,cl_,l
 
 exc=[]; overlays={}; carry=None; stat=collections.Counter(); nounit=[]; pros=[]; npara=0
 SUBLOG=[]                              # 하위항목(소계 귀속) 판정 로그 — 경로별 검증용
+SPLIT_SUSPECT=[]                       # 분할 의심 페이지 전환 — 참고 정보 (판정 무영향)
+
+def ends_open(tb):
+    """표의 마지막 데이터 행이 합계행(계·총계류)이 아니면 True — 분할 의심 신호.
+    3축 전수 계측(2026-08): 표준 분할 5건은 carry가 전부 병합. 이 신호는 3축에 없는
+    조판(헤더 반복형 등)이 실전에서 나타날 때 조용히 넘어가지 않게 하는 탐지기다."""
+    try:
+        G, K, V, hdr, ncol, nrow, numcols = grid_info(tb)
+        if not numcols: return False
+        first_num = min(numcols)
+        for i in range(nrow - 1, hdr - 1, -1):
+            if any(K[i][j] == "NUM" for j in numcols):
+                lab = next((G[i][j] for j in range(first_num)
+                            if G[i][j] and K[i][j] == "TEXT"), "")
+                return not is_total_label(lab)
+        return False
+    except Exception:
+        return False
 with pdfplumber.open(PDF) as pdf:
     for pi,page in enumerate(pdf.pages,1):
         W,H=page.width,page.height
@@ -147,10 +165,20 @@ with pdfplumber.open(PDF) as pdf:
             if not data or len(data)<2: continue
             off=0
             if ti==1 and carry is not None:
+                _why=None
                 try:
                     _,_,_,h0,nc0,_,_=grid_info(data)
                     if h0==0 and nc0==carry[1]: off=len(carry[0]); data=carry[0]+data
-                except Exception: pass
+                    elif h0!=0: _why=f"헤더 반복(h0={h0})"
+                    else: _why=f"열수 불일치 {carry[1]}→{nc0}"
+                except Exception: _why="grid_info 실패"
+                # 분할 의심: 앞 페이지 마지막 표가 합계행 없이 끝났는데 병합되지 않음.
+                # 참고 정보만 — A/B/C 지표·판정에 영향 없음. 오탐 다수(다음 주석의 새 표).
+                if _why and len(carry)>3 and carry[2]:
+                    SPLIT_SUSPECT.append(dict(prev=carry[3], page=pi, reason=_why))
+                    c.setFillColor(Color(0.55,0.55,0.55)); c.setFont("Helvetica",5.4)
+                    c.drawString(36,18,f"? split-suspect p{carry[3]}->p{pi} ({_why}) - reference only")
+                    drew=True
             x0s=[]                                       # 첫 열 라벨 x0 — 들여쓰기 하위항목 판정용
             pwords = page.extract_words()
             for rr in t.rows:
@@ -233,7 +261,9 @@ with pdfplumber.open(PDF) as pdf:
                                 r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],
                                 {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증","SIGN":"미검증"}[v],tg])
         try:
-            _,_,_,_,ncL,_,_=grid_info(tobjs[-1].extract()); carry=(tobjs[-1].extract(),ncL)
+            _last=tobjs[-1].extract()
+            _,_,_,_,ncL,_,_=grid_info(_last)
+            carry=(_last,ncL,ends_open(_last),pi)
         except Exception: carry=None
         if drew:
             c.setFillColor(Color(0.35,0.35,0.35)); c.setFont("Helvetica",5.4)
@@ -328,6 +358,10 @@ sheet("요약",["항목","값"],
        ["min_won(C 소액 제외, 원)",MINWON],["연결 구조 감지",str(cons)],
        ["단위 미표기 페이지",str(nounit or "없음")],
        ["도구 버전(커밋)",VER],["실행 일시",RUN_TS],
+       ["분할 의심 페이지 전환(참고)",
+        (f"{len(SPLIT_SUSPECT)}건 — " +
+         ", ".join(f"p{s['prev']}→p{s['page']}({s['reason']})" for s in SPLIT_SUSPECT))
+        if SPLIT_SUSPECT else "없음"],
        ["범위","표시 수치 상호 정합성 한정. 원장·조서 대사는 별도 절차."]],[30,60])
 wb.save(OUT_XLSX)
 if not QUIET:
@@ -344,4 +378,5 @@ if not QUIET:
     for e in _sub_ind:
         print(f"  [들여쓰기] p{e['ctx'][0]} 표{e['ctx'][1]} 행{e['row']} '{e['label']}' ← 상위 '{e['parent']}' ({e['path']})")
     print(f"연결 감지 {cons} · 단위 미표기 {nounit or '없음'} · 허용오차 ±{TOL:g}")
+    print(f"분할 의심 페이지 전환(참고) → {len(SPLIT_SUSPECT)}건")
 print(f"산출물: {OUT_PDF} · {OUT_XLSX}")
