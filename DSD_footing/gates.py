@@ -29,12 +29,23 @@ def _load():
     return doc
 
 
+def _print_unresolved(doc):
+    """GATES.json 최상위 _unresolved 목록을 매 실행마다 노출한다 — 미해결 회귀 항목이
+    문서에만 적히면 묻힌다는 판단(2026-08-14). 게이트 통과/실패와 무관하게 항상 찍는다."""
+    items = (doc or {}).get("_unresolved", [])
+    if not items: return
+    print(f"[GATES] 미해결 항목 {len(items)}건 (착수 대기):")
+    for it in items:
+        print(f"[GATES]   - {it.get('id','?')}: {it.get('title','')} (상태: {it.get('status','?')})")
+
+
 def check(metrics, pdf, tol):
     """metrics(dict)를 해당 샘플 축과 대조. 일치/생략 True, 어긋남 False."""
     name = os.path.basename(pdf)
     update = "--update-gates" in sys.argv or os.environ.get("GATES_UPDATE") == "1"
     doc = _load()
     if doc is None: return True
+    _print_unresolved(doc)
     if update:
         doc.setdefault("comment",
             "final.py 회귀 스냅샷 — 등록된 샘플·허용오차로 실행 시 자동 대조. 갱신: --update-gates")
