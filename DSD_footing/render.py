@@ -9,7 +9,7 @@ mediabox에서 읽는다(4축 실측: pdfplumber page.width/height와 오차 0, 
 R-1(바이트 동등)이 관문이다: 마크를 seq(원래 그리기 순서) 그대로 재생하므로,
 같은 marks.json이면 이 파일이 만드는 오버레이 바이트가 분리 이전 코드와 동일하다.
 """
-import io, json, os, sys, time
+import argparse, io, json, os, sys, time
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import Color
 from pypdf import PdfReader, PdfWriter
@@ -134,8 +134,13 @@ def render_page(marks_for_page, notes_for_page, W, H, run_meta):
     return buf.getvalue()
 
 
-def render_all(pdf_path, marks_doc, out_path, quiet=False):
-    """marks_doc(marks.json을 로드한 dict) + 원본 PDF → 틱마크 PDF (전체 페이지)."""
+def render_all(pdf_path, marks_doc, out_path, pages=None, existing_out=None, quiet=False):
+    """marks_doc(marks.json을 로드한 dict) + 원본 PDF → 틱마크 PDF.
+
+    pages         : 렌더할 페이지 번호 집합(1-based). None이면 전체(기본 실행 경로).
+    existing_out  : pages 지정 시, 그 밖의 페이지는 이 파일의 기존 렌더 결과를 그대로
+                    쓴다(부분 렌더 후 기존 출력에 병합). 없으면 원본 페이지(마크 없음).
+    """
     t0 = time.time()
     by_page = {}
     for m in marks_doc["marks"]:
@@ -145,28 +150,43 @@ def render_all(pdf_path, marks_doc, out_path, quiet=False):
         notes_by_page.setdefault(n["page"], []).append(n)
 
     src = PdfReader(pdf_path)
+    npages = len(src.pages)
+    target_pages = set(pages) if pages else set(range(1, npages + 1))
+
+    existing_reader = None
+    if existing_out and os.path.isfile(existing_out):
+        # 전량 메모리로 읽는다 — existing_out이 out_path와 같은 경로인 경우(부분 렌더의
+        # 통상적 사용법)가 많은데, PdfReader가 파일을 지연 로딩한 채로 두면 아래에서
+        # out_path를 쓰기 모드로 열 때 원본이 잘려나가 페이지가 빈 채로 읽힌다(실측
+        # 확인). 쓰기 시작 전에 통째로 버퍼링해 원본 파일 핸들과 완전히 분리한다.
+        with open(existing_out, "rb") as f:
+            existing_reader = PdfReader(io.BytesIO(f.read()))
+
     writer = PdfWriter()
     for i, pg in enumerate(src.pages, 1):
-        mb = pg.mediabox
-        W, H = float(mb.width), float(mb.height)
-        overlay = render_page(by_page.get(i, []), notes_by_page.get(i, []), W, H, marks_doc["run"])
-        if overlay:
-            pg.merge_page(PdfReader(io.BytesIO(overlay)).pages[0])
+        if i in target_pages:
+            mb = pg.mediabox
+            W, H = float(mb.width), float(mb.height)
+            overlay = render_page(by_page.get(i, []), notes_by_page.get(i, []), W, H, marks_doc["run"])
+            if overlay:
+                pg.merge_page(PdfReader(io.BytesIO(overlay)).pages[0])
+        elif existing_reader is not None and i <= len(existing_reader.pages):
+            pg = existing_reader.pages[i - 1]
         writer.add_page(pg)
     with open(out_path, "wb") as f:
         writer.write(f)
     if not quiet:
-        print(f"렌더 소요: {time.time()-t0:.3f}s ({len(src.pages)}페이지)")
+        print(f"렌더 소요: {time.time()-t0:.3f}s ({len(target_pages)}페이지)")
     return out_path
 
 
 if __name__ == "__main__":
-    import argparse
     ap = argparse.ArgumentParser(prog="render",
         description="marks.json + 원본 PDF → 틱마크 PDF (분석 재실행 없음, 완전 오프라인)")
     ap.add_argument("pdf")
     ap.add_argument("--marks", required=True, help="marks.json 경로")
     ap.add_argument("--out", default=None, help="산출물 경로 (기본: <원본>_틱마크.pdf, 입력 폴더)")
+    ap.add_argument("--pages", default=None, help="쉼표구분 페이지 번호만 재렌더, 예: 12,13")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
     if not os.path.isfile(a.pdf):
@@ -178,5 +198,6 @@ if __name__ == "__main__":
     base = os.path.splitext(os.path.basename(a.pdf))[0]
     outdir = os.path.dirname(os.path.abspath(a.pdf))
     out = a.out or os.path.join(outdir, base + "_틱마크.pdf")
-    render_all(a.pdf, doc, out, quiet=a.quiet)
+    pages = {int(x) for x in a.pages.split(",") if x.strip()} if a.pages else None
+    render_all(a.pdf, doc, out, pages=pages, existing_out=(out if pages else None), quiet=a.quiet)
     print(f"산출물: {out}")
