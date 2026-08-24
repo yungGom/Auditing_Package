@@ -70,6 +70,10 @@ gates.py       게이트 대조·기록 로직
 render_gate.py 렌더 회귀 게이트 (RENDER_GATES.json 4축 오버레이 바이트 대조, R-1 고정)
 screen.py      스크리너 — 신규 샘플 축 붕괴 자동 탐지, 정밀 축 승격 후보 선별
 intake_check.py 파일 반입 무결성 가드 (pre-commit 훅이 강제)
+l2_extract.py  L2 표간대사 — PDF → 원시 튜플 추출 (raw_label 단계, 판정 없음)
+l2_labels.py   L2 표간대사 — labels/*.json 로드·검증 + 매칭 엔진 (CONFIRMED/UNDECLARED/EXCLUDED)
+l2_probe.py    L2 표간대사 — 단독 CLI 진입점 (콘솔+xlsx, marks.json 편입 안 함)
+labels/        L2 회사별 라벨 매핑 사전(JSON) — _common.json + {회사}.json
 ```
 
 실행: `python foot.py <보고서.pdf>` (또는 run.bat에 PDF 드래그)
@@ -78,6 +82,13 @@ intake_check.py 파일 반입 무결성 가드 (pre-commit 훅이 강제)
   산출물: 입력 PDF 폴더에 `<원본이름>_틱마크.pdf` / `<원본이름>_예외색인.xlsx`
   구형 `python final.py <보고서.pdf> <허용오차>` 형태도 계속 동작.
   run.bat은 ASCII 전용 유지 — 배치 내 한글은 콘솔 코드페이지에 따라 깨진다.
+
+L2 표간대사(단독, marks.json 미편입): `python l2_probe.py <보고서.pdf>`
+  `--company <이름>` (기본: 파일명 `[회사명]...` 자동 추출) `--out <폴더>` `--quiet`
+  산출물: `<원본>_L2대사.xlsx`(CONFIRMED/UNDECLARED/EXCLUDED/UNMAPPED/WARNINGS) +
+  UNDECLARED 있으면 `<원본>_undeclared_suggestions.json`(assert_equal 붙여넣기용).
+  회사 사전(`labels/{회사}.json`)의 `applies_to`가 파일명과 완전일치해야 적용된다 —
+  scope가 그 문서 하나의 주석 번호 배치에 묶여 있어서다(설계안_L2_표간대사.md 9-4절).
 
 편집 후 재렌더(분석 재실행 없음, Phase 1): `python render.py <보고서.pdf> --marks <원본>_marks.json`
   옵션: `--pages 12,13` (해당 페이지만 재렌더 후 기존 틱마크 PDF에 병합) `--out` `--quiet`
