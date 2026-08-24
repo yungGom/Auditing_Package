@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
-"""DSD 풋팅 엔진 — 통합 실행 (A1·A2·A3·A5·A7·B·C7·F1). 완전 오프라인."""
-import argparse, datetime, io, os, subprocess, sys, collections
+"""DSD 풋팅 엔진 — 통합 실행 (A1·A2·A3·A5·A7·B·C7·F1). 완전 오프라인.
+
+Phase 1(판정/렌더 분리, 2026-08-14): 이 파일은 분석만 한다. 마크는 픽셀이 아니라
+marks.py가 직렬화하는 데이터(<원본>_marks.json)이고, 실제 그리기는 render.py가
+전담한다. `python foot.py`만 쓰면 현행과 동일하게 동작한다(내부적으로 marks.json도
+함께 생성된다). 편집 후 재렌더는 `python render.py --marks ...`를 직접 쓴다.
+"""
+import argparse, collections, datetime, os, subprocess, sys, time
 import pdfplumber
-from pypdf import PdfReader, PdfWriter
-from reportlab.pdfgen import canvas
-from reportlab.lib.colors import Color
 from core import check_table, verdict, find_unit, grid_info, mixed_currency, is_total_label
 from statements import foot_hier, foot_a5, stmt_type, APPLY
 import tieout, notes, prose, refmap, consist
+import marks as marksio
+import render as renderer
 
 _ap = argparse.ArgumentParser(prog="foot",
     description="DSD 풋팅 — 표시 수치 정합성 검증 → <원본>_틱마크.pdf / <원본>_예외색인.xlsx "
@@ -49,6 +54,7 @@ _outdir = _cli.out or (os.path.dirname(os.path.abspath(PDF)) or ".")
 os.makedirs(_outdir, exist_ok=True)
 OUT_PDF = os.path.join(_outdir, _base + "_틱마크.pdf")
 OUT_XLSX = os.path.join(_outdir, _base + "_예외색인.xlsx")
+MARKS_JSON = os.path.join(_outdir, _base + "_marks.json")
 
 # ── 버전 스탬프 (감사조서 추적성) ──
 try:
@@ -72,43 +78,6 @@ if _cli.terms:
                     TERMS.add(_t.replace(" ", ""))
     except OSError:
         print(f"[경고] --terms 파일을 열 수 없습니다: {_cli.terms} — 빈도 기준으로 진행")
-RED=Color(0.78,0.08,0.08)          # 감사조서 관행: 빨간펜 단일
-GRN=RED; AMB=RED                   # 구분은 색이 아니라 마크 모양으로
-
-def tick(c,x,y,col,s=6.5):
-    c.setStrokeColor(col); c.setLineWidth(1.4); c.setLineCap(1)
-    p=c.beginPath(); p.moveTo(x,y+s*0.32); p.lineTo(x+s*0.36,y); p.lineTo(x+s*1.05,y+s*0.95)
-    c.drawPath(p,stroke=1,fill=0)
-def slash(c, x_end, t0, b0, H, col):
-    """검토 완료 사선(/) — 줄글 문단 마지막 줄 끝에 표시"""
-    yb, yt = H-b0, H-t0
-    h = max(yt-yb, 8.0)
-    c.setStrokeColor(col); c.setLineCap(1); c.setLineWidth(1.2)
-    c.line(x_end+3.5, yb+0.2, x_end+3.5+h*0.40, yb+h*0.95)
-
-def circle(c, x0, t0, x1, b0, H, col):
-    """레퍼 성립 — 본표 주석번호에 타원"""
-    cx=(x0+x1)/2; cy=H-(t0+b0)/2; rx=(x1-x0)/2+2.8; ry=(b0-t0)/2+1.8
-    c.setStrokeColor(col); c.setLineWidth(0.8)
-    c.ellipse(cx-rx, cy-ry, cx+rx, cy+ry, stroke=1, fill=0)
-
-def reftag(c, x1, t0, b0, H, col, text, W):
-    """레퍼 성립 — 주석 숫자 위쪽에 /BS, FN6 (지면 밖 방지)"""
-    c.setFillColor(col); c.setFont("Helvetica-Bold", 5.2)
-    w = c.stringWidth(text, "Helvetica-Bold", 5.2)
-    x = min(x1 + 2.0, W - w - 6.0)
-    c.drawString(x, H - t0 - 5.2, text)
-
-def flag_word(c, x0, t0, x1, b0, H, col):
-    """표기 지적 — 어절에 밑줄 + X"""
-    yb, yt = H-b0, H-t0
-    c.setStrokeColor(col); c.setLineCap(1)
-    c.setLineWidth(0.6); c.line(x0, yb+0.6, x1, yb+0.6)
-    cross(c, x1+3.0, yb+1.0, col, 5.0)
-
-def cross(c,x,y,col,s=6.5):
-    c.setStrokeColor(col); c.setLineWidth(1.5); c.setLineCap(1)
-    c.line(x,y,x+s,y+s); c.line(x,y+s,x+s,y)
 
 FCON = consist.report(PDF)
 CIR, TAGS, RDIFF, RLINKS, RUN, RMAIN, REXCL = refmap.marks(PDF, TOL, MINWON)
@@ -119,9 +88,13 @@ for x in RDIFF: dmap[(x["page"], x["table"])].append(x)
 tagmap=collections.defaultdict(list)
 for (pg_,tb_,rw_,cl_), lbls in TAGS.items(): tagmap[(pg_,tb_)].append((rw_,cl_,lbls))
 
-exc=[]; overlays={}; carry=None; stat=collections.Counter(); nounit=[]; pros=[]; npara=0
+exc=[]; stat=collections.Counter(); nounit=[]; pros=[]; npara=0
 SUBLOG=[]                              # 하위항목(소계 귀속) 판정 로그 — 경로별 검증용
 SPLIT_SUSPECT=[]                       # 분할 의심 페이지 전환 — 참고 정보 (판정 무영향)
+MARKS=[]                               # 마크 데이터 (픽셀이 아니라 데이터 — Phase 1)
+A2_OCC=collections.defaultdict(int)    # (page,table,row)별 발생 순번 — A2는 col 필드가
+                                        # 없어(이중 합계열 시 같은 행에 여러 A2 가능) id
+                                        # 계산에만 쓰는 보조 카운터. bbox 산출 로직은 불변.
 
 def ends_open(tb):
     """표의 마지막 데이터 행이 합계행(계·총계류)이 아니면 True — 분할 의심 신호.
@@ -139,26 +112,41 @@ def ends_open(tb):
         return False
     except Exception:
         return False
+
+_T0 = time.time()
+carry=None
 with pdfplumber.open(PDF) as pdf:
     for pi,page in enumerate(pdf.pages,1):
-        W,H=page.width,page.height
+        SEQ=0                                        # 페이지별 원 그리기 순서 — R-1의 핵심
         txt=page.extract_text() or ""
         unit=find_unit(txt); st=stmt_type(txt)
         tobjs=page.find_tables()
-        pr=prose.check_page(page)+prose.check_leading_space(page); paras=prose.paragraphs(page)
+        pr_d=prose.check_page(page); pr_f6=prose.check_leading_space(page)
+        pr=pr_d+pr_f6; paras=prose.paragraphs(page)
         if not tobjs and not pr and not paras: carry=None; continue
         if not unit: nounit.append(pi)
-        buf=io.BytesIO(); c=canvas.Canvas(buf,pagesize=(W,H)); drew=False
-        for gp in [g for g in FCON["F4_다중공백"] if g["page"]==pi]:
+        for _gi,gp in enumerate([g for g in FCON["F4_다중공백"] if g["page"]==pi]):
             x0,t0,x1,b0 = gp["bbox"]
-            c.setStrokeColor(RED); c.setLineWidth(0.9); c.setLineCap(1)
-            c.line(x0+0.5, H-b0+1.0, x1-0.5, H-t0-1.0)
-            c.line(x0+0.5, H-t0-1.0, x1-0.5, H-b0+1.0); drew=True
-        for pg_ in paras:
-            slash(c, pg_["bbox"][0], pg_["bbox"][1], pg_["bbox"][2], H, RED); drew=True
+            MARKS.append(dict(id=marksio.mid("gapx","F4",pi,extra=_gi), seq=SEQ, page=pi, kind="gapx",
+                box=marksio.box4(x0,t0,x1,b0), text=None,
+                source=dict(check="F4", table=None, row=None, col=None, label=None), verdict=None,
+                evidence=dict(before=gp["before"], after=gp["after"]),
+                origin="tool", status="active", note=None)); SEQ+=1
+        for _pidx,pg_ in enumerate(paras):
+            x_end,ptop,pbot = pg_["bbox"]
+            MARKS.append(dict(id=marksio.mid("slash","D",pi,extra=_pidx), seq=SEQ, page=pi, kind="slash",
+                box=marksio.box4(x_end,ptop,x_end,pbot), text=None,
+                source=dict(check="D", table=None, row=None, col=None, label=None), verdict=None,
+                evidence=dict(nline=pg_["nline"], preview=pg_["text"]),
+                origin="tool", status="active", note=None)); SEQ+=1
             npara += 1
-        for pz in pr:
-            flag_word(c, *pz["bbox"], H, RED); drew=True
+        for _fi,pz in enumerate(pr):
+            _chk = "D" if _fi < len(pr_d) else "F6"
+            MARKS.append(dict(id=marksio.mid("flagword",_chk,pi,extra=_fi), seq=SEQ, page=pi, kind="flagword",
+                box=marksio.box4(*pz["bbox"]), text=None,
+                source=dict(check=_chk, table=None, row=None, col=None, label=pz["text"]), verdict=None,
+                evidence=dict(msg=pz["msg"], level=pz["level"]),
+                origin="tool", status="active", note=None)); SEQ+=1
             pros.append([pi, pz["text"], pz["msg"], pz["level"]])
         for ti,t in enumerate(tobjs,1):
             data=t.extract()
@@ -175,10 +163,7 @@ with pdfplumber.open(PDF) as pdf:
                 # 분할 의심: 앞 페이지 마지막 표가 합계행 없이 끝났는데 병합되지 않음.
                 # 참고 정보만 — A/B/C 지표·판정에 영향 없음. 오탐 다수(다음 주석의 새 표).
                 if _why and len(carry)>3 and carry[2]:
-                    SPLIT_SUSPECT.append(dict(prev=carry[3], page=pi, reason=_why))
-                    c.setFillColor(Color(0.55,0.55,0.55)); c.setFont("Helvetica",5.4)
-                    c.drawString(36,18,f"? split-suspect p{carry[3]}->p{pi} ({_why}) - reference only")
-                    drew=True
+                    SPLIT_SUSPECT.append(dict(prev=carry[3], page=pi, reason=_why, seq=SEQ)); SEQ+=1
             x0s=[]                                       # 첫 열 라벨 x0 — 들여쓰기 하위항목 판정용
             pwords = page.extract_words()
             for rr in t.rows:
@@ -212,25 +197,47 @@ with pdfplumber.open(PDF) as pdf:
                     if not (bb[0]-1 <= wd["x0"] and wd["x1"] <= bb[2]+1
                             and bb[1]-1 <= wd["top"] and wd["bottom"] <= bb[3]+1): continue
                     txt = wd["text"].strip()
-                    if txt.rstrip(",") in want:
+                    note_num = txt.rstrip(",")
+                    if note_num in want:
                         x1w = wd["x1"]
                         if txt.endswith(","):            # 뒤 쉼표는 원 밖으로
                             x1w -= (wd["x1"]-wd["x0"]) / max(len(txt),1) * 0.75
-                        circle(c, wd["x0"], wd["top"], x1w, wd["bottom"], H, RED)
-                        drew=True
+                        MARKS.append(dict(
+                            id=marksio.mid("circle","C",pi,table=ti,row=x["row"],extra=f"n{note_num}"),
+                            seq=SEQ, page=pi, kind="circle",
+                            box=marksio.box4(wd["x0"], wd["top"], x1w, wd["bottom"]), text=None,
+                            source=dict(check="C", table=ti, row=x["row"], col=x["ncol"], label=note_num),
+                            verdict=None, evidence=dict(notes=sorted(x["notes"])),
+                            origin="tool", status="active", note=None)); SEQ+=1
             for rw_, cl_, lbls in tagmap.get((pi,ti), []):
                 bb = cellbox(rw_+off, cl_)
                 if bb:
                     seen=[]; [seen.append(l) for l in lbls if l not in seen]
-                    reftag(c, bb[2], bb[1], bb[3], H, RED, " ".join(seen[:2]), W); drew=True
+                    _txt=" ".join(seen[:2])
+                    MARKS.append(dict(id=marksio.mid("reftag","C",pi,table=ti,row=rw_,col=cl_),
+                        seq=SEQ, page=pi, kind="reftag",
+                        box=marksio.box4(*bb), text=_txt,
+                        source=dict(check="C", table=ti, row=rw_, col=cl_, label=None),
+                        verdict=None, evidence=dict(labels=seen),
+                        origin="tool", status="active", note=None)); SEQ+=1
             for x in dmap.get((pi,ti), []):
                 bb = cellbox(x["row"]+off, x["col"])
                 if bb:
-                    cross(c, bb[2]+2.0, H-bb[3]+1.5, RED, 5.0); drew=True
-                    c.setFont("Helvetica-Bold",5.4); c.setFillColor(RED)
-                    c.drawString(bb[2]+9, H-bb[3]+2.0, f"{x['diff']:+,.0f} {x['where']}")
+                    _txt=f"{x['diff']:+,.0f} {x['where']}"
+                    MARKS.append(dict(id=marksio.mid("cross","C",pi,table=ti,row=x["row"],col=x["col"]),
+                        seq=SEQ, page=pi, kind="cross",
+                        box=marksio.box4(*bb), text=_txt,
+                        source=dict(check="C", table=ti, row=x["row"], col=x["col"], label=x.get("label")),
+                        verdict=None, evidence=dict(val=x.get("val"), other=x.get("other"),
+                                                    diff=x["diff"], where=x["where"]),
+                        origin="tool", status="active", note=None)); SEQ+=1
             for r in rs:
                 v=verdict(r,TOL,RSTEPS); stat[v]+=1
+                # '1원차이' 태그 — 원 단위 표에서 |차이|<=1이면 일괄 확인용 표시.
+                # 판정은 바꾸지 않는다 (원 단위는 반올림이 없어 흡수 금지 — 회계사 확인 대상)
+                tg = ("부호규약" if v == "SIGN" else
+                      "1원차이" if v == "DIFF" and abs(r["calc"]-r["disp"]) <= 1
+                      and (TUNIT.get((pi,ti)) or "").strip() == "원" else "")
                 gi=r.get("row"); bbox=None
                 if gi is not None:
                     gi-=off
@@ -241,22 +248,24 @@ with pdfplumber.open(PDF) as pdf:
                             for cc in reversed(cells):
                                 if cc: bbox=cc; break
                 if bbox:
-                    x0,t0,x1,b0=bbox; y=H-b0+2.0; x=x1-1.5
-                    if v=="OK": tick(c,x,y,GRN); drew=True
-                    elif v=="ROUND": tick(c,x,y,AMB); drew=True
-                    elif v=="DIFF":
-                        cross(c,x,y,RED); drew=True
-                        c.setFont("Helvetica-Bold",5.6); c.setFillColor(RED)
-                        c.drawString(x+9,y+0.6,f"{r['calc']-r['disp']:+,.0f}")
-                    else:
-                        c.setFont("Helvetica-Bold",7.5); c.setFillColor(AMB)
-                        c.drawString(x,y,"?"); drew=True
+                    x0,t0,x1,b0=bbox
+                    _kind = {"OK":"tick","ROUND":"tick","DIFF":"cross"}.get(v, "question")
+                    _text = f"{r['calc']-r['disp']:+,.0f}" if v == "DIFF" else None
+                    _col_for_id = r.get("col")
+                    if _col_for_id is None:
+                        _a2key = (pi, ti, r.get("row"))
+                        _col_for_id = f"x{A2_OCC[_a2key]}"; A2_OCC[_a2key] += 1
+                    MARKS.append(dict(
+                        id=marksio.mid(_kind, r["kind"], pi, table=ti, row=r.get("row"), col=_col_for_id),
+                        seq=SEQ, page=pi, kind=_kind,
+                        box=marksio.box4(x0,t0,x1,b0), text=_text,
+                        source=dict(check=r["kind"], table=ti, row=r.get("row"), col=r.get("col"),
+                                   label=r.get("label")),
+                        verdict=v,
+                        evidence=dict(disp=r["disp"], calc=r["calc"], diff=r["calc"]-r["disp"], n=r["n"],
+                                     unit=unit or "미표기", tag=(tg or None)),
+                        origin="tool", status="active", note=None)); SEQ+=1
                 if v in ("DIFF","ROUND","SKIP","SIGN"):
-                    # '1원차이' 태그 — 원 단위 표에서 |차이|<=1이면 일괄 확인용 표시.
-                    # 판정은 바꾸지 않는다 (원 단위는 반올림이 없어 흡수 금지 — 회계사 확인 대상)
-                    tg = ("부호규약" if v == "SIGN" else
-                          "1원차이" if v == "DIFF" and abs(r["calc"]-r["disp"]) <= 1
-                          and (TUNIT.get((pi,ti)) or "").strip() == "원" else "")
                     exc.append([pi,ti,r["kind"],r["label"],unit or "미표기",
                                 r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],
                                 {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증","SIGN":"미검증"}[v],tg])
@@ -265,20 +274,18 @@ with pdfplumber.open(PDF) as pdf:
             _,_,_,_,ncL,_,_=grid_info(_last)
             carry=(_last,ncL,ends_open(_last),pi)
         except Exception: carry=None
-        if drew:
-            c.setFillColor(Color(0.35,0.35,0.35)); c.setFont("Helvetica",5.4)
-            c.drawString(36,10,"tick=agreed  X=difference/wording  ?=not tested  /=narrative reviewed | local offline, candidate only"
-                         f" | v{VER} {RUN_TS} tol={TOL:g} steps={RSTEPS}")
-            c.save(); overlays[pi]=buf.getvalue()
+    _NPAGES = pi
+
+_T_ANALYZE = time.time() - _T0
 
 B,cons = tieout.run(PDF)
 decl,refs,miss,unref,gap = notes.run(PDF)
 
-src=PdfReader(PDF); w=PdfWriter()
-for i,pg in enumerate(src.pages,1):
-    if i in overlays: pg.merge_page(PdfReader(io.BytesIO(overlays[i])).pages[0])
-    w.add_page(pg)
-with open(OUT_PDF,"wb") as f: w.write(f)
+RUN_META = {"commit": VER, "at": RUN_TS,
+            "params": {"tol": TOL, "round_steps": RSTEPS, "min_won": MINWON,
+                       "terms": (_cli.terms or None)}}
+MARKS_DOC = marksio.save(MARKS_JSON, PDF, MARKS, SPLIT_SUSPECT, RUN_META, _NPAGES)
+renderer.render_all(PDF, MARKS_DOC, OUT_PDF, quiet=QUIET)
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -379,4 +386,5 @@ if not QUIET:
         print(f"  [들여쓰기] p{e['ctx'][0]} 표{e['ctx'][1]} 행{e['row']} '{e['label']}' ← 상위 '{e['parent']}' ({e['path']})")
     print(f"연결 감지 {cons} · 단위 미표기 {nounit or '없음'} · 허용오차 ±{TOL:g}")
     print(f"분할 의심 페이지 전환(참고) → {len(SPLIT_SUSPECT)}건")
+    print(f"분석 소요: {_T_ANALYZE:.2f}s (마크 {len(MARKS)}개, marks.json: {MARKS_JSON})")
 print(f"산출물: {OUT_PDF} · {OUT_XLSX}")
