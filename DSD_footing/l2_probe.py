@@ -41,12 +41,18 @@ def run(pdf_path, company=None, out=None, quiet=False):
     company = company or _company_from_filename(pdf_path)
     labels_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "labels", f"{company}.json") \
         if company else None
-    has_dict = bool(labels_path and os.path.isfile(labels_path))
-    if has_dict and not _dict_applies(labels_path, pdf_path):
-        if not quiet:
-            print(f"[L2] labels/{company}.json은 이 문서에 적용되지 않습니다(applies_to 불일치) "
-                  f"— 공통 사전만 사용합니다.")
-        has_dict = False
+    dict_exists = bool(labels_path and os.path.isfile(labels_path))
+    dict_mismatch = dict_exists and not _dict_applies(labels_path, pdf_path)
+    has_dict = dict_exists and not dict_mismatch
+    warning = None
+    if dict_mismatch:
+        # 침묵 탈락 금지 — 사전이 있는데도 안 걸리면(파일명 불일치) UNMAPPED이
+        # 대량 발생해도 이유를 알 수 없다. --quiet와 무관하게 항상 알린다
+        # (2026-08-25 조건부 승인: 사전 미적용은 조용히 넘어가면 안 됨).
+        warning = (f"사전 labels/{company}.json이 이 문서에 적용되지 않았습니다 "
+                   f"(applies_to 불일치) — 공통 사전만 적용됩니다. "
+                   f"table_aliases+fingerprint(TABLE_SHIFT) 정식 구현 전 임시방편(CLAUDE.md 참고).")
+        print(f"[L2] *** 경고: {warning} ***")
     use_company = company if has_dict else None
 
     raw = l2_extract.extract(pdf_path)
@@ -71,7 +77,7 @@ def run(pdf_path, company=None, out=None, quiet=False):
     outdir = out or os.path.dirname(os.path.abspath(pdf_path))
     xlsx_path = os.path.join(outdir, base + "_L2대사.xlsx")
     sugg_path = os.path.join(outdir, base + "_undeclared_suggestions.json")
-    _save_xlsx(xlsx_path, res)
+    _save_xlsx(xlsx_path, res, warning)
     _save_suggestions(sugg_path, res, pdf_path)
     if not quiet:
         print(f"산출물: {xlsx_path}")
@@ -96,16 +102,38 @@ def _sheet(wb, name, hdr, rows, widths):
     return ws
 
 
+def _sign_flag(r):
+    """부호반전 열 표시 — 어느 쪽 값에 sign_overrides가 적용됐는지(회계사가 나중에
+    "여기 부호 뒤집었구나"를 바로 확인할 수 있어야 한다, 2026-08-25 조건부 승인)."""
+    tags = []
+    if r.get("sign_a", 1) != 1:
+        tags.append("A")
+    if r.get("sign_b", 1) != 1:
+        tags.append("B")
+    return ",".join(tags)
+
+
 def _finding_row(r):
     return [r["canonical_label"], r["column_key"] or "", r["period_key"] or "",
             r["table_a"], r["table_b"], r["won_a"], r["won_b"], r["diff"],
-            r["page_a"], r["page_b"]]
+            r["page_a"], r["page_b"], _sign_flag(r)]
 
 
-def _save_xlsx(path, res):
+def _save_xlsx(path, res, warning=None):
     wb = openpyxl.Workbook()
-    hdr = ["항목", "열", "기간", "표A", "표B", "값A(원)", "값B(원)", "차이(원)", "페이지A", "페이지B"]
-    widths = [22, 18, 10, 12, 12, 18, 18, 16, 8, 8]
+
+    if warning:
+        # 사전 미적용 경고 — xlsx를 열자마자 보이도록 맨 앞 시트(2026-08-25 조건부 승인,
+        # 침묵 탈락 금지: 사전이 안 걸린 걸 회계사가 UNMAPPED 폭증만 보고는 모른다).
+        ws0 = wb.create_sheet("⚠경고")
+        ws0.append(["사전이 적용되지 않았습니다"])
+        ws0["A1"].font = Font(bold=True, size=14, color="C00000")
+        ws0.append([warning])
+        ws0.column_dimensions["A"].width = 100
+        ws0["A2"].alignment = Alignment(wrap_text=True)
+
+    hdr = ["항목", "열", "기간", "표A", "표B", "값A(원)", "값B(원)", "차이(원)", "페이지A", "페이지B", "부호반전"]
+    widths = [22, 18, 10, 12, 12, 18, 18, 16, 8, 8, 10]
 
     ws = _sheet(wb, "CONFIRMED", hdr, [_finding_row(r) for r in res["confirmed"]], widths)
     for row in ws.iter_rows(min_row=2):
@@ -114,11 +142,12 @@ def _save_xlsx(path, res):
         row[7].fill = PatternFill("solid", fgColor="FFC7CE")
 
     # UNDECLARED — 요청된 컬럼명(항목A/항목B/값A/값B/차이/출처 페이지, 2026-08-25 확정)
-    und_hdr = ["항목A", "항목B", "값A", "값B", "차이", "출처 페이지"]
+    # + 부호반전(같은 원칙 적용)
+    und_hdr = ["항목A", "항목B", "값A", "값B", "차이", "출처 페이지", "부호반전"]
     und_rows = [[f"{r['canonical_label']} ({r['table_a']})", f"{r['canonical_label']} ({r['table_b']})",
-                 r["won_a"], r["won_b"], r["diff"], f"p{r['page_a']}/p{r['page_b']}"]
+                 r["won_a"], r["won_b"], r["diff"], f"p{r['page_a']}/p{r['page_b']}", _sign_flag(r)]
                 for r in res["undeclared"]]
-    ws2 = _sheet(wb, "UNDECLARED", und_hdr, und_rows, [26, 26, 18, 18, 16, 12])
+    ws2 = _sheet(wb, "UNDECLARED", und_hdr, und_rows, [26, 26, 18, 18, 16, 12, 10])
     for row in ws2.iter_rows(min_row=2):
         for cc in row[2:4]:
             cc.number_format = "#,##0"
@@ -138,6 +167,7 @@ def _save_xlsx(path, res):
     _sheet(wb, "WARNINGS", ["유형", "표", "상세"], warn_rows, [14, 14, 50])
 
     wb.remove(wb["Sheet"])
+    wb.active = 0
     wb.save(path)
 
 

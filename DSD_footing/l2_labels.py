@@ -153,6 +153,7 @@ def build(pdf_path, company, raw_tuples):
         t2 = dict(t)
         t2["canonical_label"] = cl
         t2["signed_value"] = t["value"] * sign
+        t2["sign"] = sign
         tuples.append(t2)
         if t.get("weak_col"):
             weak.append(t2)
@@ -203,7 +204,8 @@ def build(pdf_path, company, raw_tuples):
                            value_a=a["signed_value"], value_b=b["signed_value"],
                            won_a=won_a, won_b=won_b, diff=won_b - won_a,
                            page_a=a["page"], page_b=b["page"],
-                           bbox_a=a["bbox"], bbox_b=b["bbox"])
+                           bbox_a=a["bbox"], bbox_b=b["bbox"],
+                           sign_a=a["sign"], sign_b=b["sign"])
                 reason = is_excluded(cl, tids[i], tids[j])
                 if reason is not None:
                     rec["reason"] = reason
