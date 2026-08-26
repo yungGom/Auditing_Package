@@ -147,13 +147,20 @@ def foot_hier(tb):
     res = []
 
     def pop_to(stack, p, depth, force_skip=False):
-        """depth 이하가 될 때까지 스택을 닫고 결과를 낸다. depth=None이면 전량 정산."""
+        """depth 이하가 될 때까지 스택을 닫고 결과를 낸다. depth=None이면 전량 정산.
+
+        acc 원소는 (값, 행, 열) 3튜플이다 — 합산에 들어간 자식 행을 operands로 넘기기
+        위함(값만으로는 지면에서 어느 행이었는지 되짚을 수 없다). 합계는 첫 원소만 쓴다."""
         while stack and (depth is None or stack[-1][0] <= depth):
             dd, kk, rr, dv, acc, rri, rcj = stack.pop()
             n = 0 if force_skip else (len(acc) if len(acc) >= 2 else 0)
             res.append(dict(kind="A3", period=p, label=rr[:26], row=rri, col=rcj,
-                            disp=dv, calc=sum(acc), n=n))
-            if stack: stack[-1][4].append(dv)
+                            disp=dv, calc=sum(a[0] for a in acc),
+                            operands=[dict(row=a[1], col=a[2]) for a in acc],
+                            reason=("A3_SPLIT_INCOMPLETE" if force_skip
+                                    else (None if len(acc) >= 2 else "A3_TOO_FEW_PARTS")),
+                            n=n))
+            if stack: stack[-1][4].append((dv, rri, rcj))
 
     for p in range(nper):
         stack = []
@@ -170,7 +177,7 @@ def foot_hier(tb):
             last_ri = ri
             pop_to(stack, p, d)
             if not is_parent:
-                if stack: stack[-1][4].append(vals[p])
+                if stack: stack[-1][4].append((vals[p], ri, colof.get(p)))
             else:
                 stack.append((d, k, raw, vals[p], [], ri, colof.get(p)))
         # 분할 미완결 — 표의 마지막 행이 부모로 판정됐고(다음 행이 없어 부모가 됨)
@@ -210,15 +217,16 @@ def foot_a5(tb):
             if tgt not in book: continue
             if not all(any(t.startswith(nm) or nm.startswith(t) for t in book) for _,nm in terms):
                 pass
-            s = 0.0; got = 0
+            s = 0.0; got = 0; ops = []
             for sg, nm in terms:
-                hit = next((v for kk,v in book.items() if kk == nm), None)
-                if hit is None:
-                    hit = next((v for kk,v in book.items() if kk.startswith(nm)), None)
-                if hit is None: continue
-                s += hit if sg == "+" else -hit
+                key_ = next((kk for kk in book if kk == nm), None)
+                if key_ is None:
+                    key_ = next((kk for kk in book if kk.startswith(nm)), None)
+                if key_ is None: continue
+                s += book[key_] if sg == "+" else -book[key_]
                 got += 1
+                ops.append(dict(row=rowof.get(key_), col=colof2.get(key_), sign=sg))
             if got < len(terms): continue
             res.append(dict(kind="A5", period=p, label=tgt, row=rowof.get(tgt), col=colof2.get(tgt),
-                            disp=book[tgt], calc=s, n=got))
+                            disp=book[tgt], calc=s, operands=ops, reason=None, n=got))
     return res

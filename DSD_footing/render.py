@@ -13,6 +13,7 @@ import argparse, io, json, os, sys, time
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import Color
 from pypdf import PdfReader, PdfWriter
+import marks as marksio
 
 RED = Color(0.78, 0.08, 0.08)          # 감사조서 관행: 빨간펜 단일 (설계 결정 #5, 고정)
 GRN = RED; AMB = RED                   # 구분은 색이 아니라 마크 모양으로
@@ -114,7 +115,9 @@ def render_page(marks_for_page, notes_for_page, W, H, run_meta):
     """→ 오버레이 단일 페이지 PDF 바이트, 그릴 것이 없으면 None.
     marks/notes를 seq(원래 그리기 순서)로 병합해 재생 — reportlab Canvas는 직전 상태와
     같은 색/굵기 설정을 내부적으로 생략하므로, 순서가 바뀌면 바이트도 바뀐다."""
-    items = [(m["seq"], "mark", m) for m in marks_for_page if m.get("status", "active") == "active"]
+    # status: pending(도구 제안, 미검토) · approved(회계사 이상없음) 둘 다 그린다 —
+    # 승인했다고 마크가 지면에서 사라지면 조서가 아니다. 빠지는 것은 removed뿐.
+    items = [(m["seq"], "mark", m) for m in marks_for_page if m.get("status") != "removed"]
     items += [(n["seq"], "note", n) for n in notes_for_page]
     if not items:
         return None
@@ -143,7 +146,9 @@ def render_all(pdf_path, marks_doc, out_path, pages=None, existing_out=None, qui
     """
     t0 = time.time()
     by_page = {}
-    for m in marks_doc["marks"]:
+    # v2: 검토 항목(marks)과 그리기 전용(annotations)이 나뉘어 있다. 그리는 쪽에서는
+    # 구분이 없으므로 합쳐서 seq 순으로 재생한다(v1 문서는 annotations가 없어 그대로 동작).
+    for m in marksio.drawables(marks_doc):
         by_page.setdefault(m["page"], []).append(m)
     notes_by_page = {}
     for n in marks_doc.get("page_notes", []):

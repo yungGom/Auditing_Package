@@ -240,7 +240,7 @@ def extract(pdf_path):
                                 bb = t.rows[i].cells[j] if i < len(t.rows) and j < len(t.rows[i].cells) else None
                                 tuples.append(dict(
                                     raw_label=skey(colname), column_key=None, period_key=pk_point,
-                                    doc_key="CUR", value=V[i][j], mult=mult, page=pi,
+                                    doc_key="CUR", value=V[i][j], raw_text=G[i][j], mult=mult, page=pi, table_seq=ti,
                                     table_id=table_id, bbox=bb, weak_col=False, row=i, col=j))
                             continue
                         if cur is None or not lab:
@@ -254,7 +254,7 @@ def extract(pdf_path):
                             bb = t.rows[i].cells[j] if i < len(t.rows) and j < len(t.rows[i].cells) else None
                             tuples.append(dict(
                                 raw_label=lab_n, column_key=ck, period_key=pk,
-                                doc_key="CUR", value=V[i][j], mult=mult, page=pi,
+                                doc_key="CUR", value=V[i][j], raw_text=G[i][j], mult=mult, page=pi, table_seq=ti,
                                 table_id=table_id, bbox=bb, weak_col=False, row=i, col=j))
                     continue
 
@@ -318,7 +318,7 @@ def extract(pdf_path):
                         bb = t.rows[i].cells[j] if i < len(t.rows) and j < len(t.rows[i].cells) else None
                         tuples.append(dict(
                             raw_label=lab_n, column_key=ck, period_key=pk,
-                            doc_key="CUR", value=V[i][j], mult=mult, page=pi,
+                            doc_key="CUR", value=V[i][j], raw_text=G[i][j], mult=mult, page=pi, table_seq=ti,
                             table_id=tid_row, bbox=bb, weak_col=weak, row=i, col=j))
     return tuples
 

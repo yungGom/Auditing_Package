@@ -8,7 +8,18 @@
 """
 import hashlib, json, os
 
-SCHEMA = "dsd-footing-marks/1"
+SCHEMA = "dsd-footing-marks/2"
+
+# rev.2가 말하는 "검토 항목(mark)" = 회계사가 판단 버튼을 누르는 대상.
+# 나머지(체크·사선·원·태그·조판지적)는 지면에 그려지기만 하는 표시라 annotations로 나눈다.
+# 실측 근거(조선내화 반기 307건): 검토 항목 8 / 그리기 전용 299 — 한 배열에 두면
+# 화면 카운터가 조용히 307로 부푼다(설계안_marks_스키마_v2.md 1절, 2026-08-25 승인).
+REVIEW_KINDS = ("cross", "question")
+
+# 좌표 규약 — box는 pdfplumber 원본(반올림 금지, R-1 전제), bbox는 화면용 파생이다.
+# 둘 다 좌상단 원점으로 통일한다: 변환을 넣는 순간 R-1 함정 1(반올림/재계산 오차)에
+# 걸리므로, bbox는 뺄셈 2회만으로 만든다.
+COORD_SPACE = "pdfplumber-topleft"
 
 
 def sha256_of(path):
@@ -40,22 +51,77 @@ def box4(x0, top, x1, bottom):
     return {"x0": x0, "top": top, "x1": x1, "bottom": bottom}
 
 
-def build(source_pdf, marks, page_notes, run_meta, npages):
-    marks_sorted = sorted(marks, key=lambda m: (m["page"], m["kind"], m["box"]["top"], m["box"]["x0"]))
+def type_of(m):
+    """rev.2 type — "diff" | "unverified".
+
+    C 레퍼 미성립(kind=cross, check=C)은 "금액이 틀렸다"가 아니라 "본표 금액을 주석에서
+    찾지 못했다"이다. 주석 세분 표시·단위 상이·미수록 공시관행이 대부분이고 전부 정상
+    공시라, diff로 세면 '차이 N건' 카운터에 정상 건이 섞인다 → unverified
+    (회계사 판단, 2026-08-25). 지면 글리프(✗)는 R-1 때문에 이번 라운드에서 바꾸지 않는다.
+    """
+    if m["kind"] == "question":
+        return "unverified"
+    if (m.get("source") or {}).get("check") == "C":
+        return "unverified"
+    return "diff"
+
+
+def bbox4(box):
+    """box(x0/top/x1/bottom) → rev.2 bbox [x, y, w, h]. 좌상단 원점 유지(COORD_SPACE)."""
+    return [box["x0"], box["top"], box["x1"] - box["x0"], box["bottom"] - box["top"]]
+
+
+def _counts(review, annots):
+    kinds = {}
+    for a in annots:
+        kinds[a["kind"]] = kinds.get(a["kind"], 0) + 1
+    return {
+        "ok":         kinds.get("tick", 0),
+        "diff":       sum(1 for m in review if m.get("type") == "diff"),
+        "unverified": sum(1 for m in review if m.get("type") == "unverified"),
+        "recon":      kinds.get("circle", 0) + kinds.get("reftag", 0),
+        "prose":      kinds.get("slash", 0),
+        "typo":       kinds.get("flagword", 0) + kinds.get("gapx", 0),
+    }
+
+
+def build(source_pdf, marks, page_notes, run_meta, npages, document=None):
+    _key = lambda m: (m["page"], m["kind"], m["box"]["top"], m["box"]["x0"])
+    review = sorted([m for m in marks if m["kind"] in REVIEW_KINDS], key=_key)
+    annots = sorted([m for m in marks if m["kind"] not in REVIEW_KINDS], key=_key)
+    for m in review:
+        m.setdefault("type", type_of(m))
+        m.setdefault("bbox", bbox4(m["box"]))
+        # anchor_bbox: 링을 그릴 원본 숫자 영역. A·B·L2 계열은 마크가 이미 금액 셀에
+        # 찍히므로 bbox와 같은 값이다(설계안 2절).
+        m.setdefault("anchor_bbox", m["bbox"])
     notes_sorted = sorted(page_notes, key=lambda n: (n["page"], n["seq"]))
+    doc = dict(document or {})
+    doc.setdefault("page_count", npages)
+    doc.setdefault("coordinate_space", COORD_SPACE)
+    doc["counts"] = _counts(review, annots)
     return {
         "schema": SCHEMA,
         "source": {"pdf": os.path.basename(source_pdf), "sha256": sha256_of(source_pdf), "pages": npages},
         "run": run_meta,
-        "marks": marks_sorted,
+        "document": doc,
+        "marks": review,
+        # annotations: 그리기 전용(체크·사선·원·레퍼태그·조판지적). 렌더러는 marks와
+        # 합쳐 seq 순으로 재생한다 — 배열이 나뉘어도 그리기 순서는 seq가 지킨다(R-1).
+        "annotations": annots,
         # page_notes: 스펙 예시 스키마 밖 확장 — 분할 의심 등 체크에 안 묶인 참고 문구.
         # R-1(바이트 동등)을 위해 marks와 같은 seq 축을 공유해 원래 그리기 순서를 보존한다.
         "page_notes": notes_sorted,
     }
 
 
-def save(path, source_pdf, marks, page_notes, run_meta, npages):
-    doc = build(source_pdf, marks, page_notes, run_meta, npages)
+def drawables(doc):
+    """렌더 대상 전량 — marks(검토 항목) + annotations(그리기 전용). v1 문서도 읽는다."""
+    return list(doc.get("marks", [])) + list(doc.get("annotations", []))
+
+
+def save(path, source_pdf, marks, page_notes, run_meta, npages, document=None):
+    doc = build(source_pdf, marks, page_notes, run_meta, npages, document)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False, indent=2)
         f.write("\n")

@@ -65,8 +65,13 @@ def render_axis(pdf_path):
     assert g["VER"] == FIXED_VER and g["RUN_TS"] == FIXED_TS, "스탬프 고정 실패 — 함정 2 재발"
     doc = g["MARKS_DOC"]
     from pypdf import PdfReader
+    import marks as marksio
     by_page = {}
-    for m in doc["marks"]:
+    # v2에서 marks(검토 항목)/annotations(그리기 전용)로 나뉘었다. 게이트가 보는 것은
+    # '그려지는 것 전량'이라 둘을 합친다 — 배열 분리만으로 total_marks가 307→8로
+    # 떨어져 가짜 불일치가 나는 것을 막는다(스키마 변경이지 드로잉 변경이 아니다).
+    drawables = marksio.drawables(doc)
+    for m in drawables:
         by_page.setdefault(m["page"], []).append(m)
     notes_by_page = {}
     for n in doc.get("page_notes", []):
@@ -79,7 +84,7 @@ def render_axis(pdf_path):
         b = render.render_page(by_page.get(i, []), notes_by_page.get(i, []), W, H, doc["run"])
         if b is not None:
             hashes[str(i)] = hashlib.sha256(b).hexdigest()
-    return {"pages_with_marks": len(hashes), "total_marks": len(doc["marks"]),
+    return {"pages_with_marks": len(hashes), "total_marks": len(drawables),
             "page_hashes": hashes}
 
 

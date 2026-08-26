@@ -205,7 +205,10 @@ def build(pdf_path, company, raw_tuples):
                            won_a=won_a, won_b=won_b, diff=won_b - won_a,
                            page_a=a["page"], page_b=b["page"],
                            bbox_a=a["bbox"], bbox_b=b["bbox"],
-                           sign_a=a["sign"], sign_b=b["sign"])
+                           sign_a=a["sign"], sign_b=b["sign"],
+                           raw_a=a.get("raw_text"), raw_b=b.get("raw_text"),
+                           tseq_a=a.get("table_seq"), tseq_b=b.get("table_seq"),
+                           mult_a=a["mult"], mult_b=b["mult"])
                 reason = is_excluded(cl, tids[i], tids[j])
                 if reason is not None:
                     rec["reason"] = reason

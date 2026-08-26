@@ -6,13 +6,28 @@ marks.py가 직렬화하는 데이터(<원본>_marks.json)이고, 실제 그리�
 전담한다. `python foot.py`만 쓰면 현행과 동일하게 동작한다(내부적으로 marks.json도
 함께 생성된다). 편집 후 재렌더는 `python render.py --marks ...`를 직접 쓴다.
 """
-import argparse, collections, datetime, os, subprocess, sys, time
+import argparse, collections, datetime, os, re, subprocess, sys, time
 import pdfplumber
-from core import check_table, verdict, find_unit, grid_info, mixed_currency, is_total_label
+from core import (check_table, verdict, find_unit, grid_info, mixed_currency, is_total_label,
+                  norm, SKIP_REASON_TEXT)
 from statements import foot_hier, foot_a5, stmt_type, APPLY
-import tieout, notes, prose, refmap, consist
+import tieout, notes, prose, refmap, consist, docmeta
 import marks as marksio
 import render as renderer
+
+# 검증 종류 → 화면 설명 문구(rev.2 formula). 코드값을 그대로 내보내지 않는다.
+FORMULA_TEXT = {"A1": "세로 합계", "A2": "가로 합계", "A3": "계층 합계",
+                "A5": "가감 관계식", "C": "본표↔주석 금액 대사"}
+
+
+def fmt_like(val, sample):
+    """재계산 금액을 공시 표기와 같은 규약으로 찍는다. rev.2가 shown_value와 자리를
+    맞대어 어긋난 자리만 강조하도록 요구하므로, 음수 표기(괄호 vs 마이너스)가 다르면
+    자리 비교가 어긋난다 — 원문이 괄호를 쓰면 괄호로 맞춘다."""
+    s = f"{abs(val):,.0f}"
+    if val >= 0:
+        return s
+    return f"({s})" if (sample or "").strip().startswith("(") else f"-{s}"
 
 _ap = argparse.ArgumentParser(prog="foot",
     description="DSD 풋팅 — 표시 수치 정합성 검증 → <원본>_틱마크.pdf / <원본>_예외색인.xlsx "
@@ -115,12 +130,36 @@ def ends_open(tb):
 
 _T0 = time.time()
 carry=None
+STMT_PAGES={}                          # page → 본표 유형 (목차 depth 0 생성용)
+TABLE_LABEL={}                         # (page, table) → 사람이 읽는 표 이름 (없으면 None)
+UNRESOLVED_LABEL=[]                    # 표 이름 추출 실패 — 빈 문자열로 흘리지 않는다
+PAGE_SEQ={}                            # page → 그 페이지에서 쓴 seq 개수 (L2 이어붙이기용)
+PREV_CAP=None                          # 직전 표 제목 — 페이지 넘어 이어지는 표에 물려준다
 with pdfplumber.open(PDF) as pdf:
+    _HEADS = docmeta.headings(pdf)
+    _TITLE, _TITLE_FALLBACK = docmeta.title(pdf)
+    if _TITLE_FALLBACK:
+        _TITLE = _base
+        if not QUIET:
+            print(f"[문서] 표지에서 제목을 읽지 못해 파일명으로 대체합니다: {_TITLE}")
     for pi,page in enumerate(pdf.pages,1):
         SEQ=0                                        # 페이지별 원 그리기 순서 — R-1의 핵심
         txt=page.extract_text() or ""
         unit=find_unit(txt); st=stmt_type(txt)
+        if st: STMT_PAGES[pi]=st
         tobjs=page.find_tables()
+        _plines = page.extract_text_lines() if tobjs else []
+        for _ti,_t in enumerate(tobjs,1):
+            _cap = docmeta.table_caption(_plines, _t.bbox)
+            if _cap is None and _ti == 1 and _t.bbox[1] < 100 and PREV_CAP:
+                # 페이지 첫 표가 지면 맨 위에서 시작하면(위에 글줄이 아예 없다) 앞 페이지
+                # 표의 이어짐이다 — 제목은 앞 페이지에 있다. 이 신호가 없을 때 물려받으면
+                # 남의 제목을 붙이므로 '지면 최상단 + 첫 표'로만 한정한다.
+                _cap = PREV_CAP
+            if _cap is None and st is None:
+                UNRESOLVED_LABEL.append({"page": pi, "table": _ti})
+            if _cap: PREV_CAP = _cap
+            TABLE_LABEL[(pi,_ti)] = _cap
         pr_d=prose.check_page(page); pr_f6=prose.check_leading_space(page)
         pr=pr_d+pr_f6; paras=prose.paragraphs(page)
         if not tobjs and not pr and not paras: carry=None; continue
@@ -131,14 +170,14 @@ with pdfplumber.open(PDF) as pdf:
                 box=marksio.box4(x0,t0,x1,b0), text=None,
                 source=dict(check="F4", table=None, row=None, col=None, label=None), verdict=None,
                 evidence=dict(before=gp["before"], after=gp["after"]),
-                origin="tool", status="active", note=None)); SEQ+=1
+                origin="tool", status="pending", note=None)); SEQ+=1
         for _pidx,pg_ in enumerate(paras):
             x_end,ptop,pbot = pg_["bbox"]
             MARKS.append(dict(id=marksio.mid("slash","D",pi,extra=_pidx), seq=SEQ, page=pi, kind="slash",
                 box=marksio.box4(x_end,ptop,x_end,pbot), text=None,
                 source=dict(check="D", table=None, row=None, col=None, label=None), verdict=None,
                 evidence=dict(nline=pg_["nline"], preview=pg_["text"]),
-                origin="tool", status="active", note=None)); SEQ+=1
+                origin="tool", status="pending", note=None)); SEQ+=1
             npara += 1
         for _fi,pz in enumerate(pr):
             _chk = "D" if _fi < len(pr_d) else "F6"
@@ -146,7 +185,7 @@ with pdfplumber.open(PDF) as pdf:
                 box=marksio.box4(*pz["bbox"]), text=None,
                 source=dict(check=_chk, table=None, row=None, col=None, label=pz["text"]), verdict=None,
                 evidence=dict(msg=pz["msg"], level=pz["level"]),
-                origin="tool", status="active", note=None)); SEQ+=1
+                origin="tool", status="pending", note=None)); SEQ+=1
             pros.append([pi, pz["text"], pz["msg"], pz["level"]])
         for ti,t in enumerate(tobjs,1):
             data=t.extract()
@@ -208,7 +247,7 @@ with pdfplumber.open(PDF) as pdf:
                             box=marksio.box4(wd["x0"], wd["top"], x1w, wd["bottom"]), text=None,
                             source=dict(check="C", table=ti, row=x["row"], col=x["ncol"], label=note_num),
                             verdict=None, evidence=dict(notes=sorted(x["notes"])),
-                            origin="tool", status="active", note=None)); SEQ+=1
+                            origin="tool", status="pending", note=None)); SEQ+=1
             for rw_, cl_, lbls in tagmap.get((pi,ti), []):
                 bb = cellbox(rw_+off, cl_)
                 if bb:
@@ -219,18 +258,29 @@ with pdfplumber.open(PDF) as pdf:
                         box=marksio.box4(*bb), text=_txt,
                         source=dict(check="C", table=ti, row=rw_, col=cl_, label=None),
                         verdict=None, evidence=dict(labels=seen),
-                        origin="tool", status="active", note=None)); SEQ+=1
+                        origin="tool", status="pending", note=None)); SEQ+=1
             for x in dmap.get((pi,ti), []):
                 bb = cellbox(x["row"]+off, x["col"])
                 if bb:
                     _txt=f"{x['diff']:+,.0f} {x['where']}"
+                    # C 레퍼 미성립은 '금액이 틀렸다'가 아니라 '주석에서 동일 금액을 찾지
+                    # 못했다'다 → type=unverified (marks.type_of, 회계사 판단 2026-08-25).
                     MARKS.append(dict(id=marksio.mid("cross","C",pi,table=ti,row=x["row"],col=x["col"]),
                         seq=SEQ, page=pi, kind="cross",
                         box=marksio.box4(*bb), text=_txt,
                         source=dict(check="C", table=ti, row=x["row"], col=x["col"], label=x.get("label")),
                         verdict=None, evidence=dict(val=x.get("val"), other=x.get("other"),
-                                                    diff=x["diff"], where=x["where"]),
-                        origin="tool", status="active", note=None)); SEQ+=1
+                                                    diff=x["diff"], where=x["where"],
+                                                    reason="REF_NOT_FOUND"),
+                        account=x.get("label"), level="L1",
+                        shown_value=(f"{x['val']:,.0f}" if x.get("val") is not None else None),
+                        computed_value=None,
+                        delta=SKIP_REASON_TEXT["REF_NOT_FOUND"],
+                        formula=f"{FORMULA_TEXT['C']} — 가장 가까운 금액 {x['where']}",
+                        operands=[], counterparts=[],
+                        l2_class=None, column_key=None, paper_no=None,
+                        comment=None, verified_at=RUN_TS, reviewed_at=None, reviewed_by=None,
+                        origin="tool", status="pending", note=None)); SEQ+=1
             for r in rs:
                 v=verdict(r,TOL,RSTEPS); stat[v]+=1
                 # '1원차이' 태그 — 원 단위 표에서 |차이|<=1이면 일괄 확인용 표시.
@@ -255,6 +305,38 @@ with pdfplumber.open(PDF) as pdf:
                     if _col_for_id is None:
                         _a2key = (pi, ti, r.get("row"))
                         _col_for_id = f"x{A2_OCC[_a2key]}"; A2_OCC[_a2key] += 1
+                    # ── rev.2 화면 필드 ────────────────────────────────────
+                    # 원문 표기: A2는 col이 없어(마크 위치는 행 마지막 셀) tcol을 쓴다.
+                    _vc = r.get("col") if r.get("col") is not None else r.get("tcol")
+                    _shown = None
+                    if _vc is not None and 0 <= r.get("row", -1) < len(data):
+                        _row_cells = data[r["row"]]
+                        if _vc < len(_row_cells): _shown = norm(_row_cells[_vc])
+                    # 미검증 사유 — 코드가 없으면 조용히 넘기지 않고 표면화한다
+                    if v in ("SKIP","SIGN"):
+                        _rc = "SIGN_CONVENTION" if v == "SIGN" else r.get("reason")
+                        _why = SKIP_REASON_TEXT.get(_rc) or f"UNRESOLVED_REASON({_rc})"
+                    else:
+                        _rc = _why = None
+                    _fml = FORMULA_TEXT.get(r["kind"], r["kind"])
+                    if v in ("SKIP","SIGN"): _fml = f"{_fml} — {_why}"
+                    elif r.get("n"):         _fml = f"{_fml} — 구성 항목 {r['n']}개"
+                    # operands: 합계에 들어간 셀. ★마크가 아니라 좌표다 — 성분 셀에는
+                    # 마크가 없고, 만들면 새 드로잉이라 R-1이 깨진다(설계안 4절 승인).
+                    _ops=[]
+                    for _o in (r.get("operands") or []):
+                        _ob = cellbox(_o["row"]+off, _o.get("col"))
+                        if not _ob: continue
+                        _otxt = None
+                        if 0 <= _o["row"] < len(data):
+                            _orow = data[_o["row"]]
+                            if _o.get("col") is not None and _o["col"] < len(_orow):
+                                _otxt = norm(_orow[_o["col"]])
+                        _olab = None
+                        if 0 <= _o["row"] < len(data):
+                            _olab = next((norm(c) for c in data[_o["row"]] if norm(c)), None)
+                        _ops.append(dict(label=_olab, value=_otxt, sign=_o.get("sign", "+"),
+                                         bbox=marksio.bbox4(marksio.box4(*_ob))))
                     MARKS.append(dict(
                         id=marksio.mid(_kind, r["kind"], pi, table=ti, row=r.get("row"), col=_col_for_id),
                         seq=SEQ, page=pi, kind=_kind,
@@ -263,8 +345,16 @@ with pdfplumber.open(PDF) as pdf:
                                    label=r.get("label")),
                         verdict=v,
                         evidence=dict(disp=r["disp"], calc=r["calc"], diff=r["calc"]-r["disp"], n=r["n"],
-                                     unit=unit or "미표기", tag=(tg or None)),
-                        origin="tool", status="active", note=None)); SEQ+=1
+                                     unit=unit or "미표기", tag=(tg or None), reason=_rc),
+                        account=r.get("label"), level="L1",
+                        shown_value=_shown,
+                        computed_value=(None if v in ("SKIP","SIGN") else fmt_like(r["calc"], _shown)),
+                        delta=(_why if v in ("SKIP","SIGN") else f"{r['calc']-r['disp']:+,.0f}"),
+                        formula=_fml, operands=_ops,
+                        counterparts=[],           # A계열은 대사 대상 없음 확정([]≠null)
+                        l2_class=None, column_key=None, paper_no=None,
+                        comment=None, verified_at=RUN_TS, reviewed_at=None, reviewed_by=None,
+                        origin="tool", status="pending", note=None)); SEQ+=1
                 if v in ("DIFF","ROUND","SKIP","SIGN"):
                     exc.append([pi,ti,r["kind"],r["label"],unit or "미표기",
                                 r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],
@@ -274,7 +364,55 @@ with pdfplumber.open(PDF) as pdf:
             _,_,_,_,ncL,_,_=grid_info(_last)
             carry=(_last,ncL,ends_open(_last),pi)
         except Exception: carry=None
+        PAGE_SEQ[pi]=SEQ                 # L2 마크를 이 페이지 뒤에 이어 붙일 때 쓴다
     _NPAGES = pi
+    # ── 목차 + 마크 귀속 (판정 이후 후처리 — 판정에 영향 없음) ──
+    SECTIONS = docmeta.sections(pdf, _HEADS, STMT_PAGES)
+    for _m in MARKS:
+        _m["section_id"] = docmeta.section_of(SECTIONS, _m["page"], _m["box"]["top"])
+        _tb = (_m.get("source") or {}).get("table")
+        if _tb is None:
+            _m["table_label"] = None
+        elif STMT_PAGES.get(_m["page"]):
+            # 본표는 표 위에 제목 문장이 없다(있는 건 회사명·단위 머리글이다) — 캡션
+            # 추출을 아예 쓰지 않고 목차의 본표 이름을 쓴다.
+            _m["table_label"] = next((s["label"] for s in SECTIONS
+                                      if s["id"] == STMT_PAGES[_m["page"]]), None)
+        else:
+            _lab = TABLE_LABEL.get((_m["page"], _tb))
+            _sid = _m.get("section_id") or ""
+            _m["table_label"] = (docmeta.with_note(_lab, _sid[1:])
+                                 if (_lab and _sid.startswith("n")) else _lab)
+
+    # ── L2 표간 대사 편입 ──────────────────────────────────────────────
+    # 회사 사전이 이 문서에 적용될 때만 돌린다 — 적용 안 되면 결과가 전량 UNMAPPED이라
+    # PDF를 한 번 더 파싱하는 비용만 버린다(등록 4축이 여기 해당해 실행시간·드로잉 불변).
+    L2_MARKS=[]; L2_RES=None
+    try:
+        import l2_probe, l2_labels, l2_extract, l2_marks
+        _co = l2_probe._company_from_filename(PDF)
+        _lp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "labels", f"{_co}.json") if _co else None
+        if _lp and os.path.isfile(_lp) and l2_probe._dict_applies(_lp, PDF):
+            L2_RES = l2_labels.build(PDF, _co, l2_extract.extract(PDF))
+            def _l2_label(side):
+                # 본표는 table_id 자체가 유형이다 — 페이지로 찾으면 분할 2면차(p7 등)에서
+                # stmt_type이 None이라 이름을 놓친다.
+                _st = l2_marks.stmt_of(side["table_id"])
+                if _st:
+                    return next((s["label"] for s in SECTIONS if s["id"] == _st), None)
+                _l = (TABLE_LABEL.get((side["page"], side["table_seq"]))
+                      if side.get("table_seq") is not None else None)
+                _mn = re.match(r"n(\d+)", side["table_id"] or "")
+                return docmeta.with_note(_l, _mn.group(1)) if (_l and _mn) else _l
+            for _cls, _rows in (("confirmed", L2_RES["confirmed"]),
+                                ("undeclared", L2_RES["undeclared"])):
+                L2_MARKS += l2_marks.build(_rows, _cls, _l2_label, PAGE_SEQ, RUN_TS,
+                                           marksio.mid, marksio.box4, marksio.bbox4)
+            for _m in L2_MARKS:
+                _m["section_id"] = docmeta.section_of(SECTIONS, _m["page"], _m["box"]["top"])
+            MARKS += L2_MARKS
+    except Exception as _e:
+        print(f"[L2] 편입 실패(분석 결과에는 영향 없음): {_e}")
 
 _T_ANALYZE = time.time() - _T0
 
@@ -284,7 +422,12 @@ decl,refs,miss,unref,gap = notes.run(PDF)
 RUN_META = {"commit": VER, "at": RUN_TS,
             "params": {"tol": TOL, "round_steps": RSTEPS, "min_won": MINWON,
                        "terms": (_cli.terms or None)}}
-MARKS_DOC = marksio.save(MARKS_JSON, PDF, MARKS, SPLIT_SUSPECT, RUN_META, _NPAGES)
+DOCUMENT = {"title": _TITLE, "title_from_filename": _TITLE_FALLBACK,
+            "last_verified_at": RUN_TS,
+            "sections": [{k: s[k] for k in ("id","label","page","depth")} for s in SECTIONS],
+            # 표 이름을 못 뽑은 표 — 빈 문자열로 흘리지 않고 여기로 표면화한다
+            "unresolved_labels": UNRESOLVED_LABEL}
+MARKS_DOC = marksio.save(MARKS_JSON, PDF, MARKS, SPLIT_SUSPECT, RUN_META, _NPAGES, DOCUMENT)
 renderer.render_all(PDF, MARKS_DOC, OUT_PDF, quiet=QUIET)
 
 import openpyxl

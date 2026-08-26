@@ -135,22 +135,28 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
             if G[i][j] and K[i][j] == "TEXT": lj = j; break
         LC.append(lj)
     LBL = [G[i][LC[i]] for i in range(nrow)]
-    excl_tab = _excl_table(G, hdr, ncol, nrow, LBL) or _restate_table(G, hdr, ncol)
+    # 미검증 사유 — n=0으로 떨어뜨릴 때 '왜'를 함께 실어 보낸다. 종전에는 verdict="SKIP"만
+    # 남고 사유가 버려져 화면·조서에 쓸 문장을 만들 수 없었다(2026-08-25 승인).
+    # ⚠ 판정값(n)은 바꾸지 않는다 — 아래 excl_tab의 불리언 값은 종전과 완전히 동일하다.
+    excl_reason = None
+    if _excl_table(G, hdr, ncol, nrow, LBL): excl_reason = "AUDIT_HOURS"
+    elif _restate_table(G, hdr, ncol):       excl_reason = "RESTATEMENT"
     # 복합 통화 + '통화' 헤더 열 = 행별 통화 표(합계행도 통화별 분리) — 세로합도
     # 통화를 섞으므로 표 전체 SKIP. 헤더 열 구성 판정 원칙 부합 (휴맥스 실측:
     # 복합 표 전원이 이 구조, 열별 통화 표는 0개).
     cur_col = any(re.fullmatch(r"통\s*화", G[i][j]) for i in range(hdr) for j in range(ncol))
-    if excl_a2 and cur_col: excl_tab = True
+    if excl_a2 and cur_col and excl_reason is None: excl_reason = "MIXED_CURRENCY"
     # 민감도 분석 표 — 상승시/하락시가 '행'으로 섞이면 부호 대칭 쌍이라 세로합
     # 부적합 (SKIP). 헤더 '열'로 분리된 민감도 표(10% 상승시 | 10% 하락시)는 열 내
     # 단일 시나리오라 세로합 유효 — 본문 행에서만 신호를 찾는다.
     if any("상승" in G[i][j] for i in range(hdr, nrow) for j in range(ncol)) and \
        any("하락" in G[i][j] for i in range(hdr, nrow) for j in range(ncol)):
-        excl_tab = True
+        if excl_reason is None: excl_reason = "SENSITIVITY"
     # 지표 산정 표 — 라벨에 '비율'이 있으면 총계류 라벨(차입금총계 등)이 합계행이
     # 아니라 비율 계산의 입력 항목이다 (참조형 총계, 휴맥스 p144 순차입금비율)
     if any("비율" in LBL[i] for i in range(hdr, nrow)):
-        excl_tab = True
+        if excl_reason is None: excl_reason = "RATIO_TABLE"
+    excl_tab = excl_reason is not None      # 종전 불리언과 동일 — 판정 불변
     tcols = total_col_idx(G, hdr, ncol, numcols)
 
     # ── A2 가로합 ──
@@ -175,7 +181,8 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
                 # 이중 합계열: 각 합계열의 성분은 직전 합계열 이후 ~ 현재 합계열 이전.
                 # (특수관계자 채권·채무표처럼 '계' 열이 2개면 서로의 성분을 침범한다)
                 lo = max([tc for tc in tcols if tc < tj], default=-1)
-                parts = [V[i][j] for j in a2cols if lo < j < tj and K[i][j] in ("NUM","BLANK")]
+                pcols = [j for j in a2cols if lo < j < tj and K[i][j] in ("NUM","BLANK")]
+                parts = [V[i][j] for j in pcols]
                 if len(parts) < 2: continue
                 # % 행 — 금액과 비율의 가로합은 무의미. 주 신호(전 값이 콤마 없는
                 # |v|<=100) + 보조 신호(라벨에 률·율·비율·%)를 모두 요구한다.
@@ -186,8 +193,18 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
                                for t_, v in cells_ + [(G[i][tj], V[i][tj])])
                        and any(tk in LBL[i] for tk in ("률", "율", "비율", "%")))
                 s = sum(parts)
+                if   excl_tab: _rsn = excl_reason
+                elif excl_a2:  _rsn = "MIXED_CURRENCY"
+                elif a2_off:   _rsn = "SUMMARY_FINANCIALS"
+                elif pct:      _rsn = "PCT_ROW"
+                else:          _rsn = None
+                # tcol: 표시 금액이 실제로 놓인 합계 열. bbox 산출에 쓰는 col과 분리한다 —
+                # A2 마크 위치는 종전대로 '행의 마지막 비어있지 않은 셀'을 쓰므로(final.py)
+                # 여기에 col을 넣으면 마크가 이동해 R-1이 깨진다. 원문 표기 조회 전용.
                 res.append(dict(kind="A2", row=i, label=LBL[i][:24],
-                                disp=V[i][tj], calc=s,
+                                disp=V[i][tj], calc=s, tcol=tj,
+                                operands=[dict(row=i, col=j) for j in pcols],
+                                reason=_rsn,
                                 n=(0 if (excl_tab or a2_off or pct) else len(parts))))
 
     # ── A1 세로합 (계 행) ──
@@ -348,11 +365,15 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
                 for x_, a in enumerate(inner) for b in inner[x_+1:])
         for j in numcols:
             if K[ti][j] != "NUM": continue
-            parts = [V[i][j] for i in body if K[i][j] in ("NUM","BLANK")]
+            prows = [i for i in body if K[i][j] in ("NUM","BLANK")]
+            parts = [V[i][j] for i in prows]
             if len(parts) < 2: continue
             skip = excl_tab or dual
             res.append(dict(kind="A1", row=ti, col=j, label=LBL[ti][:24] or "계",
-                            disp=V[ti][j], calc=sum(parts), n=(0 if skip else len(parts))))
+                            disp=V[ti][j], calc=sum(parts),
+                            operands=[dict(row=i, col=j) for i in prows],
+                            reason=(excl_reason if excl_tab else ("DUAL_BREAKDOWN" if dual else None)),
+                            n=(0 if skip else len(parts))))
 
     # ── A3 계층합 (합계가 별도 열인 본표형) ──
     if not trows and len(numcols) >= 2:
@@ -379,6 +400,25 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
                         acc.append(V[i][a])
                 if pend is not None: emit(pend, acc)
     return res
+
+# 미검증 사유 코드 → 회계사가 읽을 문장. 코드와 같은 파일에 둔다(둘이 떨어지면
+# 코드를 늘릴 때 문장을 빠뜨린다). 여기 없는 코드가 나오면 호출부가 UNRESOLVED_REASON으로
+# 표면화한다 — 빈 문자열로 조용히 흘리지 않는다(2026-08-25 승인 조건).
+SKIP_REASON_TEXT = {
+    "AUDIT_HOURS":        "감사 투입시간·인원 표라 금액 합계 검증 대상이 아닙니다",
+    "RESTATEMENT":        "전기 재작성 내역표라 표시된 항목이 완전한 가산 집합이 아닙니다",
+    "MIXED_CURRENCY":     "통화가 섞인 표라 합계를 계산할 수 없습니다",
+    "SENSITIVITY":        "민감도 분석 표(상승·하락 대칭 행)라 세로 합계가 성립하지 않습니다",
+    "RATIO_TABLE":        "비율 산정 표라 총계 라벨이 합계행이 아닙니다",
+    "SUMMARY_FINANCIALS": "자산·부채·자본 열이 함께 있는 요약 표라 가로 합계가 성립하지 않습니다",
+    "PCT_ROW":            "비율(%) 행이라 가로 합계가 무의미합니다",
+    "DUAL_BREAKDOWN":     "같은 총액을 두 관점으로 분해한 표라 소계를 합산하면 이중계상됩니다",
+    "A3_SPLIT_INCOMPLETE":"페이지 분할로 하위 항목이 잘려 합계를 검증할 수 없습니다",
+    "A3_TOO_FEW_PARTS":   "하위 항목이 2개 미만이라 합계를 검증할 수 없습니다",
+    "SIGN_CONVENTION":    "소계와 성분의 부호 규약이 달라 검증하지 못했습니다",
+    "REF_NOT_FOUND":      "주석에서 동일 금액을 찾지 못했습니다",
+}
+
 
 def verdict(r, tol=0.0, round_steps=0):
     """A7 단수차이 분류 포함.

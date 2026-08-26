@@ -72,7 +72,9 @@ screen.py      스크리너 — 신규 샘플 축 붕괴 자동 탐지, 정밀 �
 intake_check.py 파일 반입 무결성 가드 (pre-commit 훅이 강제)
 l2_extract.py  L2 표간대사 — PDF → 원시 튜플 추출 (raw_label 단계, 판정 없음)
 l2_labels.py   L2 표간대사 — labels/*.json 로드·검증 + 매칭 엔진 (CONFIRMED/UNDECLARED/EXCLUDED)
-l2_probe.py    L2 표간대사 — 단독 CLI 진입점 (콘솔+xlsx, marks.json 편입 안 함)
+l2_probe.py    L2 표간대사 — 단독 CLI 진입점 (콘솔+xlsx)
+l2_marks.py    L2 결과 → marks.json 마크 변환 (그룹 1건 + counterparts, 기준 선정)
+docmeta.py     문서 메타 — 표지 제목·목차(sections)·표 이름 추출 (판정 무관)
 labels/        L2 회사별 라벨 매핑 사전(JSON) — _common.json + {회사}.json
 ```
 
@@ -83,7 +85,12 @@ labels/        L2 회사별 라벨 매핑 사전(JSON) — _common.json + {회�
   구형 `python final.py <보고서.pdf> <허용오차>` 형태도 계속 동작.
   run.bat은 ASCII 전용 유지 — 배치 내 한글은 콘솔 코드페이지에 따라 깨진다.
 
-L2 표간대사(단독, marks.json 미편입): `python l2_probe.py <보고서.pdf>`
+marks.json은 v2(`dsd-footing-marks/2`)다 — `document`(제목·목차·counts) +
+`marks`(검토 항목) + `annotations`(그리기 표시) + `page_notes`. L2 결과는 회사 사전이
+그 문서에 적용될 때 `final.py`가 자동 편입한다(`level:"L2"`, 그룹 1건 + counterparts).
+사전이 적용되지 않는 문서는 L2를 아예 돌리지 않아 실행시간·산출물이 종전과 같다.
+
+L2 표간대사(단독 진단용, 사전 튜닝 시): `python l2_probe.py <보고서.pdf>`
   `--company <이름>` (기본: 파일명 `[회사명]...` 자동 추출) `--out <폴더>` `--quiet`
   산출물: `<원본>_L2대사.xlsx`(CONFIRMED/UNDECLARED/EXCLUDED/UNMAPPED/WARNINGS) +
   UNDECLARED 있으면 `<원본>_undeclared_suggestions.json`(assert_equal 붙여넣기용).
@@ -185,6 +192,28 @@ D 줄글          → 검토완료(/) 229문단 / 표기 지적 1건 (오탐 0),
     `--update`로 갱신. 되돌아갈 "Phase 1 이전 코드"가 이제 없으므로(대체됨), 이 게이트는
     레거시와의 비교가 아니라 저장된 골든 레퍼런스와의 일치·자기 결정성 확인이다.
 
+12. **marks.json v2 — 검토 항목과 그리기 표시를 나눈다 (2026-08-25).**
+    `marks[]`는 회계사가 판단하는 검토 항목(cross·question)만, `annotations[]`는
+    지면에 그려지기만 하는 표시(tick·slash·circle·reftag·gapx)다. 실측 조선내화 반기
+    307건 중 검토 항목은 8건뿐이라, 한 배열에 두면 화면 카운터가 조용히 307로
+    부푼다(게이트가 못 잡는 실패 방향). 렌더러는 `marks.drawables()`로 둘을 합쳐
+    `seq` 순으로 재생하므로 **배열이 나뉘어도 그리기 순서는 seq가 지킨다.**
+    - **`render_gate.py`도 둘을 합쳐 세야 한다.** 안 그러면 배열 분리만으로
+      `total_marks`가 307→8로 떨어져 가짜 불일치가 난다 — 스키마 변경을 드로잉
+      변경으로 오독하게 만드는 함정이다.
+    - 좌표는 `box`(pdfplumber 원본, 렌더러 전용)와 `bbox`([x,y,w,h], 화면 전용)를
+      **병기**한다. `bbox`로 교체하면 뺄셈·복원 과정에서 부동소수 오차가 생겨 R-1을
+      정면으로 건드린다 — 중복 저장이 훨씬 싸다.
+    - 렌더 조건은 `status != "removed"`다(`pending`·`approved` 모두 그린다). 회계사가
+      승인했다고 마크가 지면에서 사라지면 조서가 아니다.
+    - **`operands`는 마크 id가 아니라 좌표 배열이다.** 합계에 들어간 성분 행에는 마크가
+      없고(판정은 합계행에서만 난다), 성분마다 마크를 만들면 새 드로잉이라 R-1이
+      확실히 깨진다. 지면 하이라이트는 pdf.js 오버레이지 틱마크가 아니므로 좌표면 된다.
+    - 미검증 사유는 `core.SKIP_REASON_TEXT`(코드→한국어 문장)로 실어 보낸다.
+      **판정값 `n`은 바꾸지 않는다** — 사유는 라벨일 뿐이다. 매핑에 없는 코드는
+      `UNRESOLVED_REASON(코드)`로 노출한다(빈 문자열 금지).
+    상세는 `설계안_marks_스키마_v2.md`.
+
 ## 알려진 오탐 원인 (해결 완료 — 재발 시 여기부터 확인)
 - 주석번호 열을 금액열로 오인 → `core.is_note_col`
 - 페이지 분할 표 → `final.py` carry 병합
@@ -264,6 +293,16 @@ D 줄글          → 검토완료(/) 229문단 / 표기 지적 1건 (오탐 0),
   최상단에 경고를 띄우는 것으로 임시 보완했다. 정식 해법은 설계안 원안의
   `table_aliases`+`fingerprint`(TABLE_SHIFT) — 다음 회사 사전을 추가할 때
   이 방식으로 정식 승격할 것.
+- **L2 미러 마크 — UI 셸 단계에서 재검토 (2026-08-25 보류 승인)** 지금 L2 마크는
+  기준(본표 우선) 쪽에만 찍힌다. 회계사가 주석 지면을 먼저 보면 그 자리엔 아무 표시가
+  없고 `counterparts[].page` 점프로만 넘어간다. 상대편에도 마크를 찍으면(미러) 새
+  드로잉이라 R-1 골든을 다시 세워야 해서 이번 라운드에서 보류했다 — 화면이 붙은 뒤
+  "주석 쪽에 표시가 없어 불편한가"를 실물로 판단할 것. `counterparts[].mark_id`는
+  그때까지 null이다.
+- **`counterparts[].tag`의 주석 표기 — 승인 필요** rev.2 태그 열거는 본표 5종
+  (BS/IS/CI/CE/CF)뿐이라 주석에 쓸 값이 없다. 화면 좌측 칩을 비우지 않으려 `주15`
+  형태를 임시로 넣었다. 또한 자본변동표가 **화면은 `CE`, 지면 레퍼 태그는 `/SCE`**로
+  이름이 갈린다(지면 문자열을 바꾸면 드로잉이 바뀌어 R-1이 깨져 손대지 않았다).
 - **L2 정답셋 7·13번(부분의 합=전체) — L3 후보로 보류** — `GATES.json`
   `_unresolved`에 기대값 고정 등재 완료(`L3-sumparts-chosun-interim-item7/13`).
   B11(이중 분해 소계 상등)과 같은 이유로 표본 1개 과적합 위험이라 지금 `assert_equal`
