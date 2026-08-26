@@ -9,7 +9,9 @@ from core import grid_info, norm, parse, UNIT, UNIT_MULT
 from statements import read_rows, stmt_type, key
 from notes import NOTE_HEAD, AMT
 
-STMT_TAG = {"BS":"BS", "IS":"IS", "CI":"CI", "CF":"CF", "SCE":"SCE"}
+# SCE→CE: 지면 레퍼 태그를 화면(rev.2) 표기와 통일 — 회계사 실무 표기가 /CE다
+# (2026-08-25 승인, 의도적 드로잉 변경 — R-1 골든 재기록 대상).
+STMT_TAG = {"BS":"BS", "IS":"IS", "CI":"CI", "CF":"CF", "SCE":"CE"}
 
 # 소액 제외 기준 — '표시 숫자'가 아니라 원 환산 절대금액. 단위가 다른 회사 간에
 # 같은 강도로 작동하게 한다 (표시 1000 기준은 백만원 회사 10억 / 원 회사 1천원으로

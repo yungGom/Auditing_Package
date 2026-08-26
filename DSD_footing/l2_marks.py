@@ -20,9 +20,9 @@
 import re
 
 STMT_IDS = ("BS", "IS", "CI", "SCE", "CF")
-# rev.2 태그 규약. 자본변동표만 내부 코드(SCE)와 화면 코드(CE)가 다르다 —
-# 지면에 그려지는 C 레퍼 태그("/SCE", refmap.STMT_TAG)는 R-1 때문에 손대지 않았으므로
-# 두 이름이 공존한다(보고 시 확인 요청 사항).
+# rev.2 태그 규약. 자본변동표는 내부 table_id가 SCE, 화면·지면 표기는 CE로 통일
+# (2026-08-25, 지면 레퍼 태그도 refmap.STMT_TAG에서 "/CE"로 변경 — 의도적 드로잉
+# 변경, render_gate.py --update로 골든 재기록됨).
 TAG = {"BS": "BS", "IS": "IS", "CI": "CI", "SCE": "CE", "CF": "CF"}
 
 
