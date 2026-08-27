@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>DSD 풋팅 — 지면 보기 (U-1)</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <div id="toolbar">
+    <button id="prev" title="이전 페이지">◀</button>
+    <input id="pageNum" type="number" min="1" value="1">
+    <span id="pageCount">/ -</span>
+    <button id="next" title="다음 페이지">▶</button>
+    <span class="sep"></span>
+    <button id="zoomOut" title="축소">－</button>
+    <span id="zoomLabel">100%</span>
+    <button id="zoomIn" title="확대">＋</button>
+    <span class="sep"></span>
+    <span id="status"></span>
+  </div>
+  <div id="canvasWrap">
+    <canvas id="page"></canvas>
+  </div>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>

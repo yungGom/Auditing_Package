@@ -76,6 +76,8 @@ l2_probe.py    L2 표간대사 — 단독 CLI 진입점 (콘솔+xlsx)
 l2_marks.py    L2 결과 → marks.json 마크 변환 (그룹 1건 + counterparts, 기준 선정)
 docmeta.py     문서 메타 — 표지 제목·목차(sections)·표 이름 추출 (판정 무관)
 labels/        L2 회사별 라벨 매핑 사전(JSON) — _common.json + {회사}.json
+ui/            UI 셸 U-1 — PyWebView + pdf.js 오버레이 표시 (판정/렌더와 무관, 산출물만 읽음)
+tools/         보조 스크립트 — harden_webview2.ps1(선택, 기본 배포 미포함)
 ```
 
 실행: `python foot.py <보고서.pdf>` (또는 run.bat에 PDF 드래그)
@@ -100,6 +102,13 @@ L2 표간대사(단독 진단용, 사전 튜닝 시): `python l2_probe.py <보�
 편집 후 재렌더(분석 재실행 없음, Phase 1): `python render.py <보고서.pdf> --marks <원본>_marks.json`
   옵션: `--pages 12,13` (해당 페이지만 재렌더 후 기존 틱마크 PDF에 병합) `--out` `--quiet`
   marks.json에서 마크의 `status`를 `"removed"`로 바꾸면 그 마크만 지면에서 빠진다.
+
+UI 셸(U-1, 오버레이 표시만 — marks.json 읽기·좌측 목록·판단 버튼은 다음 단계):
+  `python ui/app.py <틱마크.pdf>` (foot.py가 만든 오버레이 PDF를 그대로 연다)
+  개발 시 실제 창(WebView2)에 Playwright로 붙으려면(README.md "개발 도구" 참고):
+  `set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` 후 실행,
+  `playwright.chromium.connect_over_cdp("http://127.0.0.1:9222")`로 연결.
+  배포본에는 이 환경변수를 넣지 않는다.
 
 ## 현재 성능 (삼성전자 FY25 별도, 120p)
 ```
@@ -223,6 +232,54 @@ D 줄글          → 검토완료(/) 229문단 / 표기 지적 1건 (오탐 0),
     "당연하니 생략"하지 않고 실측했다). 지면 문자열을 바꾸는 모든 향후 변경은 이
     순서(사전 확인 → 변경 → 국소성 확인 → 사후 갱신)를 그대로 따를 것 — 먼저
     `--update`부터 돌리면 그림이 바뀌었는지 자체를 못 본다(결정 11의 함정과 동일).
+
+14. **PyWebView `url=`에 맨 경로를 주면 로컬 서버가 자동으로 뜬다 (2026-08-26, UI 셸
+    U-1 실측 함정).** `webview.create_window(url=경로)`처럼 `file://`/`http://`
+    접두어 없는 문자열을 주면 pywebview가 `is_local_url()`에 걸려 **bottle 기반
+    로컬 서버를 자동으로 띄운다**(포트가 LISTENING으로 열리는 것을 netstat으로
+    실측). "서버를 안 띄운다"는 설계 결정을 이 함정 하나가 조용히 깬다 — 반드시
+    `url="file:///" + 절대경로.replace(os.sep, "/")` 형태로 **명시적 file:// URL**을
+    줘야 한다. js_api 브리지는 file:// 모드에서도 WebView2의 네이티브
+    `postMessage`(Windows) 경로를 타므로 그대로 동작한다 — 서버가 필요한 건 자산
+    서빙 쪽이지 브리지 쪽이 아니다. 다음에 PyWebView 창을 새로 띄울 때 이 함정을
+    또 밟지 말 것 — `ui/app.py`의 주석 참고.
+
+15. **이 개발 환경에서 CDP 스크린샷 자동화가 안 된다 (2026-08-26, U-1 실측).**
+    Playwright로 실제 PyWebView 창(WebView2)에 CDP 접속(`connect_over_cdp`)하는
+    것 자체는 즉시 되고, DOM 조회(`page.evaluate`)·클릭·입력도 정상 동작한다.
+    다만 `page.screenshot()`/raw CDP `Page.captureScreenshot` 둘 다 응답 없이
+    멈춘다 — 이 세션의 Windows 데스크톱에 실제 화면 합성(compositor)이 없어
+    창이 실제로 페인트되지 않는 것으로 추정(원격/자동화 세션의 환경 제약이지
+    코드 버그가 아니다). U-1은 이 때문에 게이트 2·3(시각적 정확성)을 **사람이
+    실제 창을 보고 육안으로 확인**하는 방식으로 통과시켰다 — 자동 스크린샷
+    비교가 아니다.
+    **다음 UI 단계에서 참고할 것**: DOM 상태·값 조회(요소 존재, 텍스트 내용,
+    카운트, 클릭 후 상태 변화 등)는 CDP `Runtime.evaluate`/Playwright locator로
+    **자동 검증 가능** — 계속 이 경로를 쓸 것. 픽셀 단위 렌더링(마크 위치·색상·
+    폰트 정확도 등 눈으로만 판단 가능한 것)은 매 단계 사람에게 체크리스트로
+    넘길 것. 이 환경 제약이 나중에 풀리면(실제 디스플레이가 붙은 세션 등)
+    스크린샷 자동 비교를 다시 시도해 볼 것 — 안 되는 게 영구적이라고 단정하지
+    않는다.
+
+## 네트워크·오프라인 범위 — "완전 오프라인"의 정의 (2026-08-26)
+
+이 문서 전체가 "완전 오프라인"을 절대 규칙으로 쓴다. UI 셸(PyWebView) 착수 후
+그 정의를 명확히 할 필요가 실측으로 드러났다 — WebView2(Windows 내장 Chromium
+엔진) 자체가 백그라운드로 외부 접속을 하는 것이 4회 실행 중 2회 관측됐다.
+**"완전 오프라인"은 "이 저장소가 작성한 코드가 외부와 통신하지 않는다"는 뜻이다.**
+Windows 시스템 컴포넌트(WebView2 런타임)의 자체 동작까지 도구가 통제할 수는
+없다 — audit_toolbox의 EasyOCR 최초 1회 모델 다운로드 허용과 같은 성격의 구분이다.
+
+| | 우리 도구(DSD_footing 코드) | WebView2 런타임(Windows 시스템 컴포넌트) |
+|---|---|---|
+| 무엇이 나가는가 | **없음** — fetch/XHR 호출 0건(`ui/web/viewer.js` 전체에 없음) | 런타임 버전 정보(컴포넌트 업데이트 체크 추정) — 감사 데이터 아님 |
+| 포트 | **0개** — `ui/app.py`는 `file://` URL로 직접 로드, 로컬 서버 안 띄움(위 결정 14) | 없음 (아웃바운드 HTTPS만, netstat엔 ESTABLISHED로만 보임) |
+| PDF 로딩 | JS 브리지(`window.pywebview.api.get_pdf()`) — 프로세스 내 호출, HTTP 아님 | 관여 없음 |
+| 확인 방법 | `netstat -ano \| findstr LISTENING` 에서 우리 python.exe/msedgewebview2.exe 자식 프로세스가 리스닝 포트를 안 여는지 대조(PID→프로세스명은 작업 관리자 "세부 정보" 탭) | `netstat -ano \| findstr ":443"` 에서 msedgewebview2.exe PID의 ESTABLISHED 접속 유무 |
+| 끄고 싶다면 | 해당 없음(원래 안 함) | `tools/harden_webview2.ps1`(선택, 기본 배포 미포함) — Edge/Office/탐색기가 이미 하는 것과 같은 시스템 업데이트 체크를 IT 정책으로 차단 |
+
+같은 표를 README.md(배포용, IT팀 질의 대응용)에도 둔다 — 두 문서가 어긋나면
+안 되므로 내용을 고칠 때 항상 같이 갱신할 것.
 
 ## 알려진 오탐 원인 (해결 완료 — 재발 시 여기부터 확인)
 - 주석번호 열을 금액열로 오인 → `core.is_note_col`
@@ -356,7 +413,15 @@ D 줄글          → 검토완료(/) 229문단 / 표기 지적 1건 (오탐 0),
   실익은 UI·산출물 조립이지 엔진이 아님 · 지금 병합하면 4축 게이트를 재구축해야 함
 
 ## 의존성
-`pdfplumber` `pypdf` `reportlab` `openpyxl` — 전부 오프라인 동작
+런타임(`requirements.txt`, 회계사 PC/배포본 포함): `pdfplumber` `pypdf` `reportlab`
+`openpyxl` `pywebview` — 전부 오프라인 동작(WebView2 자체 동작은 위 "네트워크·오프라인
+범위" 절 참고).
+
+개발 전용(`requirements-dev.txt`, **PyInstaller 배포본에 포함하지 않음**): `playwright`
+— Claude Code가 UI 셸을 실제 창에 붙어 스크린샷·조작으로 검증하는 용도. EasyOCR
+모델 최초 1회 다운로드와 같은 성격("개발 시점 1회 네트워크, 배포본은 오프라인").
+설치 후 `python -m playwright install chromium` 1회 필요(브라우저 바이너리
+다운로드, 개발 머신에서만).
 
 
 ## 레퍼 대사(refmap) 설계 메모
