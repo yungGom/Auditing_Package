@@ -41,7 +41,17 @@ def main():
     # 동작한다 — 서버가 필요한 건 자산 서빙 쪽이지 브리지 쪽이 아니다(설계안 §1 결정 A,
     # 게이트 5 "포트를 아예 안 연다"를 satisfy하려면 이 경로가 맞다, 2026-08-26 실측 확인).
     index_url = "file:///" + index_html.replace(os.sep, "/")
-    api = Api(pdf_path)
+
+    # marks.json 경로 역산 — foot.py 명명 규칙(<원본>_틱마크.pdf / <원본>_marks.json,
+    # 같은 <원본> 베이스)에서 접미사만 바꿔 찾는다. U-2 설계안 §1.
+    SUFFIX = "_틱마크.pdf"
+    marks_path = None
+    if pdf_path.endswith(SUFFIX):
+        candidate = pdf_path[: -len(SUFFIX)] + "_marks.json"
+        if os.path.isfile(candidate):
+            marks_path = candidate
+
+    api = Api(pdf_path, marks_path)
     webview.create_window(
         f"DSD 풋팅 — {os.path.basename(pdf_path)}",
         url=index_url, js_api=api, width=1200, height=900, min_size=(600, 400),

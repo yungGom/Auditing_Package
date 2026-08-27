@@ -1,0 +1,84 @@
+/* U-2 좌측 목록 — 라이트 UI. 색은 3개뿐: 배경(흰색) / UI(회색조) / 마크(빨강).
+   실수로 색이 늘어나는 걸 막기 위해 변수 3개로 고정한다. */
+:root {
+  --bg: #ffffff;
+  --gray-100: #f7f7f8;
+  --gray-200: #eceeef;
+  --gray-400: #b4b8bb;
+  --gray-600: #6b7075;
+  --gray-900: #22262a;
+  --red: #d0342c;
+  --fs-title: 13px;
+  --fs-meta: 11.5px;
+}
+
+@font-face {
+  font-family: "Pretendard";
+  src: url("./vendor/fonts/pretendard/Pretendard-Regular.woff2") format("woff2");
+  font-weight: 400; font-display: swap;
+}
+@font-face {
+  font-family: "Pretendard";
+  src: url("./vendor/fonts/pretendard/Pretendard-SemiBold.woff2") format("woff2");
+  font-weight: 600; font-display: swap;
+}
+
+#sidebar {
+  width: 300px; flex: 0 0 300px; height: 100%;
+  background: var(--bg); color: var(--gray-900);
+  border-right: 1px solid var(--gray-200);
+  display: flex; flex-direction: column;
+  font-family: "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+#counters {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--gray-200);
+}
+.counter-line {
+  font-size: var(--fs-meta);
+  color: var(--gray-600);
+  line-height: 1.7;
+}
+.counter-line b { color: var(--gray-900); font-weight: 600; }
+
+#filterTabs {
+  display: flex; gap: 2px; padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-200);
+}
+#filterTabs .tab {
+  flex: 1; padding: 6px 0; font-size: var(--fs-meta);
+  background: transparent; border: none; border-radius: 4px;
+  color: var(--gray-600); cursor: pointer; font-family: inherit;
+}
+#filterTabs .tab.active { background: var(--gray-100); color: var(--gray-900); font-weight: 600; }
+#filterTabs .tab:hover { background: var(--gray-100); }
+
+#markList { flex: 1; overflow-y: auto; }
+
+.row {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 34px; padding: 0 14px;
+  cursor: default; /* U-3까지는 클릭 동작 없음 */
+  border-bottom: 1px solid var(--gray-100);
+}
+.row .dot {
+  width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--red);
+}
+.row[data-type="unverified"] .dot { background: var(--red); opacity: .55; }
+.row .text { min-width: 0; flex: 1; }
+.row .title {
+  font-size: var(--fs-title); font-weight: 600; color: var(--gray-900);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.row .meta { font-size: var(--fs-meta); color: var(--gray-600); }
+
+/* status — approved: 취소선+회색 후퇴 / removed: 목록에서 아예 제외(JS에서 필터) */
+.row[data-status="approved"] .title { text-decoration: line-through; color: var(--gray-400); }
+.row[data-status="approved"] .dot { background: var(--gray-400); opacity: 1; }
+
+#markList .empty {
+  padding: 24px 16px; font-size: var(--fs-meta); color: var(--gray-600); text-align: center;
+}
