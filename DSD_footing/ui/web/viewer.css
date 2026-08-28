@@ -21,6 +21,7 @@ body { display: flex; flex-direction: row; overflow: hidden; }
 #pageNum { width: 52px; height: 24px; text-align: center; }
 .sep { width: 1px; height: 20px; background: #52585b; margin: 0 4px; }
 #zoomLabel { min-width: 42px; text-align: center; font-size: 12px; }
+#tableLabel { font-size: 12px; color: #c7cbcd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #status { margin-left: auto; font-size: 12px; color: #ff8a80; }
 #canvasWrap {
   height: calc(100% - 40px); overflow: auto;

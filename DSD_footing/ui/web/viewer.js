@@ -2,6 +2,7 @@
 // 설계안_UI셸_U1.md §1 결정 A). PDF는 PyWebView 브리지로 바이트를 직접 받는다 —
 // fetch/XHR을 전혀 쓰지 않는다(§1 결정 A의 "네트워크 요청 0건" 근거).
 import * as pdfjsLib from "./vendor/pdfjs/build/pdf.mjs";
+import { on, emit } from "./bus.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdfjs/build/pdf.worker.mjs";
 
@@ -58,6 +59,9 @@ async function renderPage(n) {
   el.pageNum.value = n;
   el.prev.disabled = n <= 1;
   el.next.disabled = n >= pdfDoc.numPages;
+  // 이동 수단(목록 클릭·이전/다음·페이지 직접 입력) 구분 없이 매번 낸다 — sidebar.js가
+  // "선택된 마크의 페이지와 달라졌으면 선택 해제"를 판단하는 유일한 신호다(설계안 §2).
+  emit("pageChanged", n);
 
   if (renderTask) { renderTask.cancel(); }
   const page = await pdfDoc.getPage(n);
@@ -103,6 +107,10 @@ function applyZoom() {
   el.zoomOut.disabled = zoomIdx <= 0;
   renderPage(curPage);
 }
+
+// sidebar.js가 목록 클릭/N/J/K로 선택한 마크의 페이지로 이동시킨다. viewer.js는
+// "마크"가 뭔지 전혀 모른다 — 페이지 번호만 받는다(관심사 분리 유지).
+on("jumpToPage", (page) => { renderPage(page); });
 
 applyZoom();
 loadPdf().catch((e) => setStatus(`불러오기 실패: ${e.message || e}`));

@@ -63,6 +63,11 @@
   cursor: default; /* U-3까지는 클릭 동작 없음 */
   border-bottom: 1px solid var(--gray-100);
 }
+.row.selected {
+  border-left: 3px solid var(--red);
+  background: var(--gray-100);
+  padding-left: 11px; /* 14px - 3px(테두리)로 좌우 폭이 안 튀게 */
+}
 .row .dot {
   width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
   background: var(--red);
