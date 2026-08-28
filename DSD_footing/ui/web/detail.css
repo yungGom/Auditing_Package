@@ -1,0 +1,86 @@
+/* detail.css — 우측 상세 패널(U-5). sidebar.css의 --bg/--gray-*/--red 변수와
+   Pretendard @font-face를 그대로 재사용한다(색 3종 규약 유지, 새 변수 안 만듦). */
+#detailPanel {
+  width: 320px; flex: 0 0 320px; height: 100%;
+  background: var(--bg); color: var(--gray-900);
+  border-left: 1px solid var(--gray-200);
+  overflow-y: auto;
+  font-family: "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+#detailEmpty, #detailComplete {
+  padding: 24px 16px; font-size: var(--fs-meta); color: var(--gray-600); text-align: center;
+}
+#detailComplete { color: var(--gray-900); font-weight: 600; }
+
+#dHeader { padding: 16px 16px 10px; border-bottom: 1px solid var(--gray-200); }
+#dAccount { font-size: 15px; font-weight: 600; }
+#dMeta { font-size: var(--fs-meta); color: var(--gray-600); margin-top: 2px; }
+
+#dVerify { padding: 12px 16px; border-bottom: 1px solid var(--gray-200); }
+#dVerify h3 {
+  font-size: 11px; font-weight: 600; color: var(--gray-600);
+  margin: 0 0 8px; text-transform: none;
+}
+.vrow {
+  display: flex; align-items: baseline; gap: 8px; padding: 3px 0;
+  /* 금액 잘림 금지 — 폭이 부족하면 값이 두 줄로 내려간다(스펙 요구사항). */
+  flex-wrap: wrap;
+}
+.vlabel { flex: 0 0 68px; font-size: var(--fs-meta); color: var(--gray-600); }
+.vval {
+  flex: 1 1 auto; min-width: 0; font-size: var(--fs-title);
+  white-space: normal; overflow-wrap: anywhere; word-break: break-all;
+}
+.ch-diff { color: var(--red); font-weight: 700; }
+#vFormula.clickable { cursor: pointer; text-decoration: underline dotted; }
+#vFormula.clickable:hover { color: var(--red); }
+
+.accordion { border-bottom: 1px solid var(--gray-200); }
+.acc-head {
+  width: 100%; text-align: left; padding: 10px 16px; font-size: var(--fs-meta);
+  font-weight: 600; color: var(--gray-900); background: transparent; border: none;
+  cursor: pointer; font-family: inherit;
+}
+.acc-head:hover { background: var(--gray-100); }
+.acc-count { color: var(--gray-600); font-weight: 400; }
+.acc-body { padding: 0 16px 12px; }
+
+.kv { display: flex; gap: 8px; padding: 2px 0; font-size: var(--fs-meta); }
+.kv span { flex: 0 0 68px; color: var(--gray-600); }
+.kv b { font-weight: 400; color: var(--gray-900); overflow-wrap: anywhere; }
+
+.cp-row { padding: 8px 0; border-top: 1px solid var(--gray-100); }
+.cp-row:first-child { border-top: none; padding-top: 0; }
+.cp-head { display: flex; justify-content: space-between; align-items: center; }
+.cp-tag {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  background: var(--gray-100); color: var(--gray-600); font-size: 10.5px;
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cp-page { font-size: 10.5px; color: var(--gray-600); }
+.cp-label { font-size: var(--fs-meta); color: var(--gray-600); margin-top: 3px; }
+.cp-amt { font-size: var(--fs-title); margin-top: 2px; overflow-wrap: anywhere; }
+.cp-flag { font-size: 10.5px; color: var(--red); margin-top: 3px; }
+
+#dJudge { padding: 12px 16px 16px; }
+#judgeMemo {
+  width: 100%; min-height: 52px; resize: vertical; box-sizing: border-box;
+  padding: 6px 8px; font-size: var(--fs-meta); font-family: inherit;
+  border: 1px solid var(--gray-400); border-radius: 4px; color: var(--gray-900);
+}
+#judgedNote { font-size: 10.5px; color: var(--gray-600); margin-top: 6px; }
+#judgeButtons { display: flex; gap: 8px; margin-top: 8px; }
+.judge-btn {
+  flex: 1; padding: 8px 0; font-size: var(--fs-title); font-weight: 600;
+  border-radius: 4px; cursor: pointer; font-family: inherit;
+}
+/* 승인/기각 구분은 색이 아니라 형태로 — 채움(confirm) vs 취소선(reject). */
+.judge-btn.confirm { background: var(--gray-900); color: #fff; border: none; }
+.judge-btn.confirm:hover { background: #000; }
+.judge-btn.reject {
+  background: transparent; color: var(--gray-600); border: 1px solid var(--gray-400);
+  text-decoration: line-through;
+}
+.judge-btn.reject:hover { background: var(--gray-100); }

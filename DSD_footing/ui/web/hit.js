@@ -31,6 +31,13 @@ export function pdfRectToViewport(rect, viewport) {
   };
 }
 
+/** [x0, top, w, h](marks.json의 bbox 규약, CLAUDE.md 결정 12) → pdfRectToViewport가
+ *  받는 {x0, top, x1, bottom}. U-5 operands 하이라이트 전용 — 새 좌표식이 아니라
+ *  기존 pdfRectToViewport를 그대로 태우기 위한 순수 변환일 뿐이다. */
+export function bbox4ToRect([x0, top, w, h]) {
+  return { x0, top, x1: x0 + w, bottom: top + h };
+}
+
 function glyphKey(mark) {
   if (mark.kind === "cross" && (mark.source || {}).check === "C") return "cross_C";
   if (mark.kind === "cross" || mark.kind === "question") return mark.kind;

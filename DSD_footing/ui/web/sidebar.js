@@ -28,6 +28,7 @@ const el = {
 let MARKS = []; // marks[] 원본(annotations 제외) — counterparts 등 전 필드 보존
 let filter = "diff";
 let selectedId = null;
+let DOCUMENT_COUNTS = null; // document.counts — 판단 후 카운터 재계산에 재사용(U-5)
 
 function waitForApi() {
   if (window.pywebview && window.pywebview.api) return Promise.resolve();
@@ -69,8 +70,13 @@ function escapeHtml(s) {
 
 function visibleMarks() {
   // 정렬: 차이 그룹 전체 → 확인 필요 그룹 전체, 그룹 내부는 page 오름차순.
+  // status=="removed"(판단: 차이 아님/해당없음)는 목록에서 아예 뺀다 — sidebar.css의
+  // 기존 주석("removed: 목록에서 아예 제외") 그대로. 지면에서도 빠지는 것과 같은
+  // 이유: 도구가 틀렸다고 확정된 항목을 계속 다시 보여줄 필요가 없다(U-5).
   const rank = (m) => (m.type === "diff" ? 0 : 1);
-  const sorted = [...MARKS].sort((a, b) => rank(a) - rank(b) || a.page - b.page);
+  const sorted = [...MARKS]
+    .filter((m) => m.status !== "removed")
+    .sort((a, b) => rank(a) - rank(b) || a.page - b.page);
   if (filter === "all") return sorted;
   return sorted.filter((m) => m.type === filter);
 }
@@ -154,6 +160,44 @@ on("selectMark", (markId) => {
   selectMark(mark);
 });
 
+// U-5 — 상세 패널(detail.js)의 판단 확정. 마크 데이터(status/comment)를 바꾸는
+// 유일한 곳이다 — detail.js는 절대 mark 객체를 직접 건드리지 않고 이 이벤트만
+// 낸다(선택 상태를 sidebar 하나가 소유하는 것과 같은 이유: 카운터·목록·자동 이동이
+// 전부 이 파일에 있어 소유자를 나누면 불일치가 난다).
+//
+// status 매핑(승인 B안, 2026-08-28 확정, 설계안_UI셸_U5.md §5): confirm(이상없음/
+// 확인함) -> approved. reject(차이아님/해당없음) -> removed — render.py의 기존
+// "status != removed면 그린다" 조건(결정 12)과 그대로 맞물려 새 스키마가 필요
+// 없다. 이력은 marks.json에 남고(향후 U-6 저장), 지면·목록에서만 빠진다 — Phase 1
+// "도구 마크는 삭제 대신 removed로 바꾼다" 원칙 그대로.
+on("judge", ({ markId, decision, comment }) => {
+  const mark = markById(markId);
+  if (!mark) return;
+  mark.status = decision === "confirm" ? "approved" : "removed";
+  mark.comment = comment || null;
+  if (DOCUMENT_COUNTS) renderCounters(DOCUMENT_COUNTS); // 미검토 수는 즉시 줄어든다(게이트6)
+  renderList();
+  advanceAfterJudge(markId);
+});
+
+/** 판단 후 다음 미검토 차이로 이동(설계안 §7) — 판단된 마크의 type과 무관하게
+ * 항상 "다음 미검토 차이"다(스펙 원문 그대로, N키와 같은 대상 집합).
+ * N키처럼 이미 필터링된 배열을 돌리지 않는 이유: 방금 판단한 마크가 diff 타입이면
+ * 그 자리가 기준점이어야 "다음"이 이어진다 — 전체 diff를 page순으로 두고 그
+ * 마크의 위치에서부터 pending을 찾는다(판단된 마크 자신은 이제 pending이 아니라
+ * 자연히 건너뛴다). 판단한 마크가 unverified면 idx=-1이라 처음부터 찾는다(N키가
+ * 미선택 상태에서 0번부터 시작하는 것과 동일한 동작). */
+function advanceAfterJudge(judgedId) {
+  const diffs = [...MARKS].filter((m) => m.type === "diff").sort((a, b) => a.page - b.page);
+  const idx = diffs.findIndex((m) => m.id === judgedId);
+  for (let i = 1; i <= diffs.length; i++) {
+    const cand = diffs[(idx + i) % diffs.length];
+    if (cand.status === "pending") { selectMark(cand, { switchToDiffTab: true }); return; }
+  }
+  clearSelection();
+  emit("reviewComplete"); // detail.js가 "미검토 차이 없음" 완료 상태로 전환
+}
+
 // ── 키보드: J/K(현재 필터에 보이는 목록 안에서 위/아래, 경계 정지) / N(미검토
 // 차이만 순회, 순환) ────────────────────────────────────────────────
 function isTypingTarget(t) {
@@ -189,7 +233,8 @@ async function loadMarks() {
     return;
   }
   MARKS = res.marks; // annotations[]는 애초에 여기서 안 받는다(app.py가 marks만 넘김)
-  renderCounters(res.counts);
+  DOCUMENT_COUNTS = res.counts;
+  renderCounters(DOCUMENT_COUNTS);
   renderList();
 }
 

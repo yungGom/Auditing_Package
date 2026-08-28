@@ -36,6 +36,12 @@ body { display: flex; flex-direction: row; overflow: hidden; }
   position: absolute; border: 1.5px solid var(--red); border-radius: 2px;
   box-sizing: border-box;
 }
+/* U-5 — 상세 패널 산식 클릭 시 성분(operands) 강조. 링과 구분되게 채움+옅은 배경. */
+.operand-hl {
+  position: absolute; box-sizing: border-box;
+  border: 1px solid var(--red); background: rgba(208, 52, 44, .14);
+  border-radius: 1px;
+}
 #candidatePopup {
   position: fixed; z-index: 10; min-width: 190px;
   background: var(--bg); color: var(--gray-900);

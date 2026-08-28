@@ -5,6 +5,7 @@
 <title>DSD 풋팅 — 지면 보기 (U-1)</title>
 <link rel="stylesheet" href="viewer.css">
 <link rel="stylesheet" href="sidebar.css">
+<link rel="stylesheet" href="detail.css">
 </head>
 <body>
   <aside id="sidebar">
@@ -42,8 +43,46 @@
       </div>
     </div>
   </div>
+  <aside id="detailPanel">
+    <div id="detailEmpty">항목을 선택하세요</div>
+    <div id="detailComplete" hidden>미검토 차이가 없습니다</div>
+    <div id="detailBody" hidden>
+      <div id="dHeader">
+        <div id="dAccount"></div>
+        <div id="dMeta"></div>
+      </div>
+      <section id="dVerify">
+        <h3>검증 내역</h3>
+        <div class="vrow"><span class="vlabel">공시금액</span><span class="vval" id="vShown"></span></div>
+        <div class="vrow" id="vComputedRow"><span class="vlabel">재계산금액</span><span class="vval" id="vComputed"></span></div>
+        <div class="vrow"><span class="vlabel">차이</span><span class="vval" id="vDelta"></span></div>
+        <div class="vrow"><span class="vlabel">산식</span><span class="vval" id="vFormula"></span></div>
+      </section>
+      <section class="accordion" id="accCounterparts" hidden>
+        <button class="acc-head" type="button">대사 대상 <span class="acc-count" id="cpCount"></span></button>
+        <div class="acc-body" id="cpBody"></div>
+      </section>
+      <section class="accordion" id="accSource">
+        <button class="acc-head" type="button">출처</button>
+        <div class="acc-body" id="srcBody" hidden></div>
+      </section>
+      <section class="accordion" id="accHistory">
+        <button class="acc-head" type="button">검토 이력</button>
+        <div class="acc-body" id="histBody" hidden></div>
+      </section>
+      <section id="dJudge">
+        <textarea id="judgeMemo" placeholder="검토 메모"></textarea>
+        <div id="judgedNote" hidden></div>
+        <div id="judgeButtons">
+          <button id="btnConfirm" class="judge-btn confirm" type="button"></button>
+          <button id="btnReject" class="judge-btn reject" type="button"></button>
+        </div>
+      </section>
+    </div>
+  </aside>
   <div id="candidatePopup" hidden></div>
   <script type="module" src="viewer.js"></script>
   <script type="module" src="sidebar.js"></script>
+  <script type="module" src="detail.js"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 // fetch/XHR을 전혀 쓰지 않는다(§1 결정 A의 "네트워크 요청 0건" 근거).
 import * as pdfjsLib from "./vendor/pdfjs/build/pdf.mjs";
 import { on, emit } from "./bus.js";
-import { hitTest, pdfRectToViewport, glyphRect } from "./hit.js";
+import { hitTest, pdfRectToViewport, glyphRect, bbox4ToRect } from "./hit.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdfjs/build/pdf.worker.mjs";
 
@@ -25,6 +25,7 @@ const el = {
   canvas: document.getElementById("page"),
   ring: document.getElementById("ring"),
   popup: document.getElementById("candidatePopup"),
+  overlay: document.getElementById("markOverlay"),
 };
 
 let pdfDoc = null;
@@ -35,6 +36,7 @@ let curViewport = null;   // 현재 페이지의 viewport — 클릭 역변환·
 let MARKS = [];           // 히트 판정용(읽기 전용). 선택 상태는 sidebar가 소유한다
 let OFFSETS = null;       // ui/glyph_offsets.json — 글리프 히트영역의 유일한 출처
 let selected = null;      // sidebar가 selectionChanged로 알려준 확정 선택
+let operandEls = [];      // U-5: 산식 클릭 시 얹는 성분 강조 div들(마크마다 새로 그림)
 
 function setStatus(msg) { el.status.textContent = msg || ""; }
 
@@ -80,6 +82,8 @@ async function renderPage(n) {
   // "선택된 마크의 페이지와 달라졌으면 선택 해제"를 판단하는 유일한 신호다(설계안 §2).
   emit("pageChanged", n);
 
+  clearOperandHighlights(); // 이전 지면의 성분 강조가 새 지면에 남지 않게
+
   if (renderTask) { renderTask.cancel(); }
   const page = await pdfDoc.getPage(n);
   const dpr = window.devicePixelRatio || 1;
@@ -123,6 +127,32 @@ function drawRing() {
   // 목록에서 골랐는데 아무것도 안 보인다 — 보이는 곳으로 끌어온다. 이미 보이면
   // block:"nearest"라 아무 일도 일어나지 않는다(150% 게이트에서 실측된 결함).
   el.ring.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+/** operands 강조 지우기 — 페이지 이동·선택 해제·다른 마크 선택 시마다 부른다.
+ * 그대로 두면 옛 마크의 성분 강조가 새 지면에 남는다. */
+function clearOperandHighlights() {
+  operandEls.forEach((e) => e.remove());
+  operandEls = [];
+}
+
+/** 상세 패널의 산식 클릭으로 온 성분들을 지면에 얹는다. 링과 같은 변환 함수
+ * (pdfRectToViewport)를 쓴다 — operands.bbox는 [x0,top,w,h]라 bbox4ToRect로만
+ * 모양을 바꿔주고, 새 좌표식은 만들지 않는다(설계안_UI셸_U5.md §8). */
+function drawOperandHighlights(operands) {
+  clearOperandHighlights();
+  if (!curViewport || !operands || !operands.length) return;
+  for (const op of operands) {
+    const r = pdfRectToViewport(bbox4ToRect(op.bbox), curViewport);
+    const d = document.createElement("div");
+    d.className = "operand-hl";
+    d.style.left = `${r.left}px`;
+    d.style.top = `${r.top}px`;
+    d.style.width = `${r.right - r.left}px`;
+    d.style.height = `${r.bottom - r.top}px`;
+    el.overlay.appendChild(d);
+    operandEls.push(d);
+  }
 }
 
 function closePopup() { el.popup.hidden = true; el.popup.innerHTML = ""; }
@@ -204,6 +234,10 @@ on("selectionChanged", async (mark) => {
   else drawRing();
 });
 
+// 상세 패널의 산식 클릭(또는 마크 전환 시 초기화)이 낸다. detail.js가 유일한
+// 발신자다 — viewer는 좌표 변환만 하고 operands 배열의 의미는 모른다.
+on("highlightOperands", (operands) => drawOperandHighlights(operands));
+
 // 개발 검증용 읽기 전용 훅. 게이트가 좌표식을 다시 구현하면 UI가 틀려도 같이 틀려
 // 못 잡으므로, 테스트가 **이 화면이 실제로 쓰는 함수와 상태**를 그대로 태우게 한다.
 // 상태를 바꾸는 함수는 노출하지 않는다 — 테스트는 진짜 UI 조작(행 클릭·확대 버튼·
@@ -212,7 +246,8 @@ window.__dsdDebug = Object.freeze({
   getViewport: () => curViewport,
   getMarks: () => MARKS,
   getOffsets: () => OFFSETS,
-  pdfRectToViewport, glyphRect, hitTest,
+  pdfRectToViewport, glyphRect, hitTest, bbox4ToRect,
+  getOperandHighlights: () => operandEls.slice(), // U-5 게이트7 — 강조 div 읽기 전용 조회
 });
 
 applyZoom();
