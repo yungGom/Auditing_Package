@@ -35,6 +35,10 @@ body { display: flex; flex-direction: row; overflow: hidden; }
 #ring {
   position: absolute; border: 1.5px solid var(--red); border-radius: 2px;
   box-sizing: border-box;
+  /* 테두리만으로는 어느 셀인지 눈에 덜 띈다는 육안 확인 결과로 음영 추가.
+     지면 원본 숫자가 그대로 읽혀야 하므로 GitHub diff 강조 수준으로 아주 옅게
+     둔다 — 진하게 하면 감사 증거인 원본 수치가 가려진다. */
+  background: rgba(208, 52, 44, .10);
 }
 /* U-5 — 상세 패널 산식 클릭 시 성분(operands) 강조. 링과 구분되게 채움+옅은 배경. */
 .operand-hl {
