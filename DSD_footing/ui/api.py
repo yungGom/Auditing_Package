@@ -41,3 +41,13 @@ class Api:
         except json.JSONDecodeError as e:
             return {"error": f"marks.json 형식이 올바르지 않습니다: {e}"}
         return {"marks": doc.get("marks", []), "counts": doc.get("document", {}).get("counts", {})}
+
+    def get_glyph_offsets(self):
+        """→ ui/glyph_offsets.json 내용. UI 히트영역의 **유일한 출처**다 —
+        값을 JS에 복제하지 않는 이유와 게이트(glyph_gate.py)는 그 파일 주석 참고."""
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "glyph_offsets.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            return {"error": f"glyph_offsets.json을 읽을 수 없습니다: {e}"}

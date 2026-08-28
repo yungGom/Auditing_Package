@@ -36,9 +36,13 @@
       <span id="status"></span>
     </div>
     <div id="canvasWrap">
-      <canvas id="page"></canvas>
+      <div id="pageStage">
+        <canvas id="page"></canvas>
+        <div id="markOverlay"><div id="ring" hidden></div></div>
+      </div>
     </div>
   </div>
+  <div id="candidatePopup" hidden></div>
   <script type="module" src="viewer.js"></script>
   <script type="module" src="sidebar.js"></script>
 </body>

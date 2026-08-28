@@ -1,13 +1,17 @@
-// sidebar.js — U-2 좌측 목록 + U-3 목록 클릭→페이지 점프. marks[]만 읽는다
-// (annotations[] 제외). 좌표 매칭·하이라이트는 U-4, 상세 패널은 U-5.
+// sidebar.js — 좌측 목록(U-2) + 목록 클릭→페이지 점프(U-3) + 선택 상태 소유(U-4).
+// marks[]만 읽는다(annotations[] 제외). 상세 패널·판단 버튼은 U-5.
 //
 // 카운터 규칙(CLAUDE.md 결정 16):
 //   전체 건수(diff/unverified/ok/recon 등)는 document.counts에서 읽는다 — 다시 세지 않는다.
 //   진행 상태(미검토/검토완료 등 status 기반)는 marks[]를 그 자리에서 센다 —
 //   status는 런타임에 바뀌는 값이라 분석 산출물(document.counts)에 없다.
 //
-// viewer.js와는 bus.js(이벤트 버스)로만 연결한다 — 직접 import 안 함(설계안_UI셸_U3.md
-// §1). U-4의 역방향(지면 클릭→목록 선택)도 같은 버스에 "selectMark"를 태우면 된다.
+// viewer.js와는 bus.js로만 연결한다 — 직접 import 안 함.
+// 버스 계약(U-4 확정, 설계안_UI셸_U4.md §5) — **선택 상태의 소유자는 이 파일 하나다**:
+//   selectMark        viewer → sidebar   "이 마크를 선택해 달라"(요청). 지면 클릭이 낸다
+//   selectionChanged  sidebar → viewer   "선택이 이렇게 됐다"(확정). 페이지 이동·링의 근거
+//   pageChanged       viewer → sidebar   페이지가 바뀌었다(이동 수단 무관)
+// viewer는 selectionChanged를 받아 처리만 하고 되쏘지 않으므로 루프가 없다.
 import { on, emit } from "./bus.js";
 
 const el = {
@@ -103,13 +107,14 @@ function selectMark(mark, { switchToDiffTab = false } = {}) {
   el.tableLabel.textContent = mark.table_label || "표 이름 미확인";
   const row = el.list.querySelector(`.row[data-mark-id="${mark.id}"]`);
   if (row) row.scrollIntoView({ block: "nearest" });
-  emit("jumpToPage", mark.page);
+  emit("selectionChanged", mark);   // 페이지 이동·링 갱신의 유일한 근거
 }
 
 function clearSelection() {
   selectedId = null;
   applySelectionDom();
   el.tableLabel.textContent = "";
+  emit("selectionChanged", null);
 }
 
 el.list.addEventListener("click", (ev) => {
@@ -132,6 +137,21 @@ el.tabs.forEach((btn) => {
 on("pageChanged", (page) => {
   const sel = markById(selectedId);
   if (sel && sel.page !== page) clearSelection();
+});
+
+// 지면 클릭이 낸 요청. 선택 확정은 여기(단일 소유자)에서만 일어난다.
+// 지면 클릭으로 선택할 때는 목록 필터를 건드리지 않는다 — 현재 탭에 안 보이는
+// 마크를 골랐으면 "모두" 탭으로 넓혀 목록에서도 보이게 한다.
+on("selectMark", (markId) => {
+  if (markId === null) { if (selectedId) clearSelection(); return; }
+  const mark = markById(markId);
+  if (!mark) return;
+  if (filter !== "all" && mark.type !== filter) {
+    filter = "all";
+    el.tabs.forEach((b) => b.classList.toggle("active", b.dataset.filter === "all"));
+    renderList();
+  }
+  selectMark(mark);
 });
 
 // ── 키보드: J/K(현재 필터에 보이는 목록 안에서 위/아래, 경계 정지) / N(미검토
