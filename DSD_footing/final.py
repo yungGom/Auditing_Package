@@ -316,6 +316,9 @@ with pdfplumber.open(PDF) as pdf:
                     if v in ("SKIP","SIGN"):
                         _rc = "SIGN_CONVENTION" if v == "SIGN" else r.get("reason")
                         _why = SKIP_REASON_TEXT.get(_rc) or f"UNRESOLVED_REASON({_rc})"
+                        # 사유에 구체적인 행·항목 이름을 붙인다. "산식에 포함되지 않은
+                        # 행이 있습니다"만으로는 회계사가 무엇을 볼지 알 수 없다.
+                        if r.get("reason_detail"): _why = f"{_why}: {r['reason_detail']}"
                     else:
                         _rc = _why = None
                     _fml = FORMULA_TEXT.get(r["kind"], r["kind"])

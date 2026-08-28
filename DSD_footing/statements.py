@@ -205,28 +205,77 @@ A5_RULES = [
  ("부채총계",                [("+","유동부채"),("+","비유동부채")]),
 ]
 
+def _absorbed(span, book, opvals):
+    """구간 행 중 '연속 n(n>=2)개의 합 = 어느 성분의 값'인 묶음을 찾아 돌려준다.
+
+    그 묶음은 누락된 항목이 아니라 그 성분의 하위 항목이다 — 자산총계 = 유동자산 +
+    비유동자산 사이의 현금및현금성자산·매출채권은 빠진 게 아니라 유동자산에 이미
+    들어 있다. A3 소관이지 A5 소관이 아니므로 커버리지 미포함으로 세지 않는다.
+
+    core.check_table의 역산 검증(부모 = 아래 연속 n개 행의 합)과 같은 성질을 쓴다.
+    새 발상이 아니라 4축에서 이미 검증된 기제의 재사용이다 — 규칙 목록을 손으로
+    고르는 과적합을 피하기 위함(2026-08-28 승인)."""
+    out = set(); n = len(span)
+    for i in range(n):
+        s = 0.0
+        for j in range(i, n):
+            s += book[span[j]]
+            if j - i + 1 < 2: continue          # 1개짜리 일치는 모호하다(core와 같은 n>=2)
+            if any(abs(s - v) < 0.5 and abs(v) > 0 for v in opvals):
+                out.update(span[i:j+1])
+    return out
+
 def foot_a5(tb):
     rows, nper = read_rows(tb)
     res = []
     for p in range(nper):
-        book = {}; rowof = {}; colof2 = {}
+        book = {}; rowof = {}; colof2 = {}; order = []; dep = {}
         for d,k,raw,vals,_ip,_it,ri,cof in rows:
             if p in vals and k not in book:
                 book[k] = vals[p]; rowof[k] = ri; colof2[k] = cof.get(p)
+                order.append(k); dep[k] = d
         for tgt, terms in A5_RULES:
             if tgt not in book: continue
             if not all(any(t.startswith(nm) or nm.startswith(t) for t in book) for _,nm in terms):
                 pass
-            s = 0.0; got = 0; ops = []
+            s = 0.0; got = 0; ops = []; used = []; miss = []
             for sg, nm in terms:
                 key_ = next((kk for kk in book if kk == nm), None)
                 if key_ is None:
                     key_ = next((kk for kk in book if kk.startswith(nm)), None)
-                if key_ is None: continue
+                if key_ is None: miss.append(nm); continue
                 s += book[key_] if sg == "+" else -book[key_]
-                got += 1
+                got += 1; used.append(key_)
                 ops.append(dict(row=rowof.get(key_), col=colof2.get(key_), sign=sg))
-            if got < len(terms): continue
+            def _skip(reason, detail):
+                res.append(dict(kind="A5", period=p, label=tgt, row=rowof.get(tgt),
+                                col=colof2.get(tgt), disp=book[tgt], calc=s, operands=ops,
+                                reason=reason, reason_detail=detail, n=0))
+            # ── 성분 누락 ───────────────────────────────────────────────
+            # 종전에는 `if got < len(terms): continue`로 조용히 탈락시켰다. 그래서
+            # 조선내화 연차(금융원가≠금융비용)·LGES(기타영업외수익≠기타수익)에서
+            # 세전이익 풋팅이 한 번도 검증되지 않았는데 지면은 깨끗해 보였다 —
+            # "미매칭 ≠ 0, 침묵 탈락 금지" 원칙이 이 한 줄에서 새고 있었다.
+            # 단, 성분을 하나도 못 찾았으면 그 표에 애초에 해당 없는 규칙이다
+            # (포괄손익계산서 지면의 당기순이익 규칙 등). 그건 종전처럼 안 낸다.
+            if miss:
+                if got: _skip("A5_TERM_NOT_FOUND", ", ".join(miss))
+                continue
+            # ── 커버리지 점검 ───────────────────────────────────────────
+            # 성분을 다 찾았어도, 성분과 좌변 사이에 산식이 안 쓴 행이 남아 있으면
+            # 산식이 이 표의 구조를 못 덮는 것이다. 수치가 우연히 맞아도 OK로 내지
+            # 않는다 — 조선내화 반기연결 세전이익은 지분법이익이 산식에 없어 DIFF가
+            # 났고, 그것이 진짜 차이가 아니라 산식 결함이었다.
+            pos = {k: i for i, k in enumerate(order)}
+            lo = min(pos[k] for k in used) if used else None
+            hi = pos.get(tgt)
+            if lo is not None and hi is not None and hi > lo:
+                span = [k for k in order[lo+1:hi] if k not in set(used)]
+                base = min(dep[k] for k in used + [tgt])
+                span = [k for k in span if dep[k] >= base]      # 하위 항목 제외(계층)
+                span = [k for k in span if k not in _absorbed(span, book, [book[k] for k in used])]
+                if span:
+                    _skip("A5_UNCOVERED_ROW", ", ".join(span)); continue
             res.append(dict(kind="A5", period=p, label=tgt, row=rowof.get(tgt), col=colof2.get(tgt),
                             disp=book[tgt], calc=s, operands=ops, reason=None, n=got))
     return res
