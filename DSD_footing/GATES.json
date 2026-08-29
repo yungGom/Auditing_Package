@@ -45,7 +45,7 @@
   "samples": {
     "삼성전자_감사보고서.pdf": {
       "tol": 0.0,
-      "recorded": "2026-08-14",
+      "recorded": "2026-08-29",
       "metrics": {
         "A_total": 345,
         "A_OK": 325,
@@ -171,6 +171,39 @@
         "F2_term_groups": 2,
         "F3_label_groups": 12,
         "F4_multi_space": 4
+      }
+    },
+    "[조선내화]반기연결검토보고서(2026.08.13).pdf": {
+      "tol": 0.0,
+      "recorded": "2026-08-29",
+      "metrics": {
+        "A_total": 146,
+        "A_OK": 138,
+        "A_ROUND": 0,
+        "A_DIFF": 0,
+        "A_SKIP": 8,
+        "A_SIGN": 0,
+        "B_total": 28,
+        "B_OK": 5,
+        "B_DIFF": 0,
+        "B_SKIP": 23,
+        "C_ok": 31,
+        "C_unmatched": 48,
+        "C_diff": 0,
+        "C7_gap": 0,
+        "C7_missing": 0,
+        "C7_unref": 5,
+        "D_paragraphs": 109,
+        "D_flags": 0,
+        "consolidated": true,
+        "pages_no_unit": 6,
+        "F1_unit_missing": 0,
+        "F2_term_groups": 1,
+        "F3_label_groups": 4,
+        "F4_multi_space": 2,
+        "L2_confirmed": 11,
+        "L2_undeclared": 0,
+        "L2_excluded": 0
       }
     }
   }
