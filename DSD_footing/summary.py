@@ -127,15 +127,17 @@ def draw(c, doc, t, reviewer, reviewed_on, page_no, total_pages):
     # ── 판단 내역 ───────────────────────────────────────────────────
     c.setFillColor(DARK); c.setFont(f, 11)
     c.drawString(50, y, "판단 내역"); y -= 16
-    c.setFont(f, 8); c.setFillColor(GRAY)
-    c.drawString(50, y, "면"); c.drawString(76, y, "계정과목")
-    c.drawString(250, y, "판단"); c.drawString(330, y, "검토 메모"); y -= 4
-    c.setStrokeColor(GRAY); c.setLineWidth(0.3); c.line(50, y, PAGE_W - 50, y); y -= 12
+    y = _thead(c, f, y)
 
     for r in t["rows"]:
         if y < 70:
             _footer(c, page_no, total_pages); c.showPage(); page_no += 1
-            y = PAGE_H - 60; c.setFont(f, 8)
+            # ★ 표 머리를 이어지는 장에도 다시 찍는다. 없으면 조서를 넘겨보는 사람이
+            #   열이 무엇인지 알 수 없다(휴맥스 50건 실물에서 잡힌 결함).
+            y = PAGE_H - 60
+            c.setFillColor(DARK); c.setFont(f, 11)
+            c.drawString(50, y, "판단 내역 (이어짐)"); y -= 16
+            y = _thead(c, f, y)
         pend = r["status"] == "pending"
         c.setFillColor(RED if pend else DARK); c.setFont(f, 8.5)
         c.drawString(50, y, f"p{r['page']}")
@@ -149,6 +151,12 @@ def draw(c, doc, t, reviewer, reviewed_on, page_no, total_pages):
                 y -= 10; c.drawString(330, y, extra[:60])
         y -= 13
 
+    # ★ 맺음 문구를 그릴 자리가 모자라면 장을 넘긴다. 안 넘기면 푸터(y=28)와 겹쳐
+    #   찍힌다 — 실측: 90행에서 "(candidate only검).토 결과 요약 2/2"처럼 두 문자열이
+    #   포개졌다. 조서에서 글자가 겹치면 읽을 수 없다.
+    if y < 62:
+        _footer(c, page_no, total_pages); c.showPage(); page_no += 1
+        y = PAGE_H - 60
     y -= 8
     c.setStrokeColor(GRAY); c.setLineWidth(0.3); c.line(50, y, PAGE_W - 50, y); y -= 14
     c.setFillColor(GRAY); c.setFont(f, 8)
@@ -157,6 +165,16 @@ def draw(c, doc, t, reviewer, reviewed_on, page_no, total_pages):
         c.drawString(50, y, ln); y -= 11
     _footer(c, page_no, total_pages)
     return page_no
+
+
+def _thead(c, f, y):
+    """판단 내역 표 머리. 첫 장과 이어지는 장 모두에서 같은 모양으로 쓴다."""
+    c.setFont(f, 8); c.setFillColor(GRAY)
+    c.drawString(50, y, "면"); c.drawString(76, y, "계정과목")
+    c.drawString(250, y, "판단"); c.drawString(330, y, "검토 메모"); y -= 4
+    c.setStrokeColor(GRAY); c.setLineWidth(0.3); c.line(50, y, PAGE_W - 50, y); y -= 12
+    c.setFont(f, 8)
+    return y
 
 
 def _footer(c, page_no, total_pages):
@@ -169,12 +187,16 @@ def build_pages(doc, judgments, reviewer, reviewed_on=None):
     _font()
     t = tally(doc.get("marks", []), judgments or {})
     reviewed_on = reviewed_on or datetime.date.today().isoformat()
-    # 장수를 먼저 가늠한다(행 13pt, 첫 장 여유 ~28행)
-    est = max(1, 1 + max(0, len(t["rows"]) - 28 + 55) // 56)
+    # ★ 장수를 추정하지 않고 두 번 그려서 센다. 종전 추정식은 첫 장 여유를 28행으로
+    #   가정했는데 실제로는 37행이 들어갔다(휴맥스 실물) — 우연히 맞았을 뿐이고,
+    #   어긋나면 조서에 "1/2"라고 적힌 3장짜리 요약이 나간다. 1장 더 그리는 비용이
+    #   그 위험보다 싸다.
+    scratch = canvas.Canvas(io.BytesIO(), pagesize=(PAGE_W, PAGE_H))
+    total = draw(scratch, doc, t, reviewer, reviewed_on, 1, 1)
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=(PAGE_W, PAGE_H))
     c.setTitle("DSD 풋팅 검토 결과 요약")
-    draw(c, doc, t, reviewer, reviewed_on, 1, est)
+    draw(c, doc, t, reviewer, reviewed_on, 1, total)
     c.save()
     return buf.getvalue(), t
 
