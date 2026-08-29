@@ -48,6 +48,16 @@ async function refreshReviewer() {
   return name;
 }
 
+// "선언 조각" 버튼 — 개발자 전용(2026-08-29 승인). ERRORS.json은 도구의 회귀
+// 기준이고 관리자는 개발자다. 동료 회계사는 자기 감사보고서를 풋팅하는 사람이지
+// 도구의 게이트를 관리하는 사람이 아니다 — 일반 실행에서는 버튼 자체가 안 보인다.
+// ui/config.json이 없거나 dev_mode 키가 없으면 기본값 false(get_dev_mode가 보장).
+// UI에 켜는 토글은 두지 않는다 — 사람이 config.json을 직접 편집해야 켜진다.
+async function refreshDevMode() {
+  const r = await api().get_dev_mode();
+  el.btnErrors.hidden = !(r && r.dev_mode === true);
+}
+
 el.askSave.addEventListener("click", async () => {
   const r = await api().set_reviewer(el.askInput.value);
   if (r && r.error) { say(`⚠ ${r.error}`, "err"); return; }
@@ -91,4 +101,6 @@ el.snippetCopy.addEventListener("click", () => {
 });
 el.snippetClose.addEventListener("click", () => { el.modal.hidden = true; });
 
-waitForApi().then(refreshReviewer).catch((e) => say(`⚠ ${e.message || e}`, "err"));
+waitForApi()
+  .then(() => Promise.all([refreshReviewer(), refreshDevMode()]))
+  .catch((e) => say(`⚠ ${e.message || e}`, "err"));

@@ -37,7 +37,9 @@
       <span id="status"></span>
       <span id="reviewerBox">검토자 <b id="reviewerName">(미입력)</b>
         <button id="reviewerEdit" title="검토자 변경">✎</button></span>
-      <button id="btnErrors" class="tbtn" title="'차이 아님' 판정을 ERRORS.json 형식으로">선언 조각</button>
+      <!-- 개발자 전용(2026-08-29 승인) — export.js가 dev_mode=true일 때만 hidden을 뗀다.
+           기본은 hidden — JS 초기화가 실패해도 회계사 화면에는 안 보이는 쪽이 안전하다. -->
+      <button id="btnErrors" class="tbtn" hidden title="'차이 아님' 판정을 ERRORS.json 형식으로">선언 조각</button>
       <button id="btnExport" class="tbtn primary" title="판단을 반영한 최종 PDF">검토완료 PDF</button>
     </div>
     <div id="statusBar" hidden></div>
@@ -93,9 +95,15 @@
   <div id="candidatePopup" hidden></div>
   <div id="snippetModal" hidden>
     <div class="sm-box">
-      <div class="sm-head">ERRORS.json 선언 조각</div>
-      <div class="sm-note">붙여넣은 뒤 <b>task</b>를 채우십시오 — 비어 있으면 게이트가
-        선언을 거부합니다. 도구는 ERRORS.json을 자동으로 고치지 않습니다.</div>
+      <div class="sm-head">ERRORS.json 선언 조각 <span class="sm-dev">개발자 전용</span></div>
+      <div class="sm-note">
+        붙여넣을 위치: 저장소 루트의 <b>ERRORS.json</b> → 해당 문서 축의
+        <b>known_false_positives</b>(도구 오탐) 또는 <b>accountant_confirmed_errors</b>
+        (진성 차이) 배열 아래.<br>
+        붙여넣은 뒤 <b>task</b>를 반드시 채우십시오 — 비어 있으면 게이트가 선언을
+        거부합니다. 도구는 ERRORS.json을 자동으로 고치지 않습니다 — 이 창은 복사
+        편의만 줄 뿐, 손으로 옮겨 붙이고 확인해야 합니다.
+      </div>
       <textarea id="snippetText" readonly spellcheck="false"></textarea>
       <div class="sm-btns">
         <button id="snippetCopy">복사</button>

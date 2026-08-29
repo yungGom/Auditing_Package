@@ -136,25 +136,38 @@ class Api:
             return {"error": f"판단을 저장하지 못했습니다: {e}"}
         return {"ok": True, "saved": len(self._judgments), "path": self._review_path}
 
-    # ── 검토자 ───────────────────────────────────────────────────────
+    # ── 검토자 · 개발자 모드 ────────────────────────────────────────────
+    def _load_config(self):
+        try:
+            with open(CONFIG, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
     def get_reviewer(self):
         """ui/config.json에 이름 하나만 둔다. 인증이 아니라 '누가 검토했는지'다.
         이 파일은 .gitignore 대상 — 사람 이름이 저장소에 들어가면 안 된다."""
-        try:
-            with open(CONFIG, encoding="utf-8") as f:
-                return {"reviewer": (json.load(f).get("reviewer") or "").strip()}
-        except (OSError, json.JSONDecodeError):
-            return {"reviewer": ""}
+        return {"reviewer": str(self._load_config().get("reviewer") or "").strip()}
 
     def set_reviewer(self, name):
         name = (name or "").strip()
         if not name:
             return {"error": "이름을 입력하십시오."}
+        cfg = self._load_config()          # 병합해서 쓴다 — dev_mode 등 다른 설정을 지우지 않는다
+        cfg["reviewer"] = name
         try:
-            _atomic_write(CONFIG, json.dumps({"reviewer": name}, ensure_ascii=False, indent=2) + "\n")
+            _atomic_write(CONFIG, json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
         except OSError as e:
             return {"error": f"설정을 저장하지 못했습니다: {e}"}
         return {"ok": True, "reviewer": name}
+
+    def get_dev_mode(self):
+        """ERRORS.json 선언 조각 버튼 노출 여부. 기본값 false — config.json이 없거나
+        키가 없으면 일반 회계사 화면에는 개발 전용 기능이 안 보여야 한다(2026-08-29
+        승인). ERRORS.json은 도구의 회귀 기준이고 관리자는 개발자이지, 자기 감사보고서를
+        풋팅하는 회계사가 아니다. 값은 사람이 config.json을 직접 편집해 켠다 — UI에
+        토글을 두지 않는다(실수로 켜지는 경로를 만들지 않기 위함)."""
+        return {"dev_mode": bool(self._load_config().get("dev_mode") is True)}
 
     # ── 최종 출력 ────────────────────────────────────────────────────
     def export_final(self):

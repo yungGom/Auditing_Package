@@ -71,6 +71,10 @@ body { display: flex; flex-direction: row; overflow: hidden; }
   border-radius: 8px; padding: 16px; font-family: "Pretendard", sans-serif;
 }
 #snippetModal .sm-head { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+#snippetModal .sm-dev {
+  font-size: 10.5px; font-weight: 600; color: #8a5a00; background: #fff3cd;
+  border-radius: 3px; padding: 2px 6px; margin-left: 6px; vertical-align: middle;
+}
 #snippetModal .sm-note { font-size: 11.5px; color: var(--gray-600); margin-bottom: 10px; }
 #snippetText {
   width: 100%; height: 260px; font-family: Consolas, monospace; font-size: 11.5px;
