@@ -177,6 +177,13 @@ on("judge", ({ markId, decision, comment }) => {
   mark.comment = comment || null;
   if (DOCUMENT_COUNTS) renderCounters(DOCUMENT_COUNTS); // 미검토 수는 즉시 줄어든다(게이트6)
   renderList();
+  // 판단 즉시 저장(U-6) — 앱이 죽으면 판단이 날아가는 것이 실무에서 가장 나쁘다.
+  // 화면 갱신을 막지 않도록 await하지 않고, 실패만 표면화한다.
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.save_judgment) {
+    window.pywebview.api.save_judgment(markId, mark.status, mark.comment)
+      .then((r) => { if (r && r.error) emit("saveError", r.error); })
+      .catch((e) => emit("saveError", String(e && e.message || e)));
+  }
   advanceAfterJudge(markId);
 });
 
@@ -234,6 +241,15 @@ async function loadMarks() {
   }
   MARKS = res.marks; // annotations[]는 애초에 여기서 안 받는다(app.py가 marks만 넘김)
   DOCUMENT_COUNTS = res.counts;
+  // 저장된 판단은 api가 marks에 이미 얹어 보낸다. 적용 실패·유실은 조용히 넘기지
+  // 않는다 — 판단이 사라진 것처럼 보이면 회계사가 다시 검토하게 된다(U-6 §1).
+  if (res.review_error) emit("saveError", res.review_error);
+  else if (res.review && res.review.missing && res.review.missing.length) {
+    emit("saveError",
+      `저장된 판단 ${res.review.missing.length}건이 현재 marks.json에 없는 항목입니다 ` +
+      `(재분석으로 항목이 바뀐 것으로 보입니다). 적용되지 않았습니다: ` +
+      res.review.missing.slice(0, 5).join(", "));
+  }
   renderCounters(DOCUMENT_COUNTS);
   renderList();
 }

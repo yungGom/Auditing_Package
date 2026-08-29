@@ -46,12 +46,18 @@ def main():
     # 같은 <원본> 베이스)에서 접미사만 바꿔 찾는다. U-2 설계안 §1.
     SUFFIX = "_틱마크.pdf"
     marks_path = None
+    review_path = None
     if pdf_path.endswith(SUFFIX):
-        candidate = pdf_path[: -len(SUFFIX)] + "_marks.json"
+        base = pdf_path[: -len(SUFFIX)]
+        candidate = base + "_marks.json"
         if os.path.isfile(candidate):
             marks_path = candidate
+        # 판단 파일 — marks.json을 덮어쓰지 않는다. foot.py를 다시 돌리면 marks.json이
+        # 통째로 재생성되므로, 같은 파일에 담으면 재분석 한 번에 판단이 전부 사라진다
+        # (되돌릴 방법이 없는 사고, U-6 설계안 §1). 없으면 첫 판단 때 만들어진다.
+        review_path = base + "_판단.json"
 
-    api = Api(pdf_path, marks_path)
+    api = Api(pdf_path, marks_path, review_path)
     webview.create_window(
         f"DSD 풋팅 — {os.path.basename(pdf_path)}",
         url=index_url, js_api=api, width=1200, height=900, min_size=(600, 400),

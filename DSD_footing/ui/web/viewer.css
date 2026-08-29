@@ -11,7 +11,15 @@ body { display: flex; flex-direction: row; overflow: hidden; }
   display: flex; align-items: center; gap: 8px;
   height: 40px; padding: 0 10px;
   background: #2b2f31; border-bottom: 1px solid #1a1c1d;
+  /* ★ overflow를 막지 않으면 좁은 창에서 툴바 항목이 #main 밖으로 넘쳐 우측
+     상세 패널 밑으로 들어가고, 출력 버튼이 클릭 불가가 된다(게이트 실측).
+     U-6에서 검토자·버튼 2개가 늘어 1200px 창에서도 폭이 빠듯해졌다. */
+  overflow: hidden;
 }
+/* 폭이 모자라면 이 둘이 먼저 줄어든다. 버튼·페이지 이동은 줄지 않는다. */
+#toolbar > * { flex: 0 0 auto; }
+#toolbar #tableLabel { flex: 1 1 auto; min-width: 0; }
+#toolbar #reviewerBox { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #toolbar button {
   background: #3c4144; color: #e8e8e8; border: 1px solid #52585b;
   border-radius: 4px; width: 28px; height: 26px; cursor: pointer; font-size: 13px;
@@ -22,9 +30,62 @@ body { display: flex; flex-direction: row; overflow: hidden; }
 .sep { width: 1px; height: 20px; background: #52585b; margin: 0 4px; }
 #zoomLabel { min-width: 42px; text-align: center; font-size: 12px; }
 #tableLabel { font-size: 12px; color: #c7cbcd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#status { margin-left: auto; font-size: 12px; color: #ff8a80; }
+#status { font-size: 12px; color: #ff8a80; }
+/* U-6 툴바 우측 — 검토자·출력 */
+#reviewerBox { font-size: 11.5px; color: #c7cbcd; white-space: nowrap; }
+#reviewerBox b { color: #e8e8e8; font-weight: 600; }
+#reviewerEdit { width: 20px; height: 20px; font-size: 11px; margin-left: 2px; }
+.tbtn {
+  width: auto !important; padding: 0 10px; height: 24px; font-size: 11.5px;
+  white-space: nowrap;
+}
+.tbtn.primary { background: #1f5fa9; border-color: #2a72c8; }
+.tbtn.primary:hover { background: #2a72c8; }
+/* 저장·출력 결과 줄. 실패는 반드시 눈에 띄어야 한다 — 판단이 사라진 것처럼 보이면
+   회계사가 다시 검토하게 되고, 그건 조서 신뢰의 문제다. */
+#statusBar {
+  padding: 6px 12px; font-size: 12px; background: #2b2f31; color: #cfd3d5;
+  border-bottom: 1px solid #1a1c1d; word-break: break-all;
+}
+#statusBar.ok { color: #a5d6a7; }
+#statusBar.err { color: #ff8a80; background: #3a2b2b; }
+#reviewerAsk {
+  padding: 10px 12px; background: #2b2f31; border-bottom: 1px solid #1a1c1d;
+  display: flex; align-items: center; gap: 8px; font-size: 12px; color: #cfd3d5;
+}
+#reviewerAsk[hidden] { display: none; }   /* 위 snippetModal과 같은 이유 */
+#reviewerAsk input { height: 24px; padding: 0 6px; width: 180px; }
+#reviewerAsk button { width: auto !important; padding: 0 12px; height: 24px; font-size: 12px; }
+/* ERRORS.json 조각 — 자동 반영이 아니라 복사 편의다(설계안 §6) */
+#snippetModal {
+  position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+}
+/* ★ display를 주면 hidden 속성이 무력화된다(hidden은 UA 스타일시트의 display:none인데
+   작성자 CSS가 이긴다). 그러면 전체 화면 오버레이가 투명한 채로 남아 **모든 클릭을
+   가로채** 앱이 조작 불가가 된다 — 게이트에서 실제로 잡힌 결함이다. position:fixed +
+   inset:0 요소에 display를 줄 때는 반드시 [hidden]을 함께 막을 것. */
+#snippetModal[hidden] { display: none; }
+#snippetModal .sm-box {
+  width: 640px; max-width: 90vw; background: var(--bg); color: var(--gray-900);
+  border-radius: 8px; padding: 16px; font-family: "Pretendard", sans-serif;
+}
+#snippetModal .sm-head { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+#snippetModal .sm-note { font-size: 11.5px; color: var(--gray-600); margin-bottom: 10px; }
+#snippetText {
+  width: 100%; height: 260px; font-family: Consolas, monospace; font-size: 11.5px;
+  border: 1px solid var(--gray-400); border-radius: 4px; padding: 8px; resize: vertical;
+}
+#snippetModal .sm-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+#snippetModal .sm-btns button {
+  width: auto !important; padding: 6px 14px; height: auto; font-size: 12.5px;
+  background: var(--gray-100); color: var(--gray-900); border: 1px solid var(--gray-400);
+  border-radius: 4px; cursor: pointer;
+}
 #canvasWrap {
-  height: calc(100% - 40px); overflow: auto;
+  /* 고정 높이(calc(100% - 40px)) 대신 flex를 쓴다 — U-6에서 툴바 아래에 상태줄·
+     검토자 입력줄이 나타났다 사라지므로 툴바 높이를 상수로 가정할 수 없다. */
+  flex: 1; min-height: 0; overflow: auto;
   display: flex; justify-content: center; padding: 16px;
 }
 #pageStage { position: relative; align-self: flex-start; }

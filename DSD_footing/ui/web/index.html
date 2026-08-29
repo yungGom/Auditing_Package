@@ -35,6 +35,16 @@
       <span id="tableLabel"></span>
       <span class="sep"></span>
       <span id="status"></span>
+      <span id="reviewerBox">검토자 <b id="reviewerName">(미입력)</b>
+        <button id="reviewerEdit" title="검토자 변경">✎</button></span>
+      <button id="btnErrors" class="tbtn" title="'차이 아님' 판정을 ERRORS.json 형식으로">선언 조각</button>
+      <button id="btnExport" class="tbtn primary" title="판단을 반영한 최종 PDF">검토완료 PDF</button>
+    </div>
+    <div id="statusBar" hidden></div>
+    <div id="reviewerAsk" hidden>
+      <label for="reviewerInput">검토자 이름을 입력하십시오 (조서에 기재됩니다)</label>
+      <input id="reviewerInput" type="text" maxlength="40" placeholder="예: 홍길동">
+      <button id="reviewerSave">저장</button>
     </div>
     <div id="canvasWrap">
       <div id="pageStage">
@@ -81,8 +91,21 @@
     </div>
   </aside>
   <div id="candidatePopup" hidden></div>
+  <div id="snippetModal" hidden>
+    <div class="sm-box">
+      <div class="sm-head">ERRORS.json 선언 조각</div>
+      <div class="sm-note">붙여넣은 뒤 <b>task</b>를 채우십시오 — 비어 있으면 게이트가
+        선언을 거부합니다. 도구는 ERRORS.json을 자동으로 고치지 않습니다.</div>
+      <textarea id="snippetText" readonly spellcheck="false"></textarea>
+      <div class="sm-btns">
+        <button id="snippetCopy">복사</button>
+        <button id="snippetClose">닫기</button>
+      </div>
+    </div>
+  </div>
   <script type="module" src="viewer.js"></script>
   <script type="module" src="sidebar.js"></script>
   <script type="module" src="detail.js"></script>
+  <script type="module" src="export.js"></script>
 </body>
 </html>
