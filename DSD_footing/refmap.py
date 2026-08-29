@@ -5,7 +5,7 @@ C1~C6 본표↔주석 레퍼런스 대사 (오프라인)
 """
 import re, collections
 import pdfplumber
-from core import grid_info, norm, parse, UNIT, UNIT_MULT
+from core import grid_info, norm, parse, UNIT, UNIT_MULT, note_parse_skip
 from statements import read_rows, stmt_type, key
 from notes import NOTE_HEAD, AMT
 
@@ -89,8 +89,10 @@ def collect_main(pdf, units, min_won):
         if st not in STMT_TAG: continue
         for ti, tb in enumerate(page.find_tables(), 1):
             data = tb.extract()
+            # 파싱 실패 = 이 본표 표가 레퍼 대사에서 통째로 빠진다. 세기만 한다.
             try: G,K,V,hdr,ncol,nrow,numcols = grid_info(data)
-            except Exception: continue
+            except Exception as e:
+                note_parse_skip("C 레퍼(본표)", pi, e, ti); continue
             mult = units.get((pi, ti))
             # 주석열 위치 찾기
             njs = [j for j in range(min(3,ncol))
@@ -124,8 +126,10 @@ def collect_notes(pdf, rng, units, min_won):
         if stmt_type(page.extract_text() or ""): continue      # 본표 페이지 제외
         for ti, tb in enumerate(page.find_tables(), 1):
             data = tb.extract()
+            # 파싱 실패 = 이 주석 표가 레퍼 대사 상대 후보에서 빠진다. 세기만 한다.
             try: G,K,V,hdr,ncol,nrow,numcols = grid_info(data)
-            except Exception: continue
+            except Exception as e:
+                note_parse_skip("C 레퍼(주석)", pi, e, ti); continue
             mult = units.get((pi, ti))
             if mult is None:
                 excl_tabs.add((pi, ti)); continue              # 복합·판독 불가 단위

@@ -11,6 +11,7 @@ import pdfplumber
 from core import (check_table, verdict, find_unit, grid_info, mixed_currency, is_total_label,
                   norm, SKIP_REASON_TEXT)
 from statements import foot_hier, foot_a5, stmt_type, APPLY
+import core
 import tieout, notes, prose, refmap, consist, docmeta
 import marks as marksio
 import render as renderer
@@ -515,6 +516,12 @@ for g_ in FCON["F4_다중공백"]:
                    "어절 간격이 통상보다 넓음", ""])
 sheet("F_일관성",["유형","페이지","대상","내용","출현위치"],_frows,[14,8,26,44,30])
 sheet("D_줄글표기",["페이지","지적어절","내용","신뢰도"],pros,[8,20,40,10])
+# 표 파싱 실패 계수 — 어느 검증에서 어떤 예외로 표가 빠졌는지. 지금은 세기만 한다
+# (동작 불변, 2026-08-29). 여기가 비어 있지 않다는 것은 그만큼 조용히 새고 있다는 뜻이다.
+_pskip = sorted(core.PARSE_SKIPS, key=lambda x: (x["where"], x["page"], x["table"] or 0))
+sheet("표파싱실패",["검증","페이지","표","예외 종류","메시지"],
+      [[x["where"], x["page"], x["table"], x["exc"], x["msg"]] for x in _pskip],
+      [16, 8, 6, 22, 60])
 sheet("C7_주석참조",["구분","내용"],
       [["선언된 주석 수",len(decl)],["본표 참조 수",len(refs)],
        ["참조됐으나 주석 없음",str(miss or "없음")],
@@ -553,5 +560,14 @@ if not QUIET:
         print(f"  [들여쓰기] p{e['ctx'][0]} 표{e['ctx'][1]} 행{e['row']} '{e['label']}' ← 상위 '{e['parent']}' ({e['path']})")
     print(f"연결 감지 {cons} · 단위 미표기 {nounit or '없음'} · 허용오차 ±{TOL:g}")
     print(f"분할 의심 페이지 전환(참고) → {len(SPLIT_SUSPECT)}건")
+    # 표 파싱 실패 계수 — 그 표가 해당 검증에서 통째로 빠졌다는 뜻이다. 지금은 세기만
+    # 한다(동작 불변). 예외 종류를 함께 내는 이유: 같은 예외가 반복되면 원인이 하나다.
+    if core.PARSE_SKIPS:
+        _by_where = collections.Counter(x["where"] for x in core.PARSE_SKIPS)
+        _by_exc = collections.Counter(x["exc"] for x in core.PARSE_SKIPS)
+        print(f"표 파싱 실패(계수만, 동작 불변) → {len(core.PARSE_SKIPS)}건 "
+              f"— 검증별 {dict(_by_where)} · 예외별 {dict(_by_exc)}")
+    else:
+        print("표 파싱 실패(계수만) → 0건")
     print(f"분석 소요: {_T_ANALYZE:.2f}s (마크 {len(MARKS)}개, marks.json: {MARKS_JSON})")
 print(f"산출물: {OUT_PDF} · {OUT_XLSX}")

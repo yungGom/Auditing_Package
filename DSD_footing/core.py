@@ -113,6 +113,19 @@ def mixed_currency(unit_text):
     return len(set(CUR_TOK.findall(norm(unit_text or "")))) >= 2
 
 # ── 검증 ───────────────────────────────────────────────────
+# ── 표 파싱 실패 계수 (2026-08-29) ───────────────────────────────────────
+# grid_info가 예외로 떨어지면 그 표는 해당 검증에서 통째로 빠진다. 종전에는
+# `except Exception: continue`로 사실이 어디에도 안 남아 **얼마나 새는지 세어본 적이
+# 없었다.** 지금은 세기만 한다 — 어느 경로도 동작은 바꾸지 않는다(판정값 불변).
+# 계수 결과를 보고 고칠지 정한다. 예외 종류를 함께 남기는 이유: 같은 예외가 반복되면
+# 원인이 하나일 가능성이 높다.
+PARSE_SKIPS = []
+
+def note_parse_skip(where, page, exc, table=None):
+    """표 파싱 실패 1건 기록. where = 어느 검증에서 빠졌는지(예: 'C7 주석번호')."""
+    PARSE_SKIPS.append(dict(where=where, page=page, table=table,
+                            exc=type(exc).__name__, msg=str(exc)[:120]))
+
 def absorb_subtotal(vals):
     """성분 값 배열에서 '앞 연속 구간의 합 = 그 다음 성분'인 중간 소계의 위치를 찾는다.
 
