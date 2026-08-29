@@ -88,11 +88,14 @@ def draw(c, doc, t, reviewer, reviewed_on, page_no, total_pages):
     d = doc.get("document") or {}
     run = doc.get("run") or {}
     c.setFont(f, 9); c.setFillColor(GRAY)
+    # ★ run 블록의 키는 commit/at이다(marks.py). version/run_ts로 읽으면 조서에
+    #   도구 버전·분석 일시가 '-'로 비어 나간다 — 추적성 정보라 빠지면 안 된다.
+    #   실물 출력을 열어보고 잡은 결함이라, 키 이름을 바꿀 때 여기도 같이 볼 것.
     for label, val in (("문서", d.get("title") or doc.get("source", {}).get("pdf", "")),
                        ("검토자", reviewer or "(미입력)"),
                        ("검토 완료일", reviewed_on),
-                       ("분석 일시", run.get("run_ts") or run.get("ts") or "-"),
-                       ("도구 버전", run.get("version") or run.get("ver") or "-")):
+                       ("분석 일시", run.get("at") or "-"),
+                       ("도구 버전", run.get("commit") or "-")):
         c.setFillColor(GRAY); c.drawString(50, y, label)
         c.setFillColor(DARK); c.drawString(120, y, str(val)[:80]); y -= 13
     y -= 10
@@ -111,14 +114,14 @@ def draw(c, doc, t, reviewer, reviewed_on, page_no, total_pages):
     # 지면에서 빠진 건이 있으면 그 사실을 적는다 — 조서를 보는 사람이 오독하지 않게.
     if t["removed"]:
         c.setFillColor(GRAY); c.setFont(f, 8.5)
-        c.drawString(58, y, f"※ '차이 아님/해당없음' {t['removed']}건은 지면에서 제외되어 있습니다"); y -= 13
+        c.drawString(58, y, f"[안내] '차이 아님/해당없음' {t['removed']}건은 지면에서 제외되어 있습니다"); y -= 13
     y -= 4
 
     # ★ 미검토가 남은 상태의 출력을 막지는 않는다(중간 출력이 실무에서 필요하다).
     #   다만 끝나지 않은 조서가 끝난 것처럼 보이면 안 되므로 눈에 띄게 적는다.
     if t["pending"]:
         c.setFillColor(RED); c.setFont(f, 10)
-        c.drawString(50, y, f"⚠ 미검토 {t['pending']}건이 남아 있습니다 — 검토가 완료되지 않은 상태의 출력입니다")
+        c.drawString(50, y, f"[주의] 미검토 {t['pending']}건이 남아 있습니다 - 검토가 완료되지 않은 상태의 출력입니다")
         y -= 20
 
     # ── 판단 내역 ───────────────────────────────────────────────────
@@ -149,7 +152,7 @@ def draw(c, doc, t, reviewer, reviewed_on, page_no, total_pages):
     y -= 8
     c.setStrokeColor(GRAY); c.setLineWidth(0.3); c.line(50, y, PAGE_W - 50, y); y -= 14
     c.setFillColor(GRAY); c.setFont(f, 8)
-    for ln in ("이 도구는 표시된 수치 사이의 정합성만 검증합니다. 원장·조서 대사는 별도 절차입니다.",
+    for ln in ("이 도구는 표시된 수치 사이의 정합성만 검증합니다. 원장 및 조서 대사는 별도 절차입니다.",
                "자동 판정은 추천이며 확정은 회계사입니다 (candidate only)."):
         c.drawString(50, y, ln); y -= 11
     _footer(c, page_no, total_pages)
@@ -158,7 +161,7 @@ def draw(c, doc, t, reviewer, reviewed_on, page_no, total_pages):
 
 def _footer(c, page_no, total_pages):
     c.setFillColor(GRAY); c.setFont(KFONT, 7)
-    c.drawCentredString(PAGE_W / 2, 28, f"검토 결과 요약 — {page_no}/{total_pages}")
+    c.drawCentredString(PAGE_W / 2, 28, f"검토 결과 요약 {page_no}/{total_pages}")
 
 
 def build_pages(doc, judgments, reviewer, reviewed_on=None):
