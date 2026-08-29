@@ -324,6 +324,10 @@ with pdfplumber.open(PDF) as pdf:
                     _fml = FORMULA_TEXT.get(r["kind"], r["kind"])
                     if v in ("SKIP","SIGN"): _fml = f"{_fml} — {_why}"
                     elif r.get("n"):         _fml = f"{_fml} — 구성 항목 {r['n']}개"
+                    # 두 단계 조판에서 중간 소계를 빼고 계산했으면 그 사실을 남긴다.
+                    # 지면은 깨끗한 체크로 나가므로 이 기록이 유일한 근거다(승인 조건).
+                    if r.get("absorbed"):
+                        _fml = f"{_fml} · 소계 흡수 적용: {', '.join(r['absorbed'])}"
                     # operands: 합계에 들어간 셀. ★마크가 아니라 좌표다 — 성분 셀에는
                     # 마크가 없고, 만들면 새 드로잉이라 R-1이 깨진다(설계안 4절 승인).
                     _ops=[]
@@ -358,7 +362,8 @@ with pdfplumber.open(PDF) as pdf:
                                    label=r.get("label")),
                         verdict=v,
                         evidence=dict(disp=r["disp"], calc=r["calc"], diff=r["calc"]-r["disp"], n=r["n"],
-                                     unit=unit or "미표기", tag=(tg or None), reason=_rc),
+                                     unit=unit or "미표기", tag=(tg or None), reason=_rc,
+                                     absorbed=(r.get("absorbed") or [])),
                         account=r.get("label"), level="L1",
                         shown_value=_shown,
                         computed_value=(None if v in ("SKIP","SIGN") else fmt_like(r["calc"], _shown)),
@@ -368,10 +373,16 @@ with pdfplumber.open(PDF) as pdf:
                         l2_class=None, column_key=None, paper_no=None,
                         comment=None, verified_at=RUN_TS, reviewed_at=None, reviewed_by=None,
                         origin="tool", status="pending", note=None)); SEQ+=1
-                if v in ("DIFF","ROUND","SKIP","SIGN"):
+                # 소계 흡수를 적용한 건은 OK여도 색인에 싣는다 — 지면에는 깨끗한 체크만
+                # 남으므로, 도구가 표 구조를 다시 해석했다는 사실이 여기 없으면 나중에
+                # 이 판정을 의심할 때 근거가 아예 없다(2026-08-28 승인 조건).
+                _absorb_tag = (f"소계흡수: {', '.join(r['absorbed'])}" if r.get("absorbed") else "")
+                if v in ("DIFF","ROUND","SKIP","SIGN") or _absorb_tag:
                     exc.append([pi,ti,r["kind"],r["label"],unit or "미표기",
                                 r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],
-                                {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증","SIGN":"미검증"}[v],tg])
+                                {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증",
+                                 "SIGN":"미검증"}.get(v,"흡수적용"),
+                                " / ".join(x for x in (tg, _absorb_tag) if x)])
         try:
             _last=tobjs[-1].extract()
             _,_,_,_,ncL,_,_=grid_info(_last)

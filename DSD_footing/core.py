@@ -113,6 +113,35 @@ def mixed_currency(unit_text):
     return len(set(CUR_TOK.findall(norm(unit_text or "")))) >= 2
 
 # ── 검증 ───────────────────────────────────────────────────
+def absorb_subtotal(vals):
+    """성분 값 배열에서 '앞 연속 구간의 합 = 그 다음 성분'인 중간 소계의 위치를 찾는다.
+
+    두 단계로 조판된 표에서 평면 합산이 중간 소계를 이중계상하는 것을 막는다.
+    실물은 충당부채 롤포워드다 — `기초 + 전입 − 사용액 = 기말`, `기말 − 차감:유동항목
+    = 합계`(K-IFRS 1037.84가 요구하는 표준 양식이라 회사마다 바뀌지 않는다).
+    `statements._absorbed`(A5 커버리지 점검)와 같은 성질이고, 여기는 성분 배열
+    인덱스 기반이라 구현만 다르다.
+
+    ⚠ **구간에 0이 아닌 값이 2개 이상**일 것을 요구한다(2026-08-28 승인). 소계는
+    최소 두 개의 실제 금액을 요약한 것이기 때문이다. 이 조건이 없으면 값이 대부분
+    '-'인 표에서 `3 + 0 = 3` 같은 우연의 일치가 소계로 잡힌다 — 삼성 p102 종속기업
+    거래내역(기업 25개 × 독립 금액, 소계 구조 자체가 없음)에서 정상 OK가 DIFF로
+    깨지는 것을 실측했다. 금액 임계값(예: 1,000 미만 무시)을 쓰지 않은 이유는 표시
+    숫자 기준 임계값이 단위에 따라 100만 배 다르게 작동하기 때문이다(결정 10과 같은
+    함정). '소계는 둘 이상을 요약한다'는 구조 조건이라 금액 크기·단위와 무관하다.
+    """
+    out = set(); n = len(vals)
+    for i in range(n):
+        s = 0.0; nz = 0
+        for j in range(i, n):
+            s += vals[j]
+            if abs(vals[j]) > 0: nz += 1
+            k = j + 1
+            if j - i + 1 < 2 or k >= n or nz < 2: continue
+            if abs(s - vals[k]) < 0.5 and abs(vals[k]) > 0:
+                out.add(k)
+    return out
+
 def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
     """A1 세로합 · A2 가로합 · A3 계층합 수행 → 결과 리스트
 
@@ -368,10 +397,22 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
             prows = [i for i in body if K[i][j] in ("NUM","BLANK")]
             parts = [V[i][j] for i in prows]
             if len(parts) < 2: continue
+            # 두 단계 조판 흡수 — 성분 안에 중간 소계가 섞여 있으면 평면 합산이
+            # 그 소계를 이중계상한다(충당부채 롤포워드 등, absorb_subtotal 참고).
+            _abs = absorb_subtotal(parts)
+            # 흡수한 소계의 행 이름 — 지면은 깨끗한 체크로 나가지만 이 판정을 나중에
+            # 의심할 때 근거가 필요하다(2026-08-28 승인). 성분 목록(operands)에서는
+            # 빼서 '성분 합 = calc' 관계를 유지한다.
+            absorbed = [LBL[prows[x]][:24] for x in sorted(_abs)]
+            if _abs:
+                prows = [r for x, r in enumerate(prows) if x not in _abs]
+                parts = [v for x, v in enumerate(parts) if x not in _abs]
+                if len(parts) < 2: continue
             skip = excl_tab or dual
             res.append(dict(kind="A1", row=ti, col=j, label=LBL[ti][:24] or "계",
                             disp=V[ti][j], calc=sum(parts),
                             operands=[dict(row=i, col=j) for i in prows],
+                            absorbed=absorbed,
                             reason=(excl_reason if excl_tab else ("DUAL_BREAKDOWN" if dual else None)),
                             n=(0 if skip else len(parts))))
 
