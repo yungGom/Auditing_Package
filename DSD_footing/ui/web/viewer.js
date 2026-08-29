@@ -143,6 +143,9 @@ function drawOperandHighlights(operands) {
   clearOperandHighlights();
   if (!curViewport || !operands || !operands.length) return;
   for (const op of operands) {
+    // bbox=null = 분할 병합 표에서 앞 페이지에 있는 성분. 계산에는 들어갔지만 이
+    // 지면에 셀이 없어 하이라이트할 자리가 없다 — 건너뛴다(목록·합계에는 남는다).
+    if (!op.bbox) continue;
     const r = pdfRectToViewport(bbox4ToRect(op.bbox), curViewport);
     const d = document.createElement("div");
     d.className = "operand-hl";

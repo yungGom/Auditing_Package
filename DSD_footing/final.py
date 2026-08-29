@@ -328,8 +328,18 @@ with pdfplumber.open(PDF) as pdf:
                     # 마크가 없고, 만들면 새 드로잉이라 R-1이 깨진다(설계안 4절 승인).
                     _ops=[]
                     for _o in (r.get("operands") or []):
-                        _ob = cellbox(_o["row"]+off, _o.get("col"))
-                        if not _ob: continue
+                        # ★ +off를 붙이지 않는다. operands는 본체 마크(r["row"])와 같은
+                        # 병합 기준 인덱스인데, cellbox가 안에서 -off를 하므로 +off를
+                        # 붙이면 환산이 상쇄되어 지면 범위를 벗어난다. 분할 병합 표
+                        # (off>0)에서 성분이 조용히 버려지고(조선내화 p62: 21→7) 살아남은
+                        # 것도 엉뚱한 행을 가리켰다. cirmap/tagmap은 지면 기준 인덱스라
+                        # +off가 맞지만 여기는 아니다.
+                        _ob = cellbox(_o["row"], _o.get("col"))
+                        # 좌표가 없어도 버리지 않는다. 분할 병합 표에서 앞 페이지에 있는
+                        # 성분은 이 지면에 셀이 없을 뿐, 계산에는 들어간 항목이다 —
+                        # 버리면 성분 합이 재계산금액을 재현하지 못해 회계사가 판정할 수
+                        # 없다(조선내화 p62: 21개 중 14개가 앞 페이지). bbox=null로 두고
+                        # 화면은 그 항목의 하이라이트만 건너뛴다.
                         _otxt = None
                         if 0 <= _o["row"] < len(data):
                             _orow = data[_o["row"]]
@@ -339,7 +349,7 @@ with pdfplumber.open(PDF) as pdf:
                         if 0 <= _o["row"] < len(data):
                             _olab = next((norm(c) for c in data[_o["row"]] if norm(c)), None)
                         _ops.append(dict(label=_olab, value=_otxt, sign=_o.get("sign", "+"),
-                                         bbox=marksio.bbox4(marksio.box4(*_ob))))
+                                         bbox=(marksio.bbox4(marksio.box4(*_ob)) if _ob else None)))
                     MARKS.append(dict(
                         id=marksio.mid(_kind, r["kind"], pi, table=ti, row=r.get("row"), col=_col_for_id),
                         seq=SEQ, page=pi, kind=_kind,
