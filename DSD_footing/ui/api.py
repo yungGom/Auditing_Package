@@ -10,11 +10,36 @@ import base64
 import datetime
 import json
 import os
+import shutil
+import subprocess
 import sys
+import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import webview  # noqa: E402 — 파일 대화상자(pick_report)에만 쓴다
+from marks import sha256_of  # noqa: E402 — 판단 파일 보호(§3)에 재사용, 새 해시 코드 안 만든다
+from pypdf import PdfReader  # noqa: E402 — 예상 소요 계산용 페이지 수만 읽는다(분석 아님)
+
 CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+# 5축 실측(2026-08-29, foot.py --quiet 분석 소요/페이지수): 0.17~0.41초/페이지.
+# 표 밀도에 따라 편차가 크다 — 조선내화 연차(76p, 26.86s)가 삼성(120p, 20.34s)보다
+# 오래 걸렸다. 페이지 수만으로는 못 잰다. 그래서 점 추정이 아니라 범위로 보여준다
+# (설계안_run_시작화면.md §2 B안, 여유를 둔 0.15~0.45).
+_ETA_LOW_S_PER_PAGE = 0.15
+_ETA_HIGH_S_PER_PAGE = 0.45
+
+
+def _paths_for_report(pdf_path):
+    """원본 보고서 PDF 경로 → foot.py 명명 규칙 그대로의 산출물 경로 3종.
+    final.py의 _base/OUT_PDF 계산과 동일하다(같은 폴더, 확장자만 바꿈)."""
+    base = os.path.splitext(pdf_path)[0]
+    return {"tick": base + "_틱마크.pdf", "marks": base + "_marks.json",
+            "review": base + "_판단.json", "xlsx": base + "_예외색인.xlsx"}
 
 
 def _atomic_write(path, text):
@@ -29,15 +54,35 @@ def _atomic_write(path, text):
 
 
 class Api:
-    def __init__(self, pdf_path, marks_path=None, review_path=None):
+    def __init__(self, pdf_path=None, marks_path=None, review_path=None):
         self._pdf_path = pdf_path
         self._marks_path = marks_path
         self._review_path = review_path
         self._doc = None            # marks.json 원문 캐시 (읽기 전용)
         self._judgments = {}        # 메모리 사본 — 파일이 원본이다
+        self._window = None         # bind_window()로 app.py가 넘겨준다 — 화면 전환·진행 push에 씀
+        self._analyzing = False
+        self._analysis_proc = None  # 진행 중인 foot.py subprocess (창 닫힘 시 종료 대상)
+        self._analysis_paths = None # 진행 중인 분석의 산출물 경로(중단 시 부분 파일 정리용)
+        self._startup_arg = None    # app.py가 CLI 인자로 받은 원본 PDF — start.js가 한 번만 꺼내간다
+
+    def get_startup_arg(self):
+        """CLI 인자(python ui/app.py <원본.pdf>)로 받은 경로. 대화상자로 고른 경로와
+        완전히 같은 흐름(openPath)을 태우기 위해 JS가 시작 시 한 번 물어본다 —
+        Python이 직접 begin_open을 부르면 경고 대화상자 같은 UI가 안 뜬 채로
+        진행될 위험이 있다(app.py 모듈 docstring 참고)."""
+        arg, self._startup_arg = self._startup_arg, None  # 한 번만 반환
+        return {"path": arg}
+
+    def bind_window(self, window):
+        """app.py가 webview.create_window() 직후 부른다. load_url·evaluate_js로
+        시작 화면 → 검토 화면 전환, 분석 진행 상태 push에 쓴다."""
+        self._window = window
 
     def get_pdf(self):
         """→ {name, base64} 고정 파일 하나. 실패 시 {error: 사유}(조용히 빈 값 금지)."""
+        if not self._pdf_path:
+            return {"error": "열린 보고서가 없습니다."}
         try:
             with open(self._pdf_path, "rb") as f:
                 data = f.read()
@@ -168,6 +213,235 @@ class Api:
         풋팅하는 회계사가 아니다. 값은 사람이 config.json을 직접 편집해 켠다 — UI에
         토글을 두지 않는다(실수로 켜지는 경로를 만들지 않기 위함)."""
         return {"dev_mode": bool(self._load_config().get("dev_mode") is True)}
+
+    # ── 시작 화면 — 보고서 열기 · 최근 목록 · 분석 진행 ────────────────────
+    def get_tool_version(self):
+        """final.py의 VER 계산과 같은 패턴(git 짧은 커밋 해시). 시작 화면 표시용."""
+        try:
+            r = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                               capture_output=True, text=True, cwd=ROOT)
+            return {"version": r.stdout.strip() or "nogit"}
+        except Exception:
+            return {"version": "nogit"}
+
+    def list_recents(self):
+        """최근 연 보고서. 경로가 사라진 항목도 지우지 않고 exists=False로 낸다 —
+        화면이 회색 처리하고, 클릭 시 확인 후 remove_recent를 부른다(설계안 §6).
+        조용히 전부 지우면 '연 적이 있었다'는 사실 자체를 잃는다."""
+        cfg = self._load_config()
+        out = []
+        for r in cfg.get("recents", []):
+            p = r.get("path") or ""
+            out.append({"path": p, "name": r.get("name") or os.path.basename(p),
+                        "last_opened": r.get("last_opened") or "", "exists": os.path.isfile(p)})
+        return {"recents": out}
+
+    def remove_recent(self, path):
+        cfg = self._load_config()
+        cfg["recents"] = [r for r in cfg.get("recents", []) if r.get("path") != path]
+        try:
+            _atomic_write(CONFIG, json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
+        except OSError as e:
+            return {"error": str(e)}
+        return {"ok": True}
+
+    def _touch_recent(self, tick_path):
+        """표시 이름은 원본 보고서 이름이다(_틱마크.pdf가 아니다) — 회계사는 원본
+        파일명으로 문서를 기억한다. 저장 실패는 조용히 넘어간다 — 최근 목록은
+        편의 기능이라 판단 파일과 달리 실패가 치명적이지 않다."""
+        base = tick_path[:-len("_틱마크.pdf")] if tick_path.endswith("_틱마크.pdf") \
+            else os.path.splitext(tick_path)[0]
+        name = os.path.basename(base) + ".pdf"
+        cfg = self._load_config()
+        recents = [r for r in cfg.get("recents", []) if r.get("path") != tick_path]
+        recents.insert(0, {"path": tick_path, "name": name,
+                           "last_opened": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")})
+        cfg["recents"] = recents[:10]
+        try:
+            _atomic_write(CONFIG, json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
+        except OSError:
+            pass
+
+    def pick_report(self):
+        """OS 파일 선택 대화상자(WinForms OpenFileDialog, 로컬 API — 오프라인 무관,
+        설계안 §8 실측 확인). 취소는 오류가 아니다 — {"path": None}으로 구분한다."""
+        if not self._window:
+            return {"error": "창이 준비되지 않았습니다."}
+        result = self._window.create_file_dialog(
+            webview.OPEN_DIALOG, file_types=("PDF 파일 (*.pdf)", "모든 파일 (*.*)"))
+        return {"path": (result[0] if result else None)}
+
+    def begin_open(self, path):
+        """시작 화면(대화상자·최근 목록 공통)의 단일 진입점 — 설계안 §3~4 흐름 전체.
+        반환: {status:"opened"} 즉시 전환 / {status:"analyzing", eta} 분석 시작 /
+              {status:"warn_reanalyze", message} 판단 파일 보호로 진행 중단(확인 필요) /
+              {error} 실패."""
+        if not path or not os.path.isfile(path):
+            return {"error": f"파일을 찾을 수 없습니다: {path}"}
+        if path.endswith("_틱마크.pdf"):
+            return self._open_tick_directly(path)  # 이미 만든 산출물 직접 열기(분석 없음)
+
+        paths = _paths_for_report(path)
+        try:
+            cur_sha = sha256_of(path)
+        except OSError as e:
+            return {"error": f"파일을 읽을 수 없습니다: {e}"}
+
+        # §4 — 이미 분석됨: marks.json이 있고 지금 고른 파일과 내용이 같으면 생략
+        if os.path.isfile(paths["marks"]):
+            try:
+                with open(paths["marks"], encoding="utf-8") as f:
+                    existing = json.load(f)
+                if (existing.get("source") or {}).get("sha256") == cur_sha:
+                    return self._open_tick_directly(paths["tick"])
+            except (OSError, json.JSONDecodeError):
+                pass  # 손상된 marks.json — 재분석으로 흘러간다
+
+        # §3 — 판단 파일 보호: 기존 판단이 있는데 지금 파일과 내용이 다르면 진행 전에 묻는다.
+        # 내용이 같으면(R-1 결정론상 재분석해도 같은 marks.json이 나옴) 그냥 진행한다.
+        if os.path.isfile(paths["review"]):
+            try:
+                with open(paths["review"], encoding="utf-8") as f:
+                    old_sha = json.load(f).get("source_sha256")
+            except (OSError, json.JSONDecodeError):
+                old_sha = None
+            if old_sha and old_sha != cur_sha:
+                return {"status": "warn_reanalyze", "path": path,
+                        "message": ("이 보고서에 대한 기존 판단 기록이 있습니다만, 지금 선택한 "
+                                   "파일과 내용이 다릅니다(원본이 바뀐 것으로 보입니다).\n\n"
+                                   "재분석해도 기존 판단 파일 자체는 지워지지 않지만, 새 분석 "
+                                   "결과와는 내용이 달라 자동으로 적용되지 않습니다.\n\n"
+                                   f"기존 판단 파일: {paths['review']}")}
+
+        return self._start_analysis(path, paths)
+
+    def confirm_reanalyze(self, path):
+        """경고 대화상자에서 [계속 진행]을 눌렀을 때. 기존 판단 파일을 타임스탬프
+        백업으로 복사한 뒤(보험용) 분석을 시작한다."""
+        paths = _paths_for_report(path)
+        if os.path.isfile(paths["review"]):
+            ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            try:
+                shutil.copy2(paths["review"], f"{paths['review']}.bak-{ts}")
+            except OSError as e:
+                return {"error": f"기존 판단 파일을 백업하지 못했습니다: {e} — 진행을 중단합니다."}
+        return self._start_analysis(path, paths)
+
+    def _open_tick_directly(self, tick_path):
+        if not os.path.isfile(tick_path):
+            return {"error": f"파일을 찾을 수 없습니다: {tick_path}"}
+        base = tick_path[:-len("_틱마크.pdf")]
+        self._pdf_path = tick_path
+        marks_path = base + "_marks.json"
+        self._marks_path = marks_path if os.path.isfile(marks_path) else None
+        self._review_path = base + "_판단.json"
+        self._doc = None; self._judgments = {}
+        self._touch_recent(tick_path)
+        self._goto_viewer()
+        return {"status": "opened"}
+
+    def _start_analysis(self, path, paths):
+        if self._analyzing:
+            return {"error": "이미 분석이 진행 중입니다."}
+        try:
+            npages = len(PdfReader(path).pages)
+        except Exception:
+            npages = None
+        self._analyzing = True
+        self._analysis_paths = paths
+        threading.Thread(target=self._run_analysis, args=(path, paths), daemon=True).start()
+        eta = None
+        if npages:
+            eta = {"pages": npages, "low_s": round(npages * _ETA_LOW_S_PER_PAGE),
+                  "high_s": round(npages * _ETA_HIGH_S_PER_PAGE)}
+        return {"status": "analyzing", "eta": eta}
+
+    def _run_analysis(self, path, paths):
+        """백그라운드 스레드 — foot.py를 subprocess로 돌리고 경과 시간을 push한다.
+        정확한 페이지 진행률(final.py 훅)은 이번 범위 밖이다(설계안 §2, B안).
+        판정 파이프라인은 여기서 읽기만 한다 — foot.py를 그대로 부를 뿐 로직을
+        재구현하지 않는다.
+
+        ★ stderr는 PIPE가 아니라 파일로 받는다. PIPE로 잡고 자식이 끝날 때까지
+        안 읽으면, pdfplumber의 CropBox 경고 등이 쌓여 OS 파이프 버퍼(보통 64KB)를
+        채우는 순간 자식이 write()에서 멈추고 부모는 poll()만 반복해 **영원히 안
+        끝나는 교착 상태**가 된다(음성 테스트로 재현·확인, 36페이지 문서에서도
+        발생). 파일은 그런 크기 제한이 없어 이 문제 자체가 없다."""
+        start = time.time()
+        log_path = paths["marks"] + ".analysis.log"
+        try:
+            with open(log_path, "w", encoding="utf-8") as logf:
+                proc = subprocess.Popen(
+                    [sys.executable, "-u", os.path.join(ROOT, "foot.py"), path, "--quiet"],
+                    cwd=ROOT, stdout=subprocess.DEVNULL, stderr=logf, text=True)
+                self._analysis_proc = proc
+                while proc.poll() is None:
+                    time.sleep(0.5)
+                    self._push_progress({"elapsed": round(time.time() - start)})
+            if proc.returncode != 0:
+                tail = ""
+                try:
+                    with open(log_path, encoding="utf-8", errors="replace") as f:
+                        tail = f.read()[-800:]
+                except OSError:
+                    pass
+                self._push_progress({"error": f"분석이 실패했습니다(종료코드 {proc.returncode}).\n{tail}"})
+                return
+        except Exception as e:
+            self._push_progress({"error": f"분석을 시작하지 못했습니다: {type(e).__name__}: {e}"})
+            return
+        finally:
+            self._analyzing = False
+            self._analysis_proc = None
+            self._analysis_paths = None
+            try: os.remove(log_path)
+            except OSError: pass
+
+        if not os.path.isfile(paths["tick"]):
+            self._push_progress({"error": "분석이 끝났지만 산출물을 찾을 수 없습니다."})
+            return
+        self._pdf_path = paths["tick"]
+        self._marks_path = paths["marks"] if os.path.isfile(paths["marks"]) else None
+        self._review_path = paths["review"]
+        self._doc = None; self._judgments = {}
+        self._touch_recent(paths["tick"])
+        self._goto_viewer()
+
+    def cancel_analysis(self):
+        """분석 중 창이 닫힐 때 app.py의 closing 핸들러가 부른다(설계안 §5).
+        subprocess를 종료한다 — 페이지 루프(대부분의 시간) 도중이면 애초에 파일이
+        없어 정리할 게 없다. marks.json 쓰기 도중(아주 짧은 구간)에 걸려 잘린
+        파일이 남았을 수 있으니 지운다. **_판단.json은 손대지 않는다** — foot.py가
+        그 파일의 존재를 아예 모르므로 여기서도 건드릴 이유가 없다."""
+        if self._analysis_proc:
+            try:
+                self._analysis_proc.terminate()
+            except Exception:
+                pass
+        if self._analysis_paths:
+            mj = self._analysis_paths.get("marks")
+            if mj and os.path.isfile(mj):
+                try:
+                    json.load(open(mj, encoding="utf-8"))  # 온전하면 그대로 둔다(드묾)
+                except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                    try: os.remove(mj)
+                    except OSError: pass
+        self._analyzing = False
+
+    def _push_progress(self, payload):
+        if not self._window:
+            return
+        try:
+            self._window.evaluate_js(
+                f"window.__dsdProgress && window.__dsdProgress({json.dumps(payload, ensure_ascii=False)})")
+        except Exception:
+            pass  # 창이 이미 닫혔을 수 있다 — 무시(cancel_analysis가 별도로 정리한다)
+
+    def _goto_viewer(self):
+        if not self._window:
+            return
+        index_html = os.path.join(HERE, "web", "index.html")
+        self._window.load_url("file:///" + index_html.replace(os.sep, "/"))
 
     # ── 최종 출력 ────────────────────────────────────────────────────
     def export_final(self):

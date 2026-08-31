@@ -1,0 +1,97 @@
+/* start.css — 시작 화면(run.bat 설계안). sidebar.css와 같은 3색 규약(흰 배경/회색조/
+   빨강)을 이 파일 안에서 다시 선언한다 — 시작 화면은 뷰어 페이지와 별개 문서라
+   sidebar.css를 로드하지 않는다(불필요한 결합을 피함). 값은 동일하게 맞춘다. */
+:root {
+  --bg: #ffffff;
+  --gray-100: #f7f7f8;
+  --gray-200: #eceeef;
+  --gray-400: #b4b8bb;
+  --gray-600: #6b7075;
+  --gray-900: #22262a;
+  --red: #d0342c;
+}
+
+@font-face {
+  font-family: "Pretendard";
+  src: url("./vendor/fonts/pretendard/Pretendard-Regular.woff2") format("woff2");
+  font-weight: 400; font-display: swap;
+}
+@font-face {
+  font-family: "Pretendard";
+  src: url("./vendor/fonts/pretendard/Pretendard-SemiBold.woff2") format("woff2");
+  font-weight: 600; font-display: swap;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--gray-100); color: var(--gray-900);
+  font-family: "Pretendard", "Malgun Gothic", "맑은 고딕", sans-serif;
+}
+#startWrap {
+  height: 100%; display: flex; align-items: center; justify-content: center;
+}
+#startCard {
+  width: 420px; max-width: 92vw; background: var(--bg);
+  border: 1px solid var(--gray-200); border-radius: 10px;
+  padding: 28px 26px; box-shadow: 0 2px 16px rgba(0,0,0,.06);
+}
+#startCard h1 { font-size: 19px; margin: 0 0 2px; }
+#toolVersion { font-size: 11px; color: var(--gray-600); margin-bottom: 20px; }
+
+#reviewerAsk { margin-bottom: 16px; font-size: 12px; }
+#reviewerAsk label { display: block; color: var(--gray-600); margin-bottom: 6px; }
+#reviewerAsk .row { display: flex; gap: 6px; }
+#reviewerAsk input {
+  flex: 1; height: 30px; padding: 0 8px; font-size: 13px;
+  border: 1px solid var(--gray-400); border-radius: 4px;
+}
+#reviewerAsk button {
+  height: 30px; padding: 0 12px; border-radius: 4px; border: none;
+  background: var(--gray-900); color: #fff; cursor: pointer; font-size: 12.5px;
+}
+#reviewerLine { font-size: 12px; color: var(--gray-600); margin-bottom: 16px; }
+#reviewerLine b { color: var(--gray-900); font-weight: 600; }
+#reviewerEdit {
+  margin-left: 6px; font-size: 11px; padding: 1px 8px; border-radius: 3px;
+  border: 1px solid var(--gray-400); background: var(--bg); cursor: pointer;
+}
+
+#btnOpen {
+  width: 100%; height: 44px; font-size: 14.5px; font-weight: 600;
+  background: #1f5fa9; color: #fff; border: none; border-radius: 6px;
+  cursor: pointer; margin-bottom: 22px;
+}
+#btnOpen:hover { background: #2a72c8; }
+#btnOpen:disabled { opacity: .5; cursor: default; }
+
+#recentsHead { font-size: 11.5px; font-weight: 600; color: var(--gray-600); margin-bottom: 6px; }
+#recentsList .item {
+  display: flex; flex-direction: column; padding: 8px 10px; border-radius: 5px;
+  cursor: pointer; margin-bottom: 3px;
+}
+#recentsList .item:hover { background: var(--gray-100); }
+#recentsList .item .name { font-size: 13px; font-weight: 600; }
+#recentsList .item .meta { font-size: 10.5px; color: var(--gray-600); margin-top: 1px; }
+#recentsList .item.missing { opacity: .45; }
+#recentsList .item.missing .meta::after { content: " · 파일을 찾을 수 없음"; color: var(--red); }
+#recentsEmpty { font-size: 12px; color: var(--gray-600); padding: 6px 2px; }
+
+#statusBar {
+  margin-top: 14px; padding: 8px 10px; border-radius: 5px; font-size: 12px;
+  background: var(--gray-100); color: var(--gray-900); word-break: break-all;
+  white-space: pre-line;
+}
+#statusBar.err { background: #fdecea; color: #a83226; }
+
+#progressWrap {
+  margin-top: 16px; display: flex; align-items: center; gap: 10px;
+  font-size: 12.5px; color: var(--gray-900);
+}
+#progressSpinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--gray-200); border-top-color: var(--red);
+  animation: dsd-spin 0.8s linear infinite; flex: 0 0 auto;
+}
+@keyframes dsd-spin { to { transform: rotate(360deg); } }
+#progressText { flex: 1; line-height: 1.5; white-space: pre-line; }

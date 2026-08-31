@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>DSD 풋팅</title>
+<link rel="stylesheet" href="start.css">
+</head>
+<body>
+  <div id="startWrap">
+    <div id="startCard">
+      <h1>DSD 풋팅</h1>
+      <div id="toolVersion"></div>
+
+      <div id="reviewerAsk" hidden>
+        <label for="reviewerInput">검토자 이름을 입력하십시오 (조서에 기재됩니다)</label>
+        <div class="row">
+          <input id="reviewerInput" type="text" maxlength="40" placeholder="예: 홍길동">
+          <button id="reviewerSave">저장</button>
+        </div>
+      </div>
+      <div id="reviewerLine" hidden>검토자 <b id="reviewerName"></b>
+        <button id="reviewerEdit" title="검토자 변경">변경</button></div>
+
+      <button id="btnOpen" class="primary" type="button">보고서 열기</button>
+
+      <div id="recentsWrap">
+        <div id="recentsHead">최근 연 보고서</div>
+        <div id="recentsList"></div>
+        <div id="recentsEmpty" hidden>최근 연 보고서가 없습니다 — 위에서 보고서를 열어보세요.</div>
+      </div>
+
+      <div id="statusBar" hidden></div>
+
+      <div id="progressWrap" hidden>
+        <div id="progressSpinner"></div>
+        <div id="progressText"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="start.js"></script>
+</body>
+</html>
