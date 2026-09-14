@@ -7,7 +7,7 @@ import { F_LABEL, Icon, MONO } from "./ui";
 export type RecBadge = {
   label: string; kind: "corpus" | "sim" | "peer" | "ext";
 };
-export type RecAlt = { id: string; label: string; badge: string };
+export type RecAlt = { id: string; label: string; badge: string; rank?: number };
 
 const VARIANTS: Record<string, {
   label: string; icon: string; fg: string; bg: string; border: string;
@@ -31,11 +31,13 @@ const BADGE_KINDS: Record<string, [string, string]> = {
 };
 
 export default function RecCard({
-  variant, elementId, labelKo, badges, alts, note, confirmedBy, onConfirm,
+  variant, elementId, labelKo, badges, alts, note, confirmedBy, onConfirm, onSelect, selectionLabel,
 }: {
   variant: string; elementId: string; labelKo: string;
   badges?: RecBadge[]; alts?: RecAlt[]; note?: string;
   confirmedBy?: string; onConfirm?: () => void;
+  onSelect?: (elementId: string) => void;
+  selectionLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const v = VARIANTS[variant] || VARIANTS.recommend;
@@ -61,7 +63,7 @@ export default function RecCard({
           font: `600 11px ${F_LABEL}`, color: v.fg, background: v.bg,
           borderRadius: 4, padding: "3px 8px", flex: "none",
         }}>
-          <Icon name={v.icon} size={13} />{v.label}
+          <Icon name={v.icon} size={13} />{selectionLabel || v.label}
         </span>
       </div>
 
@@ -104,7 +106,17 @@ export default function RecCard({
               borderTop: "1px solid rgba(195,198,209,0.5)",
             }}>
               {alts!.map((a, i) => (
-                <div key={i} style={{
+                <div key={a.id}
+                  role={onSelect && !confirmed ? "button" : undefined}
+                  tabIndex={onSelect && !confirmed ? 0 : undefined}
+                  aria-label={onSelect && !confirmed ? `${a.label} 선택` : undefined}
+                  onClick={onSelect && !confirmed ? () => onSelect(a.id) : undefined}
+                  onKeyDown={onSelect && !confirmed ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault(); onSelect(a.id);
+                    }
+                  } : undefined}
+                  style={{
                   display: "flex", alignItems: "center", gap: 10,
                   padding: "7px 2px",
                   borderBottom: "1px solid rgba(195,198,209,0.35)",
@@ -112,7 +124,7 @@ export default function RecCard({
                   <span style={{
                     font: `700 10px ${F_LABEL}`, color: "#737780",
                     width: 14, fontVariantNumeric: "tabular-nums",
-                  }}>{i + 2}</span>
+                  }}>{a.rank ?? i + 2}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
                       fontFamily: MONO, fontSize: 11, color: "#43474f",

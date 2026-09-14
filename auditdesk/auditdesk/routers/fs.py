@@ -3,7 +3,7 @@ import json
 import subprocess
 import sys
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
@@ -24,9 +24,14 @@ def open_path(body: dict):
     """로컬 파일을 OS 기본 프로그램으로 열기 (엑셀 열기 버튼)."""
     import os
     path = body.get("path") or ""
+    if not isinstance(path, str) or not path.strip():
+        raise HTTPException(422, "열 파일의 경로를 지정하세요")
     if not os.path.exists(path):
-        return {"ok": False, "error": f"파일 없음: {path}"}
-    os.startfile(path)                          # Windows 로컬 앱 전용
+        raise HTTPException(404, "파일을 찾을 수 없습니다 — 파일 위치를 확인하세요")
+    try:
+        os.startfile(path)                      # Windows 로컬 앱 전용
+    except OSError:
+        raise HTTPException(409, "파일을 열 수 없습니다 — 접근 권한과 기본 프로그램 설정을 확인하세요") from None
     return {"ok": True}
 
 

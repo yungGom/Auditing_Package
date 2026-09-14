@@ -1,7 +1,7 @@
 // XBRL Studio 5화면 — 택사노미 체크 · 매핑 확정 · 작성 워크시트 ·
 // 차원 표 뷰어 · 트리 뷰 (참조 구현 v2 이식)
 import React, { useEffect, useMemo, useState } from "react";
-import { api, Job, pollJob } from "./api";
+import { api, Job, openFile, pollJob } from "./api";
 import RecCard, { RecAlt, RecBadge } from "./RecCard";
 import {
   Card, chip, ErrorBanner, F_HEAD, F_LABEL, GhostBtn, Icon, MONO,
@@ -339,7 +339,7 @@ export function MappingScreen() {
                 marginBottom: 14,
               }}>추천은 실증·유사도 기반 후보입니다 — 최종 판단은
                 회계사가 확정 버튼으로 기록합니다 (자동 확정 없음)</div>
-              <MappingCard item={cur} onConfirm={(el) => confirm(sel, el)} />
+              <MappingCard key={`${mappingId}:${sel}`} item={cur} onConfirm={(el) => confirm(sel, el)} />
             </>
           ) : (
             <div style={{ font: `500 13px ${F_LABEL}`, color: "#737780" }}>
@@ -354,7 +354,9 @@ export function MappingScreen() {
 function MappingCard({ item, onConfirm }: {
   item: any; onConfirm: (element: string) => void;
 }) {
-  const top = item.candidates?.[0];
+  const [selected, setSelected] = useState<string | null>(null);
+  const top = item.candidates?.find((c: any) => c.element.replace("_", ":") === selected)
+    || item.candidates?.[0];
   const decided = item.decided;
   const meta = MAP_STATE_META[item.state] || MAP_STATE_META.manual;
   const badges: RecBadge[] = top ? [
@@ -367,8 +369,9 @@ function MappingCard({ item, onConfirm }: {
       ? [{ label: `유사 확장 ${item.similar_extensions[0].firms}사`,
            kind: "ext" as const }] : []),
   ] : [];
-  const alts: RecAlt[] = (item.candidates || []).slice(1).map((c: any) => ({
+  const alts: RecAlt[] = (item.candidates || []).filter((c: any) => c !== top).map((c: any) => ({
     id: c.element.replace("_", ":"), label: c.label,
+    rank: item.candidates.indexOf(c) + 1,
     badge: `score ${c.score.toFixed(2)}`,
   }));
   const note = item.state === "standard_recommended"
@@ -399,7 +402,9 @@ function MappingCard({ item, onConfirm }: {
       badges={badges} alts={alts} note={decided ? undefined : note}
       confirmedBy={decided
         ? `${item.decided_by} ${item.decided_at?.slice(5, 16)}` : undefined}
-      onConfirm={() => onConfirm(top.element)} />
+      onSelect={decided ? undefined : setSelected}
+      selectionLabel={!decided && top !== item.candidates?.[0] ? "선택한 대안" : undefined}
+      onConfirm={decided ? undefined : () => onConfirm(top.element)} />
   );
 }
 
@@ -473,10 +478,7 @@ export function TaxoScreen() {
                 }}>승격 감지 생략됨 — 별도 실행 버튼</span>
               )}
               <div style={{ flex: 1 }} />
-              <GhostBtn onClick={() => api("/api/fs/open", {
-                method: "POST",
-                body: JSON.stringify({ path: result.xlsx_path }),
-              })}>
+              <GhostBtn onClick={() => openFile(result.xlsx_path)}>
                 <Icon name="download" size={15} />
                 착수 전 체크리스트 엑셀 내보내기</GhostBtn>
             </div>
@@ -637,10 +639,7 @@ export function WorksheetScreen({ presetDsd }: {
             {sm.mode === "inherit" && (
               <span style={chip("#001e40", "#d5e3ff")}>승계 모드</span>
             )}
-            <GhostBtn onClick={() => api("/api/fs/open", {
-              method: "POST",
-              body: JSON.stringify({ path: result.xlsx_path }),
-            })}>
+            <GhostBtn onClick={() => openFile(result.xlsx_path)}>
               <Icon name="download" size={15} />엑셀 열기</GhostBtn>
           </div>
           <div style={{ flex: 1, overflow: "auto", padding: "16px 24px" }}>
@@ -700,10 +699,7 @@ export function DimScreen() {
           <>
             <span style={{ font: `500 11px ${F_LABEL}`, color: "#737780" }}>
               화면은 산출 엑셀 재독(값 동일 보장)</span>
-            <GhostBtn onClick={() => api("/api/fs/open", {
-              method: "POST",
-              body: JSON.stringify({ path: result.xlsx_path }),
-            })}>
+            <GhostBtn onClick={() => openFile(result.xlsx_path)}>
               <Icon name="download" size={15} />엑셀 열기</GhostBtn>
           </>
         )}

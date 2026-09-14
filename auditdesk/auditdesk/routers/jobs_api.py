@@ -16,7 +16,5 @@ def get_job(job_id: str):
 
 @router.get("")
 def list_jobs(active: bool = False, kind: str = None):
-    out = jobs.list_jobs(active=active)
-    if kind:
-        out = [j for j in out if j["kind"] == kind]
+    out = jobs.list_jobs(active=active, kind=kind)
     return {"jobs": out}

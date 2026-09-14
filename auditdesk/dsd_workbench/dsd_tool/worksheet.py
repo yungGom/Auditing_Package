@@ -24,7 +24,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .excel_out import extract
-from .foot import FootingContext, _label
+from .foot import FootingContext, _label, _num, _regions
 from .mapping import MappingCorpus, suggest
 
 _BOLD = Font(bold=True)
@@ -52,6 +52,10 @@ PERIOD_LABELS_INSTANT = {
 
 _HEADER = ["계정/항목", None, "element ID", "편집기 검색어", "확신도",
            "대안(2~4위)", "확정 ☐"]
+
+
+class WorksheetStructureError(ValueError):
+    """추출은 가능하지만 작성용 금액 열을 식별할 수 없는 표."""
 
 
 def _sheet_category(sheet_name):
@@ -165,8 +169,15 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
             src = ctx.wb[sheet]
             if category == "CE":
                 # CE의 값 열은 기간이 아니라 자본구성요소 — 원본 헤더 그대로
-                hdr_row = min(r for r in ctx.rowmaps[sheet]
-                              if len(ctx.rowmaps[sheet][r]) >= 5)
+                hdr_row = max(_regions(ctx.rowmaps[sheet]), key=len)[0]
+                capital_cols = sorted({c for r in data_rows
+                                       for c in ctx.rowmaps[sheet][r] if c >= 2
+                                       and re.sub(r"\s+", "", str(src.cell(hdr_row, c).value or "")) != "주석"})
+                if not capital_cols:
+                    raise WorksheetStructureError(
+                        f"{sheet}: 자본 구성요소 금액 열이 없습니다 — 원본 표의 헤더와 금액 열을 확인하세요")
+                periods = [(f"col{c}", [(r, _num(src, r, c)) for r in data_rows])
+                           for c in capital_cols]
                 labels = []
                 for name, _ in periods:
                     m = re.match(r"col(\d+)", name)
@@ -194,11 +205,8 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
                 ws.append(["[자본변동표 열 → member 매핑 — 표준 라벨 유사도 "
                            "기준 (코퍼스에 member 실증 미축적, 최종 판단 필요)]"])
                 ws.cell(row=ws.max_row, column=1).font = _BOLD
-                header_row = min(r for r, _ in
-                                 [(r, None) for r in ctx.rowmaps[sheet]
-                                  if len(ctx.rowmaps[sheet][r]) >= 5])
-                for c in ctx.rowmaps[sheet][header_row][2:]:
-                    col_label = str(src.cell(row=header_row, column=c).value
+                for c in capital_cols:
+                    col_label = str(src.cell(row=hdr_row, column=c).value
                                     or "").replace("\n", "")
                     if not col_label:
                         continue

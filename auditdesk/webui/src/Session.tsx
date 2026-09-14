@@ -1,7 +1,7 @@
 // 세션 상세 — 개요(파이프라인)·시트 뷰·수정 확인(반영 전 확인)·이력 + 반영 완료 모달
 // (UI-7: 화면 용어는 GLOSSARY 기준 — API 경로·reason 코드는 계약 불변)
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { api, Job, pollJob } from "./api";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, Job, openFile, pollJob } from "./api";
 import {
   Card, chip, ErrorBanner, F_HEAD, F_LABEL, GhostBtn, Icon, MONO,
   PrimaryBtn,
@@ -263,10 +263,7 @@ function Overview({ s, onExtract, goChange }: {
             </PrimaryBtn>
           ) : (
             <>
-              <GhostBtn onClick={() => api("/api/fs/open", {
-                method: "POST",
-                body: JSON.stringify({ path: s.xlsx_path }),
-              })}>
+              <GhostBtn onClick={() => openFile(s.xlsx_path)}>
                 <Icon name="open_in_new" size={17} />엑셀: {s.xlsx_path
                   .split("\\").pop()}
               </GhostBtn>
@@ -599,9 +596,7 @@ function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
               `/api/workbench/sessions/${sessionId}/foot`,
               { excel: true }).then((d) => {
                 const p = d?.result?.ai_excel_path;
-                if (p) api("/api/fs/open", {
-                  method: "POST", body: JSON.stringify({ path: p }),
-                });
+                if (p) openFile(p);
               })}>
               <Icon name="download" size={15} />AI_Footing 엑셀 내보내기
             </GhostBtn>
@@ -930,10 +925,7 @@ function XbrlReconSub({ sessionId, runJob }: {
             <span style={{ font: `500 11px ${F_LABEL}`, opacity: 0.85 }}>
               허용오차 {result.tolerance}</span>
             {result.out_path && (
-              <GhostBtn onClick={() => api("/api/fs/open", {
-                method: "POST",
-                body: JSON.stringify({ path: result.out_path }),
-              })}>
+              <GhostBtn onClick={() => openFile(result.out_path)}>
                 <Icon name="download" size={15} />엑셀 다운로드</GhostBtn>
             )}
           </div>
@@ -1184,10 +1176,7 @@ function PriorSub({ sessionId, recon, runJob, priorPath, setPriorPath }: {
               {recon.source === "opendart-cache"
                 ? "전기 소스: OpenDART 캐시" : "전기 소스: 로컬 파일"}
             </span>
-            <GhostBtn onClick={() => api("/api/fs/open", {
-              method: "POST",
-              body: JSON.stringify({ path: recon.excel_path }),
-            })}>
+            <GhostBtn onClick={() => openFile(recon.excel_path)}>
               <Icon name="download" size={15} />엑셀 내보내기</GhostBtn>
           </div>
           <div style={{
@@ -1293,9 +1282,14 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
   const [open, setOpen] = useState<Record<string, boolean>>({ edit: true });
   const [excluded, setExcluded] = useState<Record<number, boolean>>({});
   const [running, setRunning] = useState(false);
+  const [diffFailed, setDiffFailed] = useState(false);
+  const diffPending = useRef(false);
   const diff = s.diff;
 
   const runDiff = async () => {
+    if (diffPending.current) return;
+    diffPending.current = true;
+    setDiffFailed(false);
     setErr("");
     try {
       await api(`/api/workbench/sessions/${sessionId}/diff`, {
@@ -1305,14 +1299,16 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
       reload();
     } catch (e: any) {
       setErr(e.message);
+      setDiffFailed(true);
+    } finally {
+      diffPending.current = false;
     }
   };
 
   const changes: Change[] = diff?.changes || [];
   const selCount = changes.filter((c) => !excluded[c.id]).length;
 
-  // UI-7 확장 ②: 탭 진입 시 점검 자동 실행 — 수동 실행 버튼 없음,
-  // 재실행은 [다시 비교]만
+  // 최초 자동 실행은 한 번만. 실패 시 같은 화면에서 명시적으로 재시도.
   useEffect(() => {
     if (!diff && s.xlsx_path) runDiff();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1327,7 +1323,7 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
           }}>
             <Icon name="progress_activity" size={18} color="#43474f" />
             <span style={{ font: `600 13px ${F_LABEL}`, color: "#191c1d" }}>
-              수정 내용을 점검하고 있습니다…</span>
+              {diffFailed ? "수정 내용 점검에 실패했습니다." : "수정 내용을 점검하고 있습니다…"}</span>
           </div>
           <div style={{
             font: `500 12px ${F_LABEL}`, color: "#737780", marginTop: 8,
@@ -1335,6 +1331,7 @@ function ChangeReview({ sessionId, s, onRepack, setErr, reload }: {
             엑셀에서 바뀐 내용을 자동으로 찾습니다. 원본은 그대로
             둡니다.
           </div>
+          {diffFailed && <GhostBtn onClick={runDiff}>다시 비교</GhostBtn>}
         </Card>
       </div>
     );

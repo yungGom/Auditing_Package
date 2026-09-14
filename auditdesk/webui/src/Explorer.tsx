@@ -1,6 +1,6 @@
 // DART Explorer 3화면 — 공시 검색 · XBRL 파이프라인 · 설정 (참조 구현 이식)
 import React, { useEffect, useRef, useState } from "react";
-import { api, Job, pollJob } from "./api";
+import { api, Job, openFile, pollJob } from "./api";
 import {
   Card, chip, ErrorBanner, F_HEAD, F_LABEL, GhostBtn, Icon, MONO,
   PrimaryBtn,
@@ -71,10 +71,6 @@ export function SearchScreen({ goXbrl, goWorksheet }: {
       return null;
     }
   };
-
-  const openFile = (p: string) => api("/api/fs/open", {
-    method: "POST", body: JSON.stringify({ path: p }),
-  });
 
   // [DSD 저장] — 저장 위치 사용자 선택 (원본이 곧 DSD)
   const actSaveDsd = async (d: any, attach?: string, tag?: string) => {
@@ -671,10 +667,7 @@ export function XbrlScreen({ preset }: {
               }}>rcept {result.rcept_no} · {result.corp_code}</div>
             </div>
             <div style={{ flex: 1 }} />
-            <GhostBtn onClick={() => api("/api/fs/open", {
-              method: "POST",
-              body: JSON.stringify({ path: result.xlsx_path }),
-            })}>
+            <GhostBtn onClick={() => openFile(result.xlsx_path)}>
               <Icon name="table" size={15} />산출 엑셀 열기</GhostBtn>
           </div>
         </Card>

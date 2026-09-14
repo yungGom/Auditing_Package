@@ -5,11 +5,13 @@
 import datetime
 import glob
 import os
+import tempfile
 import uuid
 
 from fastapi import APIRouter, HTTPException
 
 from .. import jobs
+from ..validation import number
 
 router = APIRouter()
 
@@ -17,8 +19,12 @@ _EXPLORER_DIR = None
 
 
 def _client():
-    from dart_explorer.client.opendart import OpenDartClient
-    return OpenDartClient()
+    from dart_explorer.client.opendart import OpenDartClient, load_api_key
+    try:
+        key = load_api_key()
+    except RuntimeError:
+        raise HTTPException(409, "OpenDART API 키가 설정되지 않았습니다 — API 키 설정 후 다시 시도하세요") from None
+    return OpenDartClient(api_key=key)
 
 
 def _cache_root():
@@ -107,6 +113,8 @@ def peer_induty():
         code = cli.resolve_corp_code(company)
         return {"induty": cli.company(code).get("induty_code"),
                 "company": company}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"induty": None, "company": company, "error": str(e)[:120]}
 
@@ -128,8 +136,10 @@ def attachments(corp_code: str, rcept_no: str):
     try:
         return {"attachments": list_attachments(_client(), corp_code,
                                                 rcept_no)}
-    except Exception as e:
-        raise HTTPException(502, f"첨부 목록 수신 실패: {e}")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(502, "첨부 목록 수신 실패 — 잠시 후 다시 시도하세요") from None
 
 
 @router.post("/dsd", status_code=202)
@@ -148,13 +158,15 @@ def dsd_save(body: dict):
     name_meta = {k: body.get(k) for k in ("corp_name", "report_nm",
                                           "rcept_dt")}   # N-1
 
+    cli = _client()
+
     def _run(progress):
         import shutil
         progress("공시원본 수신 중… (캐시 히트 시 재다운로드 없음)")
         from dart_explorer.converters.document_wrap import (
             fetch_and_wrap, fetch_and_wrap_entry, save_name_meta)
-        path = fetch_and_wrap_entry(_client(), corp_code, rcept_no,
-                                    attach) if attach else             fetch_and_wrap(_client(), corp_code, rcept_no)
+        path = fetch_and_wrap_entry(cli, corp_code, rcept_no,
+                                    attach) if attach else             fetch_and_wrap(cli, corp_code, rcept_no)
         if any(name_meta.values()):
             save_name_meta(path, rcept_no, **name_meta)
         if save_to:
@@ -181,20 +193,24 @@ def to_excel(body: dict):
     name_meta = {k: body.get(k) for k in ("corp_name", "report_nm",
                                           "rcept_dt")}
 
+    cli = _client()
+
     def _run(progress):
         progress("공시원본 수신 중…")
         from dart_explorer.converters.document_wrap import (
             fetch_and_wrap, fetch_and_wrap_entry, friendly_name,
             save_name_meta)
-        dsd = fetch_and_wrap_entry(_client(), corp_code, rcept_no,
-                                   attach) if attach else             fetch_and_wrap(_client(), corp_code, rcept_no)
+        dsd = fetch_and_wrap_entry(cli, corp_code, rcept_no,
+                                   attach) if attach else             fetch_and_wrap(cli, corp_code, rcept_no)
         if any(name_meta.values()):
             save_name_meta(dsd, rcept_no, **name_meta)
         progress("DSD → Excel 추출 중…")
         from dsd_tool.excel_out import extract
         disp = friendly_name(dsd)           # N-1: 산출물 파일명 통일
-        xlsx = (os.path.join(os.path.dirname(dsd), disp + ".xlsx")
-                if disp else os.path.splitext(dsd)[0] + ".xlsx")
+        # 친화명은 표시/파일명, 접수번호와 독립 디렉터리는 저장 identity.
+        # 같은 접수를 다시 변환해도 이전 편집 파일을 덮어쓰지 않는다.
+        folder = tempfile.mkdtemp(prefix=f"{rcept_no}_", dir=os.path.dirname(dsd))
+        xlsx = os.path.join(folder, (disp or os.path.splitext(os.path.basename(dsd))[0]) + ".xlsx")
         info = extract(dsd, xlsx)
         return {"xlsx_path": info["out_path"], "dsd_path": dsd,
                 "display_name": disp,
@@ -215,11 +231,13 @@ def dimtable_from_search(body: dict):
     if not corp_code or not rcept_no:
         raise HTTPException(400, "corp_code/rcept_no 필요")
 
+    cli = _client()
+
     def _run(progress):
         from dart_explorer.xbrl.pipeline import (REPRT, download_xbrl,
                                                  unpack_xbrl)
         progress("1/2 XBRL 수신 중… (캐시 히트 시 재다운로드 없음)", 1, 2)
-        _, zpath = download_xbrl(_client(), corp_code, rcept_no,
+        _, zpath = download_xbrl(cli, corp_code, rcept_no,
                                  REPRT[report])
         folder = unpack_xbrl(zpath)
         progress("2/2 차원 표 렌더링 중…", 2, 2)
@@ -262,11 +280,13 @@ def fetch(body: dict):
     if not corp_code or not rcept_no:
         raise HTTPException(400, "corp_code/rcept_no 필요")
 
+    cli = _client()
+
     def _run(progress):
         from dart_explorer.xbrl.pipeline import (REPRT, download_xbrl,
                                                  unpack_xbrl)
         progress("XBRL ZIP 수신 중… (캐시 히트 시 재다운로드 없음)")
-        _, zpath = download_xbrl(_client(), corp_code, rcept_no,
+        _, zpath = download_xbrl(cli, corp_code, rcept_no,
                                  REPRT[report])
         progress("압축 해제 중…")
         folder = unpack_xbrl(zpath)
@@ -279,10 +299,12 @@ def fetch(body: dict):
 def xbrl(body: dict):
     """원클릭 파이프라인 — 검색→수신→해제→추출 (스텝을 progress로 중계)."""
     corp = body.get("corp") or ""
-    year = int(body.get("year") or 0)
+    year = number(body.get("year"), "연도", integer=True, minimum=1)
     report = body.get("report") or "annual"
     if not corp or not year:
         raise HTTPException(400, "corp/year 필요")
+
+    cli = _client()
 
     def _run(progress):
         from dart_explorer.xbrl.pipeline import (REPRT, XbrlNotAvailable,
@@ -290,7 +312,6 @@ def xbrl(body: dict):
                                                  extract_to_excel,
                                                  find_periodic_rcept,
                                                  unpack_xbrl)
-        cli = _client()
         corp_code = corp if (corp.isdigit() and len(corp) == 8) \
             else cli.resolve_corp_code(corp)
         progress(f"1/4 접수번호 검색 — {year}년 {report}", 1, 4)
@@ -323,12 +344,16 @@ def corpus_stats():
 @router.post("/corpus/build", status_code=202)
 def corpus_build(body: dict = None):
     body = body or {}
-    year = int(body.get("year") or datetime.date.today().year - 1)
-    limit = body.get("limit")
+    year = number(body.get("year"), "연도", default=datetime.date.today().year - 1,
+                  integer=True, minimum=1)
+    limit = (number(body["limit"], "수신 건수 limit", integer=True)
+             if body.get("limit") not in (None, "") else None)
+
+    cli = _client()
 
     def _run(progress):
         from dart_explorer.xbrl.corpus import build
-        res = build(year, limit=int(limit) if limit else None,
+        res = build(year, limit=limit,
                     progress=lambda m: progress(str(m)))
         return res
 

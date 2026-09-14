@@ -26,15 +26,21 @@ def anchor(ws, row, col):
 
 
 def put(ws, row, col, value=_UNSET, comment=None, fill=None, font=None,
-        failures=None, what=""):
+        failures=None, what="", preserve_value=False):
     """안전 기입. 성공 시 실제 기입된 셀, 실패 시 None.
 
     comment: (text, author) 튜플 또는 Comment — 기존 메모엔 이어붙임.
     failures: list — 실패 시 {"sheet","cell","what","reason"} 추가.
+    preserve_value: 링크 기입 시 기존 원문을 보존하고 표 오른쪽 빈 셀 사용.
     """
     try:
         c = anchor(ws, row, col)
         if value is not _UNSET:
+            if preserve_value and c.value is not None and c.value != value:
+                fallback_col = max(ws.max_column + 1, col + 1)
+                if fallback_col > 16384:
+                    raise ValueError("원문 보존: 링크를 기록할 빈 열이 없습니다")
+                c = ws.cell(row=row, column=fallback_col)
             c.value = value
         if fill is not None:
             c.fill = fill

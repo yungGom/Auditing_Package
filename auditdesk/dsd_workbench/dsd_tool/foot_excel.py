@@ -164,7 +164,7 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         safe_put(wb[sheet], 2, 13,
                  value='=HYPERLINK("#총괄표!A1","총괄표로 이동")',
                  font=_LINK_FONT, failures=write_failures,
-                 what="총괄표 복귀 링크")
+                 what="총괄표 복귀 링크", preserve_value=True)
 
     # --- 원문 시트 (전체 통합 뷰 — 시트 내용 세로 연결) ----------------------
     src_order = list(data_sheets)
@@ -218,7 +218,7 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         c.font = _LINK_FONT
         ws0.cell(row=r, column=3, value=title)
 
-    ctx = FootingContext(xlsx_path)             # A-6: 좌표·모수 재구성용
+    ctx = FootingContext(xlsx_path, limit=foot_result.get("limit", DEFAULT_LIMIT))
     verify_targets = set(ctx.fs_sheets) | set(ctx.note_sheets)
     foot_all, cross_all = {}, {}                # A-6: 시트별 수행(모수)
     for fr in foot_result["foot"]:
@@ -291,7 +291,8 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         if cells is None:                       # 좌표 재구성 불가 — 값 기입
             wsd.append(["푸팅", fr["sheet"], fr["scope"], "Σ자식",
                         fr["expected"], fr["loc"], fr["label"],
-                        fr["actual"], fr["verdict"] not in (FUZZY, MISMATCH),
+                        fr["actual"], (FUZZY if fr["verdict"] == FUZZY
+                                       else fr["verdict"] != MISMATCH),
                         fr["diff"], "", ""])
         else:
             (pr, pc), children = cells
@@ -302,7 +303,8 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
                 "=" + "+".join(refs),
                 _ref(fr["sheet"], pr, pc), fr["label"],
                 "=" + _ref(fr["sheet"], pr, pc),
-                f"=ABS(E{r}-H{r})<={limit}", f"=E{r}-H{r}", "",
+                f'=IF(E{r}=H{r},TRUE,IF(ABS(E{r}-H{r})<={limit},"{FUZZY}",FALSE))',
+                f"=E{r}-H{r}", "",
                 f'=HYPERLINK("#{_quote(fr["sheet"])}!'
                 f'{get_column_letter(pc)}{pr}","이동")'])
         wsd.cell(r, 12).font = _LINK_FONT
@@ -398,7 +400,7 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
             safe_put(wb[sheet], row, 14,
                      value=f'=HYPERLINK("#{DETAIL_SHEET}!A{dr}","검증내역")',
                      font=_LINK_FONT, failures=write_failures,
-                     what="검증내역 왕복 링크")
+                     what="검증내역 왕복 링크", preserve_value=True)
 
     # H-2: 기입 불가 항목 노출 — 침묵 금지, 생성은 계속
     if write_failures:
@@ -424,7 +426,7 @@ def write_ai_footing(xlsx_path, foot_result, out_path=None,
         out_path = os.path.join(os.path.dirname(os.path.abspath(xlsx_path)),
                                 f"AI_Footing_{company_name}.xlsx")
     wb.save(out_path)
-    return {"out_path": out_path, "foot_errors": total_foot,
+    return {"out_path": out_path, "limit": limit, "foot_errors": total_foot,
             "cross_errors": total_cross,
             "sheets": ["총괄표", "원문", DETAIL_SHEET] + src_order,
             # A-6: 수행 모수·사유별 집계 — "오류/수행"이 해석 가능하게

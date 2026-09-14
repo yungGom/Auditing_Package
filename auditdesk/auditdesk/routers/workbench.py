@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from fastapi import APIRouter, HTTPException
 
 from .. import jobs
+from ..validation import number
 
 router = APIRouter()
 
@@ -371,6 +372,7 @@ def _run_foot(sid, xlsx, excel, limit, progress):
     from dsd_tool.foot import foot
     res = foot(xlsx, limit=limit)
     payload = {
+        "limit": limit,
         "summary": {"match": res["match"], "rounding": res["fuzzy"],
                     "mismatch": res["mismatch"],
                     "cross": res["note_missing"],
@@ -387,7 +389,7 @@ def _run_foot(sid, xlsx, excel, limit, progress):
         payload["ai_excel_path"] = x["out_path"]
     _update(sid, expected_xlsx=xlsx,
             foot=json.dumps(payload, ensure_ascii=False, default=str))
-    return {"summary": payload["summary"],
+    return {"limit": limit, "summary": payload["summary"],
             "ai_excel_path": payload.get("ai_excel_path")}
 
 
@@ -398,7 +400,7 @@ def foot_session(sid: str, body: dict = None):
         raise HTTPException(409, "extract 미실행 — 먼저 추출하세요")
     body = body or {}
     excel = bool(body.get("excel"))
-    limit = int(body.get("limit") or 2)
+    limit = number(body.get("limit"), "합계검증 limit", default=2, integer=True)
     xlsx = s["xlsx_path"]
     return {"job_id": jobs.submit(
         "foot", lambda p: _run_foot(sid, xlsx, excel, limit, p))}
@@ -414,8 +416,8 @@ def foot_levels(sid: str, body: dict):
     overrides = body.get("overrides") or []
     if not overrides:
         raise HTTPException(400, "overrides가 비었습니다")
-    want = {(str(o["sheet"]), int(o["row"])):
-            (int(o["level"]) if o.get("level") else None)
+    want = {(str(o["sheet"]), number(o.get("row"), "행 번호", integer=True, minimum=1)):
+            (number(o["level"], "수동 레벨", integer=True) if o.get("level") not in (None, "") else None)
             for o in overrides}
     xlsx = s["xlsx_path"]
 
@@ -445,7 +447,7 @@ def foot_levels(sid: str, body: dict):
                     applied += 1
         wb.save(xlsx)
         progress(f"수동 레벨 {applied}건 기입 — 재검증…")
-        out = _run_foot(sid, xlsx, False, 2, progress)
+        out = _run_foot(sid, xlsx, False, s["foot"].get("limit", 2), progress)
         out["applied"] = applied
         return out
 
@@ -458,7 +460,7 @@ def recon_session(sid: str, body: dict):
     prior = body.get("prior_path") or body.get("prior_cache_ref") or ""
     if not os.path.isfile(prior):
         raise HTTPException(400, f"전기 파일 없음: {prior}")
-    tolerance = float(body.get("tolerance") or 0)
+    tolerance = number(body.get("tolerance"), "전기대사 tolerance", default=0)
     # 전기 소스 뱃지: dart_explorer 캐시 경유 여부 (파일 경로 기준)
     norm = os.path.normpath(prior).lower()
     source = "opendart-cache" if os.sep + "dart_explorer" + os.sep in norm \

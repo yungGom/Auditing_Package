@@ -13,6 +13,7 @@ import uuid
 from fastapi import APIRouter, HTTPException
 
 from .. import jobs
+from ..validation import number
 
 router = APIRouter()
 
@@ -205,6 +206,7 @@ def decide(mapping_id: str, body: dict):
     idx = body.get("account_idx")
     if idx is None:
         raise HTTPException(400, "account_idx 필요")
+    idx = number(idx, "계정 순번", integer=True)
     decided = {"element": body.get("element"),
                "extension": body.get("extension")}
     if not decided["element"] and not decided["extension"]:
@@ -311,11 +313,14 @@ def worksheet(body: dict):
             from dsd_tool.succession import load_assets
             succession = load_assets(sj)
         progress("워크시트 생성 중… (주석 포함 시 수 분)")
-        from dsd_tool.worksheet import build_worksheet
-        res = build_worksheet(dsd, out_path=out, report_type=report,
-                              induty=induty, include_notes=include_notes,
-                              succession=succession,
-                              progress=lambda m: progress(m))
+        from dsd_tool.worksheet import build_worksheet, WorksheetStructureError
+        try:
+            res = build_worksheet(dsd, out_path=out, report_type=report,
+                                  induty=induty, include_notes=include_notes,
+                                  succession=succession,
+                                  progress=lambda m: progress(m))
+        except WorksheetStructureError as e:
+            raise HTTPException(422, str(e)) from None
         st = res["stats"]
         notes = res.get("notes") or {}
         progress("산출 xlsx 재독 (화면 = 파일)…")
@@ -364,7 +369,8 @@ def _decided_map():
 def xbrl_recon_route(body: dict):
     session_id = body.get("session_id") or ""
     package = body.get("package_dir") or ""
-    tolerance = body.get("tolerance")
+    tolerance = (number(body["tolerance"], "XBRL 대사 tolerance")
+                 if body.get("tolerance") not in (None, "") else None)
     # V-1b: "current"(당기, 기본) | "prior"(전기 컨텍스트 대상 —
     # 세션 DSD가 전기 공시본일 때 당기 인스턴스의 전기 비교표시와 대사)
     target = body.get("target") or "current"

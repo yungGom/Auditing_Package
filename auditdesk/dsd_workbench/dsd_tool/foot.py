@@ -644,6 +644,7 @@ def foot(xlsx_path, limit=DEFAULT_LIMIT, prior_path=None, save=True):
         "levels": level_rows,
         "notes": note_results,
         "prior": prior_results,
+        "limit": limit,
         "match": counts[MATCH], "fuzzy": counts[FUZZY],
         "mismatch": counts[MISMATCH],
         "note_found": sum(1 for r in note_results if r["found"]),

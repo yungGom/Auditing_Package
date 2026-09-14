@@ -103,7 +103,7 @@ def submit(kind, fn):
 def _humanize_error(e):
     """실무자 언어로 번역 (기존 CLI 관례 재사용)."""
     from fastapi import HTTPException
-    if isinstance(e, HTTPException) and e.status_code == 409:
+    if isinstance(e, HTTPException) and 400 <= e.status_code < 500:
         return str(e.detail)
     if isinstance(e, PermissionError):
         return ("파일이 다른 프로그램(엑셀 등)에서 열려 있어 접근할 수 "
@@ -130,11 +130,17 @@ def get(job_id):
             "created": row[6], "updated": row[7]}
 
 
-def list_jobs(active=False):
+def list_jobs(active=False, kind=None):
     q = "SELECT id FROM jobs"
+    conditions, params = [], []
     if active:
-        q += " WHERE state IN ('queued','running')"
+        conditions.append("state IN ('queued','running')")
+    if kind:
+        conditions.append("kind=?")
+        params.append(kind)
+    if conditions:
+        q += " WHERE " + " AND ".join(conditions)
     q += " ORDER BY created DESC LIMIT 50"
     with connect() as con:
-        ids = [r[0] for r in con.execute(q)]
+        ids = [r[0] for r in con.execute(q, params)]
     return [get(i) for i in ids]

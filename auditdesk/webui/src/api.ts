@@ -19,6 +19,16 @@ export async function api(path: string, init?: RequestInit) {
   return body;
 }
 
+export async function openFile(path: string) {
+  try {
+    await api("/api/fs/open", {
+      method: "POST", body: JSON.stringify({ path }),
+    });
+  } catch (e: any) {
+    window.alert(e.message || "파일을 열 수 없습니다");
+  }
+}
+
 export async function pollJob(
   jobId: string,
   onTick?: (j: Job) => void,
