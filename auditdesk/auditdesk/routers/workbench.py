@@ -10,6 +10,8 @@ import hashlib
 import json
 import os
 import uuid
+import tempfile
+from contextlib import contextmanager
 
 from fastapi import APIRouter, HTTPException
 
@@ -39,7 +41,7 @@ def _session(sid):
     with jobs.connect() as con:
         row = con.execute(
             "SELECT id, dsd_path, created, meta, state, xlsx_path, diff, "
-            "diff_options, repack, foot, recon FROM sessions WHERE id=?",
+            "diff_options, repack, foot, recon, xbrl_recon FROM sessions WHERE id=?",
             (sid,)).fetchone()
     if row is None:
         raise HTTPException(404, "세션 없음")
@@ -58,14 +60,51 @@ def _session(sid):
             "diff_options": json.loads(row[7]) if row[7] else None,
             "repack": json.loads(row[8]) if row[8] else None,
             "foot": json.loads(row[9]) if row[9] else None,
-            "recon": json.loads(row[10]) if row[10] else None}
+            "recon": json.loads(row[10]) if row[10] else None,
+            "xbrl_recon": json.loads(row[11]) if row[11] else None}
 
 
-def _update(sid, **cols):
+_UNSET = object()
+
+
+def _update(sid, *, expected_xlsx=_UNSET, **cols):
     sets = ", ".join(f"{k}=?" for k in cols)
     with jobs.connect() as con:
-        con.execute(f"UPDATE sessions SET {sets} WHERE id=?",
-                    (*cols.values(), sid))
+        where = "id=?"
+        args = (*cols.values(), sid)
+        if expected_xlsx is not _UNSET:
+            where += " AND xlsx_path IS ?"
+            args += (expected_xlsx,)
+        changed = con.execute(f"UPDATE sessions SET {sets} WHERE {where}", args)
+        if changed.rowcount != 1:
+            raise HTTPException(409, "세션 입력이 변경되었습니다 — 다시 실행하세요")
+
+
+@contextmanager
+def _excel_snapshot(path, expected=None):
+    """The bytes hashed here are exactly those read by diff/repack."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError as exc:
+        raise HTTPException(409, "검토한 엑셀을 읽을 수 없습니다 — 다시 수정 확인하세요") from exc
+    digest = hashlib.sha256(data).hexdigest()
+    if expected is not None and digest != expected:
+        raise HTTPException(409, "수정 확인 이후 엑셀이 변경되었습니다 — 다시 수정 확인하세요")
+    with tempfile.TemporaryDirectory(prefix="auditdesk_review_") as tmp:
+        snapshot = os.path.join(tmp, os.path.basename(path))
+        with open(snapshot, "wb") as f:
+            f.write(data)
+        yield snapshot, digest
+
+
+def _check_review(s):
+    digest = (s["diff"] or {}).get("xlsx_sha256")
+    if not digest:
+        raise HTTPException(409, "검토한 엑셀 증빙이 없습니다 — 다시 수정 확인하세요")
+    with _excel_snapshot(s["xlsx_path"], digest):
+        pass
+    return digest
 
 
 @router.post("/sessions", status_code=201)
@@ -182,7 +221,7 @@ def extract_session(sid: str):
     s = _session(sid)
     dsd = s["dsd_path"]
     os.makedirs(_WORKDIR, exist_ok=True)
-    out = os.path.join(_WORKDIR, f"{sid}_{os.path.splitext(
+    out = os.path.join(_WORKDIR, f"{sid}_{uuid.uuid4().hex[:10]}_{os.path.splitext(
         os.path.basename(dsd))[0]}.xlsx")
 
     def _run(progress):
@@ -196,6 +235,8 @@ def extract_session(sid: str):
                     viewonly=info["viewonly"],   # UI-9: 수신물 판정(B-5 자산)
                     deduped_notes=info["deduped_notes"])
         _update(sid, xlsx_path=info["out_path"], state="추출됨",
+                diff=None, diff_options=None, repack=None, foot=None,
+                recon=None, xbrl_recon=None,
                 meta=json.dumps(meta, ensure_ascii=False))
         return {"xlsx_path": info["out_path"], "meta": meta}
 
@@ -245,8 +286,9 @@ def diff_session(sid: str, body: dict = None):
     options = (body or {}).get("options") or {}
     clean_cr = bool(options.get("clean_cr", True))
     from dsd_tool.repack import diff
-    changes, _text, _data, stats = diff(s["xlsx_path"], s["dsd_path"],
-                                        clean_cr=clean_cr)
+    with _excel_snapshot(s["xlsx_path"]) as (snapshot, digest):
+        changes, _text, _data, stats = diff(snapshot, s["dsd_path"],
+                                            clean_cr=clean_cr)
     items = [{"id": i, "sheet": c["sheet"], "row": c["row"], "col": c["col"],
               "cell": f"R{c['row']}C{c['col']}",
               "before": c["old"], "after": c["new"], "reason": c["reason"]}
@@ -258,9 +300,11 @@ def diff_session(sid: str, body: dict = None):
         "total": len(items),
     }
     payload = {"changes": items, "counts": counts, "stats": stats,
+               "xlsx_sha256": digest,
                "options": {"clean_cr": clean_cr},
                "ts": datetime.datetime.now().isoformat(timespec="seconds")}
-    _update(sid, diff=json.dumps(payload, ensure_ascii=False),
+    _update(sid, expected_xlsx=s["xlsx_path"],
+            diff=json.dumps(payload, ensure_ascii=False),
             diff_options=json.dumps({"clean_cr": clean_cr}),
             state="수정중" if items else "추출됨")
     return payload
@@ -290,16 +334,27 @@ def repack_session(sid: str, body: dict = None):
                      "적용입니다. 제외할 수정은 엑셀에서 되돌린 뒤 다시 "
                      "수정 확인을 실행하세요 (백엔드 수정 금지 원칙)")
     dsd, xlsx = s["dsd_path"], s["xlsx_path"]
+    digest = _check_review(s)
+    if body.get("reviewed_xlsx_sha256", digest) != digest:
+        raise HTTPException(409, "검토 화면이 최신 엑셀과 다릅니다 — 다시 수정 확인하세요")
 
     def _run(progress):
         progress("DSD에 반영 실행 중…")
         from dsd_tool.repack import repack
-        info = repack(xlsx, dsd, clean_cr=clean_cr)
+        current = _session(sid)
+        if current["xlsx_path"] != xlsx or current["diff"] != s["diff"]:
+            raise HTTPException(409, "세션 입력 또는 검토가 변경되었습니다 — 다시 수정 확인하세요")
+        with _excel_snapshot(xlsx, digest) as (snapshot, _):
+            info = repack(snapshot, dsd, clean_cr=clean_cr, record_history=False)
+        from dsd_tool.history import record_run
+        record_run(dsd, xlsx, info["out_path"], clean_cr, info["changes"])
         result = {"output_path": info["out_path"],
                   "sha1": _sha1(info["out_path"]),
                   "n_changes": len(info["changes"]),
+                  "xlsx_sha256": digest,
                   "checklist": _CHECKLIST}
-        _update(sid, repack=json.dumps(result, ensure_ascii=False),
+        _update(sid, expected_xlsx=xlsx,
+                repack=json.dumps(result, ensure_ascii=False),
                 state="반영완료")
         return result
 
@@ -330,7 +385,8 @@ def _run_foot(sid, xlsx, excel, limit, progress):
         from dsd_tool.foot_excel import write_ai_footing
         x = write_ai_footing(xlsx, res)
         payload["ai_excel_path"] = x["out_path"]
-    _update(sid, foot=json.dumps(payload, ensure_ascii=False, default=str))
+    _update(sid, expected_xlsx=xlsx,
+            foot=json.dumps(payload, ensure_ascii=False, default=str))
     return {"summary": payload["summary"],
             "ai_excel_path": payload.get("ai_excel_path")}
 
@@ -441,7 +497,8 @@ def recon_session(sid: str, body: dict):
             "tolerance": tolerance, "body": body_rows, "notes": note_rows,
             "ts": datetime.datetime.now().isoformat(timespec="seconds"),
         }
-        _update(sid, recon=json.dumps(payload, ensure_ascii=False,
+        _update(sid, expected_xlsx=s["xlsx_path"],
+                recon=json.dumps(payload, ensure_ascii=False,
                                       default=str))
         return {"verdict": payload["verdict"], "stmt": res["stmt"],
                 "notes": res["notes"], "excel_path": res["out_path"]}

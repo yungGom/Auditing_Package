@@ -33,7 +33,7 @@ def connect():
     os.makedirs(os.path.dirname(_DB), exist_ok=True)
     con = sqlite3.connect(_DB, timeout=30)
     con.executescript(_SCHEMA)
-    for col in ("foot", "recon"):              # UI-2 마이그레이션
+    for col in ("foot", "recon", "xbrl_recon"):
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
@@ -102,6 +102,9 @@ def submit(kind, fn):
 
 def _humanize_error(e):
     """실무자 언어로 번역 (기존 CLI 관례 재사용)."""
+    from fastapi import HTTPException
+    if isinstance(e, HTTPException) and e.status_code == 409:
+        return str(e.detail)
     if isinstance(e, PermissionError):
         return ("파일이 다른 프로그램(엑셀 등)에서 열려 있어 접근할 수 "
                 f"없습니다 — 닫고 다시 시도하세요. ({e})")

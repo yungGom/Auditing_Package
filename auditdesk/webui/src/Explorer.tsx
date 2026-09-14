@@ -700,13 +700,13 @@ export function SettingsScreen() {
 
   const clearCache = async () => {
     if (!window.confirm(
-      "공시 캐시를 전부 비웁니다. 재다운로드는 가능하지만 OpenDART 일 " +
+      "사용 중인 자료와 작업 파일을 보존하고 다운로드 캐시를 비웁니다. 재다운로드는 OpenDART 일 " +
       "요청 한도를 소모합니다. 계속할까요?")) return;
     try {
       const r = await api("/api/explorer/cache?confirm=DELETE", {
         method: "DELETE",
       });
-      setMsg(`캐시 ${r.cleared}개 항목 삭제됨`);
+      setMsg(`캐시 ${r.cleared}개 파일 삭제 · ${r.preserved ?? 0}개 보존 · ${r.failed ?? 0}개 삭제 실패`);
       reload();
     } catch (e: any) { setErr(e.message); }
   };

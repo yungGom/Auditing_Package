@@ -429,9 +429,12 @@ def xbrl_recon_route(body: dict):
             out_path=out, source_warning=warning,
             progress=lambda m: progress(m), target=target)
         res["package"] = package
-        with jobs.connect() as con:
-            con.execute("UPDATE sessions SET recon=recon WHERE id=?",
-                        (session_id,))
+        res["session_id"] = session_id
+        res["xlsx_path"] = xlsx_path
+        res["dsd_path"] = dsd_path
+        from .workbench import _update
+        _update(session_id, expected_xlsx=xlsx_path,
+                xbrl_recon=json.dumps(res, ensure_ascii=False, default=str))
         return res
 
     return {"job_id": jobs.submit("xbrl-recon", _run)}

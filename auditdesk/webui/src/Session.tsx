@@ -178,7 +178,8 @@ export default function Session({ sessionId, initialTab }: {
           onRepack={async (approvedIds) => {
             const done = await runJob(
               `/api/workbench/sessions/${sessionId}/repack`,
-              { approved_change_ids: approvedIds });
+              { approved_change_ids: approvedIds,
+                reviewed_xlsx_sha256: s.diff?.xlsx_sha256 });
             if (done?.state === "done") setModal(done.result);
           }} />
       )}
@@ -793,7 +794,7 @@ function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
           priorPath={priorPath} setPriorPath={setPriorPath} />
       )}
       {sub === "xrecon" && (
-        <XbrlReconSub sessionId={sessionId} runJob={runJob} />
+        <XbrlReconSub key={sessionId} sessionId={sessionId} runJob={runJob} />
       )}
     </div>
   );
@@ -806,26 +807,33 @@ function XbrlReconSub({ sessionId, runJob }: {
 }) {
   const [pkg, setPkg] = useState("");
   const [tol, setTol] = useState("");
-  const [result, setResult] = useState<any>(null);
+  const [storedResult, setResult] = useState<any>(null);
+  const result = storedResult?.session_id === sessionId ? storedResult : null;
   const [falseOnly, setFalseOnly] = useState(true);
   const [pkgs, setPkgs] = useState<any[]>([]);
 
   useEffect(() => {
     api("/api/explorer/packages").then((r) =>
       setPkgs(r.packages)).catch(() => {});
-    api("/api/jobs?kind=xbrl-recon").then((r) => {
-      const last = (r.jobs || []).find((j: any) =>
-        j.state === "done" && j.result);
-      if (last) setResult((c: any) => c ?? last.result);
-    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setResult(null);
+    api(`/api/workbench/sessions/${sessionId}`).then((s) => {
+      if (active && s.xbrl_recon?.session_id === sessionId)
+        setResult((current: any) => current ?? s.xbrl_recon);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [sessionId]);
 
   const run = async () => {
     const done = await runJob("/api/studio/xbrl-recon", {
       session_id: sessionId, package_dir: pkg,
       tolerance: tol ? Number(tol) : undefined,
     });
-    if (done?.state === "done") setResult(done.result);
+    if (done?.state === "done" && done.result?.session_id === sessionId)
+      setResult(done.result);
   };
 
   const c = result?.counts || {};
@@ -834,6 +842,13 @@ function XbrlReconSub({ sessionId, runJob }: {
         rows.map((r: any) => ({ ...r, sheet })))
     : [];
   const shown = allRows.filter((r) => !falseOnly || r.true === false);
+  const undecided = Math.max(
+    allRows.filter((r) => r.true !== true && r.true !== false).length,
+    Number(c["매핑 없음"] || 0),
+    Number(result?.total || 0) - Number(result?.matched || 0));
+  const complete = result?.total > 0 && undecided === 0
+    && allRows.length === result.total
+    && allRows.every((r) => r.true === true) && result.false === 0;
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
@@ -892,11 +907,11 @@ function XbrlReconSub({ sessionId, runJob }: {
           <div style={{
             display: "flex", alignItems: "center", gap: 8,
             flexWrap: "wrap",
-            background: result.false === 0 ? "#dcead2" : "#ffdad6",
-            color: result.false === 0 ? "#3a5a2e" : "#930010",
+            background: complete ? "#dcead2" : "#ffdad6",
+            color: complete ? "#3a5a2e" : "#930010",
             borderRadius: 8, padding: "12px 16px", maxWidth: 1100,
           }}>
-            <Icon name={result.false === 0 ? "check_circle" : "error"}
+            <Icon name={complete ? "check_circle" : "error"}
               size={20} />
             <span style={{ font: `700 14px ${F_HEAD}` }}>
               대조율 {result.matched}/{result.total} (
@@ -910,7 +925,7 @@ function XbrlReconSub({ sessionId, runJob }: {
             <span style={chip("#4e6874", "#cbe7f5")}>
               제출파일에만 {result.only_instance}</span>
             <span style={chip("#43474f", "#edeeef")}>
-              매핑 없음 {c["매핑 없음"]}</span>
+              매핑 없음 {c["매핑 없음"]} · 미판정 {undecided}</span>
             <div style={{ flex: 1 }} />
             <span style={{ font: `500 11px ${F_LABEL}`, opacity: 0.85 }}>
               허용오차 {result.tolerance}</span>
@@ -997,7 +1012,8 @@ function XbrlReconSub({ sessionId, runJob }: {
                   <tr><td colSpan={8} style={{
                     ..._tdL, color: "#737780",
                   }}>{falseOnly
-                    ? "FALSE 없음 — 태깅·본문 전수 일치"
+                    ? (complete ? "FALSE 없음 — 태깅·본문 전수 일치"
+                      : `FALSE 없음 — 검증 미완료 (미매핑/미판정 ${undecided}건)`)
                     : "행 없음"}</td>
                   </tr>
                 )}

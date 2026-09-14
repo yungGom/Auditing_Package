@@ -370,17 +370,55 @@ def clear_cache(confirm: str = ""):
     자료지만 요청 한도를 소모하므로 이중 확인)."""
     if confirm != "DELETE":
         raise HTTPException(400, "확인 필요 — ?confirm=DELETE 로 호출")
-    import shutil
+    import json
+    import re
     root = _cache_root()
-    n = 0
-    for entry in os.listdir(root) if os.path.isdir(root) else []:
-        p = os.path.join(root, entry)
-        try:
-            if os.path.isdir(p):
-                shutil.rmtree(p)
-            else:
-                os.remove(p)
-            n += 1
-        except OSError:
-            pass
-    return {"cleared": n}
+    # Only known download caches are disposable. Extracted packages, DSDs,
+    # workbooks, sidecars and unknown files may contain user work.
+    protected = set()
+    cache_root = os.path.normcase(os.path.realpath(root))
+
+    def protect(value):
+        if isinstance(value, dict):
+            for v in value.values():
+                protect(v)
+        elif isinstance(value, list):
+            for v in value:
+                protect(v)
+        elif isinstance(value, str) and os.path.isabs(value):
+            p = os.path.normcase(os.path.realpath(value))
+            if p == cache_root or p.startswith(cache_root + os.sep):
+                protected.add(p if os.path.isdir(p) else os.path.dirname(p))
+
+    with jobs._LOCK, jobs.connect() as con:
+        if con.execute("SELECT 1 FROM jobs WHERE state IN ('queued','running') LIMIT 1").fetchone():
+            raise HTTPException(409, "실행 중인 작업이 있습니다 — 작업 완료 후 캐시를 삭제하세요")
+        for row in con.execute("SELECT dsd_path, xlsx_path, repack, foot, recon, xbrl_recon FROM sessions"):
+            for i, value in enumerate(row):
+                protect(value if i < 2 else json.loads(value or "null"))
+        n = preserved = failed = 0
+        for folder, dirs, files in os.walk(root, followlinks=False):
+            dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(folder, d))
+                       and not getattr(os.path, "isjunction", lambda p: False)(os.path.join(folder, d))]
+            rel = os.path.relpath(folder, root).split(os.sep)
+            category = rel[0]
+            real = os.path.normcase(os.path.realpath(folder))
+            in_use = any(real == p or real.startswith(p + os.sep) for p in protected)
+            has_work = any(f.lower().endswith((".dsd", ".xlsx", ".xlsm", ".xlsb")) for f in files)
+            for name in files:
+                path = os.path.join(folder, name)
+                archive_pattern = (r"\d{14}\.zip" if category == "document"
+                                   else r"\d{14}_\d{5}\.zip" if category == "xbrl"
+                                   else None)
+                disposable = ((category in ("corp", "search", "company") and len(rel) == 1 and name.endswith(".json"))
+                              or (archive_pattern is not None and len(rel) == 2
+                                  and re.fullmatch(archive_pattern, name) is not None))
+                if in_use or has_work or not disposable or os.path.islink(path):
+                    preserved += 1
+                    continue
+                try:
+                    os.remove(path)
+                    n += 1
+                except OSError:
+                    failed += 1
+    return {"cleared": n, "preserved": preserved, "failed": failed}

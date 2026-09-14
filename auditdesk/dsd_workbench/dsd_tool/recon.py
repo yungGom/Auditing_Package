@@ -435,48 +435,69 @@ def recon_note_tables(cur_ctx, pri_ctx, cur_sheet, pri_sheet, tolerance=0):
 # 어긋날 수 없는 단일 원천 구조.
 # ---------------------------------------------------------------------------
 
-_VERDICT_FORMULA_RE = re.compile(
-    r"^=(?:AND\()?([A-Z]+\d+=[A-Z]+\d+(?:,[A-Z]+\d+=[A-Z]+\d+)*)\)?$")
-
-
 def _eval_verdict(ws, value):
     """렌더된 판정 셀 평가: 수식이면 참조 셀 값 비교, 리터럴이면 그대로.
 
-    True/False/None(판정 셀 아님) 반환. 엑셀 평가와 동일 규칙
-    (숫자는 수치 비교, 그 외는 값 비교, 빈 셀 대비는 불일치).
+    True/False/None(판정 셀 아님) 반환. 생성한 등식·ABS 허용오차식과
+    미대응 FALSE 조건을 코어와 같은 수치 비교로 평가한다.
     """
     if value == "TRUE":
         return True
     if value == "FALSE":
         return False
-    m = _VERDICT_FORMULA_RE.match(str(value or ""))
-    if not m:
+    # Parse only formulas emitted by _write_verdict, never arbitrary Excel.
+    expr = str(value or "")
+    if expr.startswith("=AND(") and expr.endswith(")"):
+        terms = expr[5:-1].split(",")
+    elif expr.startswith("="):
+        terms = [expr[1:]]
+    else:
         return None
-    for pair in m.group(1).split(","):
-        a, b = pair.split("=")
-        va, vb = ws[a].value, ws[b].value
-        if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
-            if float(va) != float(vb):
-                return False
-        elif va != vb:
-            return False
-    return True
+    outcomes = []
+    from .textutil import try_number
+    for term in terms:
+        if term == "FALSE":
+            outcomes.append(False)
+            continue
+        tol = re.fullmatch(r"ABS\(([A-Z]+\d+)-([A-Z]+\d+)\)<=([0-9.eE+\-]+)", term)
+        eq = re.fullmatch(r"([A-Z]+\d+)=([A-Z]+\d+)", term)
+        if not (tol or eq):
+            return None
+        a, b = (tol or eq).group(1, 2)
+        va, vb = try_number(ws[a].value), try_number(ws[b].value)
+        outcomes.append(_verdict(va, vb, float(tol.group(3)) if tol else 0)[0])
+    return all(outcomes)
 
 
-def _write_verdict(dst, row, col, pairs):
+def _write_verdict(dst, row, col, pairs, tolerance=0, missing=False):
     """판정 셀 기록. pairs: [(좌측 셀 주소, 우측 셀 주소)].
 
-    1쌍 → =A=B, 복수 쌍 → =AND(A=B,...), 쌍 없음(전기 항목 없음) →
-    리터럴 "FALSE". FALSE 평가 시 하이라이트 (TRUE 무강조).
+    ±0은 기존 등식, 허용오차는 ABS(좌-우)<=tolerance. 복수 비교는
+    AND로 결합하며 미대응 항목이 하나라도 있으면 FALSE 조건을 포함.
+    비교 가능한 쌍이 없으면 리터럴 "FALSE". FALSE 평가 시 하이라이트.
     """
     cell = dst.cell(row=row, column=col)
     if not pairs:
         cell.value = "FALSE"
         cell.fill = _FALSE_FILL
         return
-    exprs = [f"{a}={b}" for a, b in pairs]
-    cell.value = f"={exprs[0]}" if len(exprs) == 1 \
-        else "=AND(" + ",".join(exprs) + ")"
+    from .textutil import try_number
+    exprs = []
+    for a, b in pairs:
+        va, vb = dst[a].value, dst[b].value
+        if try_number(va) is None or try_number(vb) is None:
+            missing = True
+            continue
+        exprs.append(f"ABS({a}-{b})<={tolerance}" if tolerance != 0
+                     or not all(isinstance(v, (int, float)) for v in (va, vb))
+                     else f"{a}={b}")
+    if missing:
+        exprs.append("FALSE")
+    if not exprs:
+        exprs = ["FALSE"]
+    cell.value = ("FALSE" if exprs == ["FALSE"] else
+                  f"={exprs[0]}" if len(exprs) == 1 else
+                  "=AND(" + ",".join(exprs) + ")")
     if _eval_verdict(dst, cell.value) is False:
         cell.fill = _FALSE_FILL
 
@@ -529,7 +550,7 @@ def _style_sheet(ws):
 
 
 def _side_statement(dst, cur_ctx, pri_ctx, sheet, results,
-                    pri_sheet=None):
+                    pri_sheet=None, tolerance=0):
     """본문 시트: 당기 원문 | 판정(행 단위) | 전기 원문 (행 라벨 정렬)."""
     psheet = pri_sheet or sheet
     ws_c, ws_p = cur_ctx.wb[sheet], pri_ctx.wb[psheet]
@@ -572,33 +593,24 @@ def _side_statement(dst, cur_ctx, pri_ctx, sheet, results,
         if pr is not None:
             _copy_row(dst, ws_p, pr, all_cols_p, r, right0)
 
-    # 판정 수식: 당기파일 전기셀 = 전기파일 당기셀 (행당 1열, 실무 양식)
-    from .textutil import try_number
-    amount_c = [c for c in all_cols_c if c >= 3]
-    prior_cols_c = amount_c[len(amount_c) // 2:] if len(amount_c) >= 4 \
-        else amount_c[-1:]                     # 당기파일 '전기' 값 열들
-    amount_p = [c for c in all_cols_p if c >= 3]
-    cur_cols_p = amount_p[:len(amount_p) // 2] if len(amount_p) >= 4 \
-        else amount_p[:1]                      # 전기파일 '당기' 값 열들
+    # 코어와 같은 금액 셀 선택: 금액 2칸 양식은 좌 우선, 비면 우측.
     for res in results:
         r = res["row"]
         raw = _label(ws_c, r)
         pr = pri_by_label.get(_norm1(raw)) or pri_by_label.get(_norm2(raw))
         pairs = []
         if pr is not None:
-            for k, pc in enumerate(prior_cols_c):
-                if k >= len(cur_cols_p):
-                    break
-                if try_number(ws_c.cell(row=r, column=pc).value) is None:
-                    continue
-                right_col = right0 + all_cols_p.index(cur_cols_p[k])
+            pc = cur_ctx.fs_value_col(sheet, r, "전기")
+            pp = pri_ctx.fs_value_col(psheet, pr, "당기")
+            if pc is not None and pp in all_cols_p:
+                right_col = right0 + all_cols_p.index(pp)
                 pairs.append((f"{get_column_letter(pc)}{r}",
                               f"{get_column_letter(right_col)}{r}"))
-        _write_verdict(dst, r, verdict_col, pairs)
+        _write_verdict(dst, r, verdict_col, pairs, tolerance)
     _verdict_header(dst, verdict_col)
 
 
-def _side_ce(dst, cur_ctx, pri_ctx, sheet, results, pri_sheet=None):
+def _side_ce(dst, cur_ctx, pri_ctx, sheet, results, pri_sheet=None, tolerance=0):
     """CE 시트: 당기 원문 | 판정(행 단위) | 전기 원문(당기 블록 정렬).
 
     recon_ce가 매칭한 전기 파일 행(pri_row)을 그대로 옆에 붙인다 —
@@ -645,6 +657,7 @@ def _side_ce(dst, cur_ctx, pri_ctx, sheet, results, pri_sheet=None):
     for res in results:
         r = res["row"]
         pairs = []
+        missing = False
         if res.get("pri_row") is not None:
             _copy_row(dst, ws_p, res["pri_row"], all_cols_p, r, right0)
             for lab, c in cols_c.items():
@@ -652,17 +665,18 @@ def _side_ce(dst, cur_ctx, pri_ctx, sheet, results, pri_sheet=None):
                     continue
                 p = cols_p.get(lab)
                 if p is None or p not in all_cols_p:
+                    missing = True
                     continue
                 rc = right0 + all_cols_p.index(p)
                 pairs.append((f"{get_column_letter(c)}{r}",
                               f"{get_column_letter(rc)}{r}"))
-        _write_verdict(dst, r, verdict_col, pairs)
+        _write_verdict(dst, r, verdict_col, pairs, tolerance, missing)
         if res["note"]:
             dst.cell(row=r, column=verdict_col + 1, value=res["note"])
     _verdict_header(dst, verdict_col)
 
 
-def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet, results):
+def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet, results, tolerance=0):
     """주석 시트: 표 쌍·행 라벨 매칭으로 좌우 병렬 + 행 단위 판정."""
     ws_c = cur_ctx.wb[cur_sheet]
     rm_c = cur_ctx.rowmaps[cur_sheet]
@@ -726,13 +740,13 @@ def _side_note(dst, cur_ctx, pri_ctx, cur_sheet, pri_sheet, results):
             rc = right0 + acp.index(pcol)
             pairs.append((res["cur_addr"],
                           f"{get_column_letter(rc)}{row}"))
-        _write_verdict(dst, row, verdict_col, pairs)
+        _write_verdict(dst, row, verdict_col, pairs, tolerance)
     if results:
         _verdict_header(dst, verdict_col)
 
 
 def write_side_by_side(cur_ctx, pri_ctx, note_map, wb, stmt_results,
-                       note_results):
+                       note_results, tolerance=0):
     """실무 양식 상세 시트들을 wb에 추가. [(구분, 시트명)] 반환."""
     rendered = []
     pairs = pair_fs_sheets(cur_ctx, pri_ctx)
@@ -743,17 +757,18 @@ def write_side_by_side(cur_ctx, pri_ctx, note_map, wb, stmt_results,
         dst = wb.create_sheet(sheet)
         res = stmt_results.get(sheet, [])
         if sheet.endswith("CE"):
-            _side_ce(dst, cur_ctx, pri_ctx, sheet, res, pri_sheet=psheet)
+            _side_ce(dst, cur_ctx, pri_ctx, sheet, res, pri_sheet=psheet,
+                     tolerance=tolerance)
         else:
             _side_statement(dst, cur_ctx, pri_ctx, sheet, res,
-                            pri_sheet=psheet)
+                            pri_sheet=psheet, tolerance=tolerance)
         _style_sheet(dst)
         dst.column_dimensions["A"].width = 34
         rendered.append(("본문", sheet))
     for cur_s, pri_s, _title in note_map:
         dst = wb.create_sheet(cur_s)
         _side_note(dst, cur_ctx, pri_ctx, cur_s, pri_s,
-                   note_results.get(cur_s, []))
+                   note_results.get(cur_s, []), tolerance=tolerance)
         _style_sheet(dst)
         dst.column_dimensions["A"].width = 30
         rendered.append(("주석", cur_s))
@@ -866,7 +881,7 @@ def _write_recon_excel(stmt_results, note_map, note_results, note_skipped,
     # 상세 시트 먼저 렌더 — 요약 카운트는 렌더된 판정 열에서 재계산
     # (별도 집계 금지: 요약과 상세가 어긋날 수 없는 단일 원천 구조)
     rendered = write_side_by_side(cur_ctx, pri_ctx, note_map, wb,
-                                  stmt_results, note_results)
+                                  stmt_results, note_results, tolerance)
     stmt_n = stmt_t = note_n = note_t = 0
     lines = []
     sheet_counts = {}
