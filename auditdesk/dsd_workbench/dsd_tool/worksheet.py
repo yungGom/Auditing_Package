@@ -341,7 +341,11 @@ def build_worksheet(dsd_path, out_path=None, report_type="annual",
             out_path = re.sub(r"\.dsd$", "", dsd_path,
                               flags=re.I) + "_XBRL작성워크시트.xlsx"
         wb.save(out_path)
-    return {"out_path": out_path, "stats": stats,
+        from .guide_check import attach_guide_check
+        from .attr_check import collect_note_titles
+        guide = attach_guide_check(out_path, scope={
+            "note_titles": [t for t, _ in collect_note_titles(ctx)]})
+    return {"out_path": out_path, "stats": stats, "guide_check": guide,
             "sheets": results_by_sheet, "notes": note_results}
 
 

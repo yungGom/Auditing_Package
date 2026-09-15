@@ -432,6 +432,10 @@ def rollforward(half_xlsx, facts_ye, doc_end_ye, succession,
     }
     if out_path:
         _write_excel(out_path, sheets_out, summary)
+        from .guide_check import attach_guide_check
+        from .attr_check import collect_note_titles
+        summary["guide_check"] = attach_guide_check(out_path, scope={
+            "note_titles": [t for t, _ in collect_note_titles(cur_ctx or ctx)]})
         summary["out_path"] = out_path
     summary["rows"] = {s: d["rows"] for s, d in sheets_out.items()}
     return summary

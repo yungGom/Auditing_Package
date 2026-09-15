@@ -806,6 +806,36 @@ function XbrlReconSub({ sessionId, runJob }: {
   const result = storedResult?.session_id === sessionId ? storedResult : null;
   const [falseOnly, setFalseOnly] = useState(true);
   const [pkgs, setPkgs] = useState<any[]>([]);
+  const [target, setTarget] = useState("current");
+  const [rightExcel, setRightExcel] = useState("");
+  const [pairsText, setPairsText] = useState("");
+  const [assemblyResult, setAssemblyResult] = useState<any>(null);
+  const [attrResult, setAttrResult] = useState<any>(null);
+  const [entryError, setEntryError] = useState("");
+  const [entryBusy, setEntryBusy] = useState(false);
+  const entryPending = useRef(false);
+  const entryFieldStyle = {
+    font: `500 12px ${F_LABEL}`, padding: "8px 10px",
+    border: "1px solid #c3c6d1", borderRadius: 8, background: "#fff",
+  };
+  const runCompletion = async (kind: "mapping-workbook" | "attr-check") => {
+    if (entryPending.current) return;
+    entryPending.current = true; setEntryBusy(true); setEntryError("");
+    try {
+      const body = kind === "mapping-workbook"
+        ? { session_id: sessionId, right_xlsx: rightExcel, pairs: JSON.parse(pairsText) }
+        : { session_id: sessionId, package_dir: pkg };
+      const done = await runJob(`/api/studio/${kind}`, body);
+      if (done?.state === "done" && done.result?.session_id === sessionId) {
+        if (kind === "mapping-workbook") setAssemblyResult(done.result);
+        else setAttrResult(done.result);
+      }
+    } catch (e: any) {
+      setEntryError(e instanceof SyntaxError ? "pairs JSON 형식을 확인하세요. 아래 예시와 같이 입력하세요." : e.message);
+    } finally {
+      entryPending.current = false; setEntryBusy(false);
+    }
+  };
 
   useEffect(() => {
     api("/api/explorer/packages").then((r) =>
@@ -825,6 +855,7 @@ function XbrlReconSub({ sessionId, runJob }: {
   const run = async () => {
     const done = await runJob("/api/studio/xbrl-recon", {
       session_id: sessionId, package_dir: pkg,
+      target,
       tolerance: tol ? Number(tol) : undefined,
     });
     if (done?.state === "done" && done.result?.session_id === sessionId)
@@ -881,7 +912,37 @@ function XbrlReconSub({ sessionId, runJob }: {
         <PrimaryBtn onClick={run}>
           <Icon name="rule" size={15} />
           {result ? "재실행" : "태깅 대사 실행"}</PrimaryBtn>
+        <select aria-label="비교 context" value={target}
+          onChange={(e) => setTarget(e.target.value)} style={entryFieldStyle}>
+          <option value="current">당기/current (기본)</option>
+          <option value="prior">전기/prior (전기 DSD와 비교)</option>
+        </select>
       </div>
+
+      <details style={{ marginBottom: 14, maxWidth: 1100, font: `500 12px ${F_LABEL}`, overflowWrap: "anywhere" }}>
+        <summary>제출파일 속성 검증 · 대사 조서</summary>
+        <p>제출파일 속성 검증: 위 XBRL 패키지와 현재 세션 원문으로 기간·unit·decimals·주석명을 검사합니다. 본문 값 대사와 별도 검증입니다.</p>
+        <GhostBtn onClick={entryBusy ? undefined : () => runCompletion("attr-check")}>속성 검증 실행</GhostBtn>
+        {attrResult && <div>
+          {(["period", "unit", "name"] as const).map((key) => <span key={key}>
+            {key}: FALSE {attrResult.summary?.[key]?.false ?? "—"} · 판정 불가 {attrResult.summary?.[key]?.na ?? "—"} </span>)}
+          <GhostBtn onClick={() => openFile(attrResult.out_path)}>속성 검증 Excel 열기</GhostBtn>
+          <div>{attrResult.out_path}</div>
+        </div>}
+        <p>대사 조서: 좌측은 현재 세션의 추출 Excel입니다. 우측 공시화면 Excel과 확인한 시트 짝(pairs)을 입력하세요. 자동 매칭하지 않습니다. 짝이 없는 쪽은 시트명을 입력하지 마세요.</p>
+        <input aria-label="대사 조서 우측 Excel" value={rightExcel} placeholder="우측 공시화면 Excel 경로"
+          onChange={(e) => setRightExcel(e.target.value)} style={{ ...entryFieldStyle, width: "100%", boxSizing: "border-box", marginBottom: 8 }} />
+        <textarea aria-label="시트 짝 목록" value={pairsText} rows={4} style={{ ...entryFieldStyle, width: "100%", boxSizing: "border-box" }}
+          placeholder={'[{"left":"별도BS","right":"BS","name":"BS","basis":"확인한 짝 근거"}]'}
+          onChange={(e) => setPairsText(e.target.value)} />
+        <GhostBtn onClick={entryBusy ? undefined : () => runCompletion("mapping-workbook")}>대사 조서 생성</GhostBtn>
+        {assemblyResult && <div>
+          <GhostBtn onClick={() => openFile(assemblyResult.out_path)}>대사 조서 Excel 열기</GhostBtn>
+          <div>{assemblyResult.out_path}</div>
+        </div>}
+        {entryBusy && <p role="status">생성/검증 진행 중…</p>}
+        {entryError && <p role="alert">{entryError}</p>}
+      </details>
 
       {!result && (
         <div style={{ font: `500 13px ${F_LABEL}`, color: "#737780" }}>
@@ -892,6 +953,12 @@ function XbrlReconSub({ sessionId, runJob }: {
 
       {result && (
         <>
+          <div style={{ font: `500 12px ${F_LABEL}`, marginBottom: 10 }}>
+            실행 결과 context: {result.target || "current"}
+            {result.target && <> · 비교 기간: {Object.entries(result.target_ends || {}).map(([k, v]) => `${k}: ${v || "비교 기간 없음"}`).join(" / ") || "비교 기간 없음"}</>}
+            {result.skipped_sheets?.length > 0 && <div>비교에서 제외된 시트: {result.skipped_sheets.join(", ")}</div>}
+            {result.target && result.target !== target && <div>선택을 변경했습니다. 재실행하면 선택한 context로 비교합니다.</div>}
+          </div>
           {result.source_warning && (
             <div style={{
               font: `500 12px ${F_LABEL}`, color: "#7a4f00",

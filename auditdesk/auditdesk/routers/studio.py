@@ -334,6 +334,7 @@ def worksheet(body: dict):
                 "new_accounts": st.get("new", 0),
                 "deprecated": st.get("deprecated", 0),
                 "mode": mode, "report": report,
+                "guide_check": res.get("guide_check"),
                 "note_unassigned": len(notes.get("unassigned", []))
                 if isinstance(notes, dict) and "unassigned" in notes
                 else None,
@@ -374,6 +375,8 @@ def xbrl_recon_route(body: dict):
     # V-1b: "current"(당기, 기본) | "prior"(전기 컨텍스트 대상 —
     # 세션 DSD가 전기 공시본일 때 당기 인스턴스의 전기 비교표시와 대사)
     target = body.get("target") or "current"
+    if target not in ("current", "prior"):
+        raise HTTPException(422, "비교 context는 current 또는 prior를 선택하세요")
     if package.lower().rstrip("\\/").endswith(".ixd"):
         # UI-7 델타 g: IXD 가드 — 인스턴스 입력 자리에 .ixd 투입 시
         # 침묵 실패 금지, 정체와 대안을 안내
@@ -428,12 +431,17 @@ def xbrl_recon_route(body: dict):
         out = os.path.join(_WORKDIR,
                            f"XBRL대사_{session_id}_{uuid.uuid4().hex[:6]}"
                            ".xlsx")
-        res = xbrl_recon(
-            xlsx_path, facts, inst.doc_period_end,
-            decided=_decided_map(), succession=succession,
-            body_elements=body_elements, tolerance=tolerance,
-            out_path=out, source_warning=warning,
-            progress=lambda m: progress(m), target=target)
+        try:
+            res = xbrl_recon(
+                xlsx_path, facts, inst.doc_period_end,
+                decided=_decided_map(), succession=succession,
+                body_elements=body_elements, tolerance=tolerance,
+                out_path=out, source_warning=warning,
+                progress=lambda m: progress(m), target=target)
+        except ValueError as e:
+            if target == "prior" and str(e).startswith("전기 컨텍스트 없음"):
+                raise HTTPException(422, "전기 컨텍스트 없음 — 비교 기간이 있는 제출파일을 선택하거나 당기/current로 다시 실행하세요") from None
+            raise
         res["package"] = package
         res["session_id"] = session_id
         res["xlsx_path"] = xlsx_path
@@ -444,6 +452,62 @@ def xbrl_recon_route(body: dict):
         return res
 
     return {"job_id": jobs.submit("xbrl-recon", _run)}
+
+
+def _completion_source(body):
+    """Explicit Excel or the current session extract; never global-job fallback."""
+    from ..completion import input_file
+    path = body.get("left_xlsx") or body.get("xlsx_path")
+    sid = body.get("session_id")
+    if sid:
+        with jobs.connect() as con:
+            row = con.execute("SELECT xlsx_path FROM sessions WHERE id=?", (sid,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "세션 없음")
+        path = row[0]
+    try:
+        return input_file(path, "원문 extract Excel (세션에서 먼저 추출하세요)")
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@router.post("/mapping-workbook", status_code=202)
+def mapping_workbook_route(body: dict):
+    from ..completion import validate_pairs
+    left = _completion_source(body)
+    right, pairs = body.get("right_xlsx"), body.get("pairs")
+    try:
+        validate_pairs(left, right, pairs)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(422, str(e)) from None
+    os.makedirs(_WORKDIR, exist_ok=True)
+    out = os.path.join(_WORKDIR, f"M1_대사조서_{uuid.uuid4().hex}.xlsx")
+    def _run(progress):
+        from dsd_tool.mapping_sheet import build_mapping_workbook
+        progress("확인된 시트 짝으로 좌·우 조서 조립 중…")
+        res = build_mapping_workbook(left, right, pairs, out, progress=progress)
+        return {**res, "session_id": body.get("session_id"),
+                "left_xlsx": left, "right_xlsx": right}
+    return {"job_id": jobs.submit("mapping-workbook", _run)}
+
+
+@router.post("/attr-check", status_code=202)
+def attr_check_route(body: dict):
+    xlsx = _completion_source(body)
+    package = body.get("package_dir")
+    if not isinstance(package, str) or not os.path.isdir(package):
+        raise HTTPException(422, "제출용 XBRL 패키지 폴더를 지정하세요 (IXD 아님)")
+    os.makedirs(_WORKDIR, exist_ok=True)
+    out = os.path.join(_WORKDIR, f"V2_속성검증_{uuid.uuid4().hex}.xlsx")
+    def _run(progress):
+        from ..completion import attr_workbook
+        try:
+            res = attr_workbook(xlsx, package, out, progress)
+        except (ValueError, FileNotFoundError) as e:
+            raise HTTPException(422, str(e)) from None
+        return {**res, "session_id": body.get("session_id"),
+                "xlsx_path": xlsx, "package": package}
+    return {"job_id": jobs.submit("attr-check", _run)}
 
 
 # --------------------------------------------------------------------------
