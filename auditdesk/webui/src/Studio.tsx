@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api, Job, openFile, pollJob } from "./api";
 import RecCard, { RecAlt, RecBadge } from "./RecCard";
+import BindingReview from "./BindingReview";
 import {
   Card, chip, ErrorBanner, F_HEAD, F_LABEL, GhostBtn, Icon, MONO,
   PrimaryBtn,
@@ -155,6 +156,17 @@ const MAP_STATE_META: Record<string, {
 };
 
 export function MappingScreen() {
+  const [bindingReview, setBindingReview] = useState(false);
+  return <div style={{display:"flex",flexDirection:"column",height:"100%",minHeight:0}}>
+    <div style={{padding:"8px 24px"}}>
+      <GhostBtn onClick={()=>setBindingReview(false)}>계정 매핑</GhostBtn>
+      <GhostBtn onClick={()=>setBindingReview(true)}>제출 준비 · Golden binding</GhostBtn>
+    </div>
+    {bindingReview ? <BindingReview /> : <AccountMappingScreen />}
+  </div>;
+}
+
+function AccountMappingScreen() {
   const { result: lastMap, job, err, setErr, run } =
     useStudioJob("mapping");
   const [mappingId, setMappingId] = useState<string | null>(null);
