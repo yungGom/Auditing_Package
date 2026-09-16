@@ -6,7 +6,7 @@ import xlrd
 
 from fastapi import APIRouter, HTTPException
 
-from .. import binding, jobs
+from .. import binding, binding_review, jobs
 
 router = APIRouter()
 
@@ -24,7 +24,19 @@ def _load(con, key):
 
 
 def _view(draft):
-    return {**draft,'coverage':binding.coverage(draft),'target_states':binding.review_states(draft)}
+    return {**draft,'coverage':binding.coverage(draft),'target_states':binding.review_states(draft),
+            'review':binding_review.summarize(draft)}
+
+
+def _updated_view(draft, target_ids, compact=False):
+    if not compact:
+        return _view(draft)
+    # Preserve the default API contract; the review UI already has immutable
+    # source/taxonomy/layout data and only needs current decisions and queues.
+    return {'partial':True,'id':draft['id'],'revision':draft['revision'],
+        'decision_updates':{key:draft['decisions'].get(key) for key in target_ids},
+        'coverage':binding.coverage(draft),'target_states':binding.review_states(draft),
+        'review':binding_review.summarize(draft)}
 
 
 def _error(action):
@@ -48,6 +60,7 @@ def drafts():
 def create(body: dict):
     def run():
         draft = binding.prepare(body['dsd'],body['taxonomy'],body['layout'],body['report'],body.get('current_source'))
+        binding_review.enrich(draft)
         draft['id'] = uuid.uuid4().hex
         if body.get('reuse_id'):
             with _connect() as con: old = _load(con,body['reuse_id'])
@@ -58,8 +71,10 @@ def create(body: dict):
                 {'source_label':next(s['label'] for s in old['sources'] if s['id'] == d['source_id']),
                  'taxonomy':next(c for c in old['taxonomy'] if c['id'] == d.get('taxonomy_id')),
                  'report':old['report'],'source_block_id':d['source_block_id'],
+                 'source_context':next({k:s.get(k) for k in ('section','headers')} for s in old['sources'] if s['id']==d['source_id']),
                  'previous_hashes':old['hashes'],'state':'recheck_required'}
                 for d in old['decisions'].values() if d['kind'] == 'binding']
+        draft['review_metrics']=binding_review.summarize(draft)['metrics']
         with _connect() as con:
             con.execute('INSERT INTO binding_reviews VALUES(?,?)',(draft['id'],json.dumps(draft,ensure_ascii=False)))
         return _view(draft)
@@ -79,8 +94,34 @@ def decide(key: str, body: dict):
             draft = _load(con,key)
             if body.get('revision') != draft['revision']: raise HTTPException(409,'다른 검토에서 변경되었습니다. 새로고침 후 확인하세요')
             updated = binding.decide(draft,body['target_id'],body['decision'])
+            updated['review_metrics']=binding_review.summarize(updated)['metrics']
             con.execute('UPDATE binding_reviews SET payload=? WHERE id=?',(json.dumps(updated,ensure_ascii=False),key))
-        return _view(updated)
+        return _updated_view(updated,[body['target_id']],body.get('compact') is True)
+    return _error(run)
+
+
+@router.post('/{key}/batch-preview')
+def batch_preview(key: str, body: dict):
+    def run():
+        with _connect() as con:
+            draft=_load(con,key)
+        if body.get('revision')!=draft['revision']:
+            raise HTTPException(409,'검토 상태가 변경되었습니다. 새로고침 후 확인하세요')
+        return binding_review.preview(draft,body.get('target_ids'))
+    return _error(run)
+
+
+@router.post('/{key}/batch-confirm')
+def batch_confirm(key: str, body: dict):
+    def run():
+        with _connect() as con:
+            con.execute('BEGIN IMMEDIATE')
+            draft=_load(con,key)
+            if body.get('revision')!=draft['revision']:
+                raise HTTPException(409,'다른 검토에서 변경되었습니다. 새로고침 후 확인하세요')
+            updated=binding_review.confirm_batch(draft,body.get('target_ids'),body.get('token'),body.get('evidence'))
+            con.execute('UPDATE binding_reviews SET payload=? WHERE id=?',(json.dumps(updated,ensure_ascii=False),key))
+        return _updated_view(updated,body['target_ids'],body.get('compact') is True)
     return _error(run)
 
 

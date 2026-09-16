@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api, openFile } from "./api";
 import { PrimaryBtn, GhostBtn } from "./ui";
+import ReviewQueue from './ReviewQueue';
+import {applyReviewUpdate, filterRows, nextUnresolved, shortcut, ReviewFilters} from './bindingReviewQueue';
 
 // Filing preparation is a review panel inside Mapping, not a Review Output.
 export default function BindingReview() {
@@ -14,6 +16,9 @@ export default function BindingReview() {
   const [sourceId, setSourceId] = useState("");
   const [taxId, setTaxId] = useState("");
   const [filter, setFilter] = useState("unresolved");
+  const [queueFilters,setQueueFilters]=useState<ReviewFilters>({state:'unresolved',sheet:'',section:'',role:'',data_type:'',exception:''});
+  const [autoNext,setAutoNext]=useState(true);
+  const [batchPreview,setBatchPreview]=useState<any>(null);
   const [search, setSearch] = useState("");
   const [context, setContext] = useState({instant:"", start:"", end:"", unit:"", dimensions:"[]"});
   const [reviewed, setReviewed] = useState(false);
@@ -35,6 +40,7 @@ export default function BindingReview() {
   const selectTarget = (id:string, data:any=draft) => {
     setTargetId(id); setTaxId(""); setSourceId(""); setReviewed(false); setEvidence("");
     setContext({instant:"",start:"",end:"",unit:"",dimensions:"[]"});
+    setKind('binding');
     const d = data?.decisions[id];
     if(d) {
       setKind(d.kind); setSourceId(d.source_id); setTaxId(d.taxonomy_id || "");
@@ -43,7 +49,7 @@ export default function BindingReview() {
         unit:d.context?.unit || "",dimensions:JSON.stringify(d.context?.dimensions ?? [])});
     }
   };
-  const acceptDraft = (d:any) => {setDraft(d); setResult(null); selectTarget(d.targets[0]?.id || "",d);};
+  const acceptDraft = (d:any) => {setDraft(d); setResult(null); setBatchPreview(null); selectTarget(d.targets[0]?.id || "",d);};
   const create = () => run(async()=>{
     const {comparison,...r} = report;
     const d = await api(base,{method:"POST",body:JSON.stringify({...paths,
@@ -62,9 +68,39 @@ export default function BindingReview() {
       manual:!source?.candidates.some((c:any)=>c.id===taxId),
       context:{company:draft.report.company,scope:draft.report.scope,unit:context.unit,
         dimensions:JSON.parse(context.dimensions),...(context.instant?{instant:context.instant}:{start:context.start,end:context.end})}};
-    const d = await api(`${base}/${draft.id}`,{method:"PUT",body:JSON.stringify({revision:draft.revision,target_id:targetId,decision})});
+    const response = await api(`${base}/${draft.id}`,{method:"PUT",body:JSON.stringify({revision:draft.revision,target_id:targetId,decision,compact:true})});
+    const d=response.partial?applyReviewUpdate(draft,response):response;
     setDraft(d); setResult(null);
+    setBatchPreview(null);
+    if(!cancel && autoNext && d.review) {
+      const next=nextUnresolved(d.review.rows,targetId,queueFilters,1);
+      selectTarget(next||'',d);
+    }
   });
+  const navigate=(direction:number)=>{
+    if(!draft?.review || busy) return;
+    const next=nextUnresolved(draft.review.rows,targetId,queueFilters,direction);
+    if(next) selectTarget(next);
+  };
+  const onKey=(e:React.KeyboardEvent)=>{
+    if(busy || !draft || !targetId) return;
+    const action=shortcut(e);
+    if(!action) return;
+    e.preventDefault();
+    if(action==='next') navigate(1);
+    else if(action==='previous') navigate(-1);
+    else if(action==='confirm') save();
+    else if(action==='cancel') save(true);
+    else if(action.startsWith('candidate:')) {
+      const c=source?.candidates[Number(action.split(':')[1])];if(c) setTaxId(c.id);
+    }
+  };
+  const visibleIds=draft?.review?new Set(filterRows(draft.review.rows,queueFilters).map(r=>r.id)):null;
+  const changeQueueFilters=(filters:ReviewFilters)=>{
+    setQueueFilters(filters);
+    const visible=filterRows(draft?.review?.rows||[],filters);
+    if(!visible.some(r=>r.id===targetId)) selectTarget(visible[0]?.id||'');
+  };
   const status = (t:any) => {
     const s = draft.target_states?.[t.id];
     const labels:any = {stale:"원천 변경 · 재검토",conflict:"충돌",manual:"수동 지정",confirmed:"사용자 확정",
@@ -72,7 +108,7 @@ export default function BindingReview() {
     return s ? labels[s.state]+" · "+s.reason : draft.decisions[t.id]?"사용자 확정":"미확정";
   };
   const inputStyle = {padding:6,border:"1px solid #c3c6d1",borderRadius:6,maxWidth:"100%"};
-  return <div style={{padding:20,overflow:"auto",height:"100%"}}>
+  return <div tabIndex={0} onKeyDown={onKey} style={{padding:20,overflow:"auto",height:"100%"}}>
     <h3>제출 준비 · Golden binding 검토</h3>
     <p>자동 후보는 확정되지 않습니다. 당기 원천을 검토하고 모든 대상 셀을 연결해야 생성할 수 있습니다.</p>
     <p>현재 회사의 배치 파일을 선택하세요. 다른 회사의 Golden 샘플을 제출 배치로 사용하지 마세요.</p>
@@ -90,13 +126,24 @@ export default function BindingReview() {
     <label><input type="checkbox" checked={reuse} onChange={e=>setReuse(e.target.checked)}/>선택한 과거 검토를 재사용 후보로만 참고</label>
     {busy && <p role="status">처리 중…</p>}{err && <p role="alert">{err}</p>}
     {draft && <>
-      <p>필수 셀 {coverage.required} · 확정 {coverage.confirmed} · 미확정 {coverage.unresolved} · 충돌 {coverage.conflicts}</p>
+      <ReviewQueue key={draft.id} draft={draft} targetId={targetId} filters={queueFilters} onFilters={changeQueueFilters}
+        onSelect={selectTarget} onNext={navigate} busy={busy} preview={batchPreview} onDiscard={()=>setBatchPreview(null)}
+        onPreview={(ids:string[])=>run(async()=>{setBatchPreview(null);setBatchPreview(await api(`${base}/${draft.id}/batch-preview`,{method:'POST',body:JSON.stringify({revision:draft.revision,target_ids:ids})}));})}
+        onConfirm={(evidence:string)=>run(async()=>{
+          const response=await api(`${base}/${draft.id}/batch-confirm`,{method:'POST',body:JSON.stringify({revision:batchPreview.revision,target_ids:batchPreview.target_ids,token:batchPreview.token,evidence,compact:true})});
+          const d=response.partial?applyReviewUpdate(draft,response):response;
+          setDraft(d);setResult(null);setBatchPreview(null);
+          const next=autoNext?nextUnresolved(d.review.rows,targetId,queueFilters,1):'';
+          selectTarget(next||targetId,d);
+        })}/>
+      <label><input type="checkbox" checked={autoNext} onChange={e=>setAutoNext(e.target.checked)}/>확정 후 다음 미확정으로 이동</label>
+      <p>필수 셀 {coverage.required} · {coverage.stale?'저장된 확정 (현재 무효)':'확정'} {coverage.confirmed} · 미확정 {coverage.unresolved} · 충돌 {coverage.conflicts}</p>
       <p>정적 근거 없음 {coverage.static_without_evidence} · taxonomy 미확정 {coverage.taxonomy_unresolved} · 기간 미확정 {coverage.period_unresolved} · 차원 미확정 {coverage.dimension_unresolved}</p>
       {coverage.stale && <p role="alert">원천 변경: 기존 확정은 사용할 수 없습니다. 변경된 원천으로 자동 후보를 다시 생성하세요.</p>}
       <p>회사 {draft.report.company} · {draft.report.scope} · {draft.report.period_end}</p>
-      <label>목록 <select value={filter} onChange={e=>setFilter(e.target.value)}><option value="unresolved">미확정</option><option value="all">전체</option><option value="confirmed">확정</option></select></label>
+      {!draft.review && <label>목록 <select value={filter} onChange={e=>setFilter(e.target.value)}><option value="unresolved">미확정</option><option value="all">전체</option><option value="confirmed">확정</option></select></label>}
       <label>대상 배치 셀 <select aria-label="대상 배치 셀" value={targetId} onChange={e=>selectTarget(e.target.value)}>
-        <option value="">선택</option>{targets.filter((t:any)=>filter==='all'||t.id===targetId||(filter==='confirmed')===!!draft.decisions[t.id]).map((t:any)=><option key={t.id} value={t.id}>{t.id} · {status(t)}</option>)}
+        <option value="">선택</option>{targets.filter((t:any)=>visibleIds?visibleIds.has(t.id):filter==='all'||t.id===targetId||(filter==='confirmed')===!!draft.decisions[t.id]).map((t:any)=><option key={t.id} value={t.id}>{t.id} · {status(t)}</option>)}
       </select></label>
       {target && <><p>대상 {target.sheet} 행 {target.row} 열 {target.column} · 참고 표시(원천 아님): {target.sample_text}</p>
         <p>행축 {target.row_axis} / 열축 {JSON.stringify(target.column_axis)} · 기간/차원 방향은 검토 필요</p>
@@ -110,6 +157,10 @@ export default function BindingReview() {
             {source && <><pre style={{whiteSpace:"pre-wrap"}}>{source.text}</pre><p>{JSON.stringify(source.headers)}</p></>}
           </div>
           <div><h4>현재 taxonomy 추천 Top N</h4>
+            {draft.review?.rows.find((r:any)=>r.id===targetId)?.prior_suggestions?.map((c:any)=><div key={c.source_id+':'+c.taxonomy_id}>
+              <PrimaryBtn disabled={busy} onClick={()=>{setKind('binding');setSourceId(c.source_id);setTaxId(c.taxonomy_id);setReviewed(false);setEvidence('');setContext({instant:'',start:'',end:'',unit:'',dimensions:'[]'});}}>이전 확정 기반 후보 · {c.prefix}:{c.name}</PrimaryBtn>
+              <p>{c.role} · {c.evidence} · 현재 기간/차원은 다시 검토하세요.</p>
+            </div>)}
             {source?.candidates.map((c:any)=><div key={c.id}><PrimaryBtn disabled={busy} onClick={()=>setTaxId(c.id)}>{c.prefix}:{c.name} · {c.taxonomy_sheet}:{c.taxonomy_row}</PrimaryBtn>
               <p>{c.role} · {c.label_ko} · {c.data_type} · {c.period}</p>
               <p>확신도 {c.confidence} · 문자열 유사도 {c.score} · {c.evidence.join(' / ')}</p>
