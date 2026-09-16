@@ -5,7 +5,7 @@ import ReviewQueue from './ReviewQueue';
 import {applyReviewUpdate, filterRows, nextUnresolved, shortcut, ReviewFilters} from './bindingReviewQueue';
 
 // Filing preparation is a review panel inside Mapping, not a Review Output.
-export default function BindingReview() {
+export default function BindingReview({workflowId}: {workflowId?:string} = {}) {
   const [paths, setPaths] = useState({dsd:"", taxonomy:"", layout:"", current_source:""});
   const [report, setReport] = useState({company:"", scope:"consolidated", period_end:"", fiscal_number:"", comparison:""});
   const [draft, setDraft] = useState<any>(null);
@@ -26,6 +26,7 @@ export default function BindingReview() {
   const [kind, setKind] = useState("binding");
   const [out, setOut] = useState("");
   const [result, setResult] = useState<any>(null);
+  const [referenceDetail,setReferenceDetail]=useState<any>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
@@ -49,7 +50,10 @@ export default function BindingReview() {
         unit:d.context?.unit || "",dimensions:JSON.stringify(d.context?.dimensions ?? [])});
     }
   };
-  const acceptDraft = (d:any) => {setDraft(d); setResult(null); setBatchPreview(null); selectTarget(d.targets[0]?.id || "",d);};
+  const acceptDraft = (d:any) => {setDraft(d); setResult(null); setReferenceDetail(null); setBatchPreview(null); selectTarget(d.targets[0]?.id || "",d);};
+  useEffect(()=>{
+    if(workflowId) run(async()=>acceptDraft(await api(`/api/studio/workflows/${workflowId}`)));
+  },[workflowId]);
   const create = () => run(async()=>{
     const {comparison,...r} = report;
     const d = await api(base,{method:"POST",body:JSON.stringify({...paths,
@@ -111,7 +115,7 @@ export default function BindingReview() {
   return <div tabIndex={0} onKeyDown={onKey} style={{padding:20,overflow:"auto",height:"100%"}}>
     <h3>제출 준비 · Golden binding 검토</h3>
     <p>자동 후보는 확정되지 않습니다. 당기 원천을 검토하고 모든 대상 셀을 연결해야 생성할 수 있습니다.</p>
-    <p>현재 회사의 배치 파일을 선택하세요. 다른 회사의 Golden 샘플을 제출 배치로 사용하지 마세요.</p>
+    {!workflowId && <><p>현재 회사의 배치 파일을 선택하세요. 다른 회사의 Golden 샘플을 제출 배치로 사용하지 마세요.</p>
     <div style={{display:"grid",gridTemplateColumns:"repeat(2, minmax(0, 1fr))",gap:8}}>
       {Object.entries(paths).map(([key,value])=><label key={key}>{({dsd:"당기 DSD",taxonomy:"당기 taxonomy.xls",layout:"당기 배치.xls",current_source:"선택: 검토된 현재 원천 index JSON"} as any)[key]}
         <input aria-label={key} value={value} style={{...inputStyle,width:"100%"}} onChange={e=>setPaths({...paths,[key]:e.target.value})}/></label>)}
@@ -123,9 +127,16 @@ export default function BindingReview() {
       <option value="">저장된 검토 선택</option>{saved.map(s=><option key={s.id} value={s.id}>{s.report.company} · {s.report.scope} · {s.report.period_end} · {s.id.slice(0,8)}</option>)}
     </select>
     <PrimaryBtn disabled={busy||!savedId} onClick={()=>run(async()=>acceptDraft(await api(`${base}/${savedId}`)))}>불러오기 / 새로고침</PrimaryBtn>
-    <label><input type="checkbox" checked={reuse} onChange={e=>setReuse(e.target.checked)}/>선택한 과거 검토를 재사용 후보로만 참고</label>
+    <label><input type="checkbox" checked={reuse} onChange={e=>setReuse(e.target.checked)}/>선택한 과거 검토를 재사용 후보로만 참고</label></>}
     {busy && <p role="status">처리 중…</p>}{err && <p role="alert">{err}</p>}
     {draft && <>
+      {draft.workflow && <section aria-label="전환 진행 상태">
+        <p>전환 작업 {draft.id} · 후보 coverage {draft.workflow.coverage.candidate_coverage_pct}% · 사용자 확정 {draft.workflow.coverage.confirmed} · 검토 필요 {draft.workflow.coverage.review_required} (후보 coverage는 자동화율이 아닙니다)</p>
+        <p>전기 재사용 후보 {draft.workflow.coverage.prior_reusable} · 현재 정의 확인 {draft.workflow.coverage.taxonomy_valid_reusable} · {draft.workflow.steps.golden.message}</p>
+        <ol>{Object.entries(draft.workflow.steps).map(([k,s]:[string,any])=><li key={k}>{({analysis:'DSD 분석',taxonomy:'현재 taxonomy',reference:'유사 공시',prior:'전기 공시',recommendation:'추천 생성',review:'사용자 검토',golden:'Golden 생성'} as any)[k]}: {result&&k==='golden'?'완료':({done:'완료',needs_review:'사용자 확인 필요',waiting:'대기',failed:'실패',running:'진행 중'} as any)[s.state]} {s.message}</li>)}</ol>
+        <details><summary>전기 대비 변경: 원천에 없는 항목은 폐지 확정이 아닙니다</summary>{draft.workflow.changes.map((r:any,i:number)=><p key={i}>{r.prefix}:{r.name} · {r.role} · {r.status} · {r.reasons.join(' / ')}</p>)}</details>
+        <PrimaryBtn disabled={busy} onClick={()=>run(async()=>acceptDraft(await api(`/api/studio/workflows/${draft.id}`)))}>현재 원천·진행률 새로고침</PrimaryBtn>
+      </section>}
       <ReviewQueue key={draft.id} draft={draft} targetId={targetId} filters={queueFilters} onFilters={changeQueueFilters}
         onSelect={selectTarget} onNext={navigate} busy={busy} preview={batchPreview} onDiscard={()=>setBatchPreview(null)}
         onPreview={(ids:string[])=>run(async()=>{setBatchPreview(null);setBatchPreview(await api(`${base}/${draft.id}/batch-preview`,{method:'POST',body:JSON.stringify({revision:draft.revision,target_ids:ids})}));})}
@@ -157,14 +168,26 @@ export default function BindingReview() {
             {source && <><pre style={{whiteSpace:"pre-wrap"}}>{source.text}</pre><p>{JSON.stringify(source.headers)}</p></>}
           </div>
           <div><h4>현재 taxonomy 추천 Top N</h4>
+            {draft.workflow?.evidence.find((s:any)=>s.source_id===sourceId)?.candidates.slice(0,4).map((c:any)=>{
+              const tax=draft.taxonomy.find((t:any)=>t.id===c.taxonomy_id);
+              return <div key={'workflow:'+c.taxonomy_id}><PrimaryBtn disabled={busy} onClick={()=>setTaxId(c.taxonomy_id)}>통합 근거 후보 · {tax?.prefix}:{tax?.name} · {tax?.role}</PrimaryBtn>
+                {c.provenance.map((p:any,i:number)=><p key={i}>{p.origin}: {p.message}
+                  {p.reference_id&&<PrimaryBtn disabled={busy} onClick={()=>run(async()=>setReferenceDetail(await api(`/api/studio/workflows/${draft.id}/reference?reference_id=${encodeURIComponent(p.reference_id)}`)))}>타사 근거 원문 보기</PrimaryBtn>}
+                </p>)}
+                {c.reference_label_score!=null&&<p>타사 label 유사도 {c.reference_label_score} · 현재 회사 확정 아님</p>}
+              </div>;
+            })}
             {draft.review?.rows.find((r:any)=>r.id===targetId)?.prior_suggestions?.map((c:any)=><div key={c.source_id+':'+c.taxonomy_id}>
               <PrimaryBtn disabled={busy} onClick={()=>{setKind('binding');setSourceId(c.source_id);setTaxId(c.taxonomy_id);setReviewed(false);setEvidence('');setContext({instant:'',start:'',end:'',unit:'',dimensions:'[]'});}}>이전 확정 기반 후보 · {c.prefix}:{c.name}</PrimaryBtn>
-              <p>{c.role} · {c.evidence} · 현재 기간/차원은 다시 검토하세요.</p>
+              <p>{c.role} · USER_CONFIRMED_HISTORY · {c.evidence} · 현재 기간/차원은 다시 검토하세요.</p>
             </div>)}
             {source?.candidates.map((c:any)=><div key={c.id}><PrimaryBtn disabled={busy} onClick={()=>setTaxId(c.id)}>{c.prefix}:{c.name} · {c.taxonomy_sheet}:{c.taxonomy_row}</PrimaryBtn>
               <p>{c.role} · {c.label_ko} · {c.data_type} · {c.period}</p>
               <p>확신도 {c.confidence} · 문자열 유사도 {c.score} · {c.evidence.join(' / ')}</p>
-              <p>미확정 근거: {c.ambiguity_reasons.join(' / ')}</p></div>)}
+              <p>미확정 근거: {c.ambiguity_reasons.join(' / ')}</p>
+              {draft.workflow?.evidence.find((s:any)=>s.source_id===sourceId)?.candidates.find((e:any)=>e.taxonomy_id===c.id)?.provenance.map((p:any,i:number)=><p key={i}>{p.origin}: {p.message} {p.changes&&JSON.stringify(p.changes)}</p>)}
+            </div>)}
+            {draft.workflow?.evidence.find((s:any)=>s.source_id===sourceId)?.extension_review && <p>회사 확장 필요 검토 · 요소를 자동 생성하지 않습니다.</p>}
             <label>수동 taxonomy 선택 <select aria-label="taxonomy 요소" value={taxId} style={{maxWidth:"100%"}} onChange={e=>setTaxId(e.target.value)}>
               <option value="">선택</option>{draft.taxonomy.map((c:any)=><option key={c.id} value={c.id}>{c.id} · {c.prefix}:{c.name} · {c.role}</option>)}
             </select></label>
@@ -181,6 +204,9 @@ export default function BindingReview() {
         <PrimaryBtn disabled={busy||coverage.stale} onClick={()=>save(true)}>확정 취소 · 미확정으로</PrimaryBtn>
       </>}
       {draft.reuse_candidates?.length>0 && <details><summary>과거 사용자 확정 참고 (현재 유효성 재검토 필요)</summary>{draft.reuse_candidates.map((c:any,i:number)=><p key={i}>{c.source_label} · {c.taxonomy.role} · {c.taxonomy.prefix}:{c.taxonomy.name} · {c.state}</p>)}</details>}
+      {referenceDetail&&<details open><summary>타사 참고 근거 원문 · {referenceDetail.reference_id}</summary><p>{referenceDetail.message}</p><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(referenceDetail.rows,null,2)}</pre><p>원천 hash: {referenceDetail.sha256}</p>
+        {referenceDetail.has_more&&<PrimaryBtn disabled={busy} onClick={()=>run(async()=>setReferenceDetail(await api(`/api/studio/workflows/${draft.id}/reference?reference_id=${encodeURIComponent(referenceDetail.reference_id)}&offset=${referenceDetail.offset+20}`)))}>다음 사례 20개</PrimaryBtn>}
+        <GhostBtn onClick={()=>setReferenceDetail(null)}>원문 닫기</GhostBtn></details>}
       <hr/><label>새 산출 폴더 <input aria-label="산출 폴더" value={out} onChange={e=>setOut(e.target.value)}/></label>
       <PrimaryBtn disabled={busy||!coverage.ready} onClick={()=>run(async()=>setResult(await api(`${base}/${draft.id}/generate`,{method:"POST",body:JSON.stringify({revision:draft.revision,out_dir:out})})))}>검토 완료 Golden 생성</PrimaryBtn>
       {!coverage.ready && <p>미확정/충돌/원천 변경을 해결해야 생성할 수 있습니다. 샘플 값으로 채우지 않습니다.</p>}

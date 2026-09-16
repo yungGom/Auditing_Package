@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api, Job, openFile, pollJob } from "./api";
 import RecCard, { RecAlt, RecBadge } from "./RecCard";
 import BindingReview from "./BindingReview";
+import XbrlWorkflow from "./XbrlWorkflow";
 import {
   Card, chip, ErrorBanner, F_HEAD, F_LABEL, GhostBtn, Icon, MONO,
   PrimaryBtn,
@@ -157,12 +158,14 @@ const MAP_STATE_META: Record<string, {
 
 export function MappingScreen() {
   const [bindingReview, setBindingReview] = useState(false);
+  const [workflow, setWorkflow] = useState(false);
   return <div style={{display:"flex",flexDirection:"column",height:"100%",minHeight:0}}>
     <div style={{padding:"8px 24px"}}>
-      <GhostBtn onClick={()=>setBindingReview(false)}>계정 매핑</GhostBtn>
-      <GhostBtn onClick={()=>setBindingReview(true)}>제출 준비 · Golden binding</GhostBtn>
+      <GhostBtn onClick={()=>{setWorkflow(false);setBindingReview(false);}}>계정 매핑</GhostBtn>
+      <GhostBtn onClick={()=>{setWorkflow(false);setBindingReview(true);}}>제출 준비 · Golden binding</GhostBtn>
+      <GhostBtn onClick={()=>setWorkflow(true)}>XBRL 전환 · 작성 준비</GhostBtn>
     </div>
-    {bindingReview ? <BindingReview /> : <AccountMappingScreen />}
+    {workflow ? <XbrlWorkflow /> : bindingReview ? <BindingReview /> : <AccountMappingScreen />}
   </div>;
 }
 

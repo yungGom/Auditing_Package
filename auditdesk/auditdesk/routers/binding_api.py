@@ -2,6 +2,7 @@
 import json
 import uuid
 import zipfile
+from pathlib import Path
 import xlrd
 
 from fastapi import APIRouter, HTTPException
@@ -24,8 +25,10 @@ def _load(con, key):
 
 
 def _view(draft):
+    from .. import orchestration
+    orchestration.refresh(draft)
     return {**draft,'coverage':binding.coverage(draft),'target_states':binding.review_states(draft),
-            'review':binding_review.summarize(draft)}
+            'review':orchestration.review_projection(draft,binding_review.summarize(draft))}
 
 
 def _updated_view(draft, target_ids, compact=False):
@@ -33,10 +36,13 @@ def _updated_view(draft, target_ids, compact=False):
         return _view(draft)
     # Preserve the default API contract; the review UI already has immutable
     # source/taxonomy/layout data and only needs current decisions and queues.
+    from .. import orchestration
+    orchestration.refresh(draft)
     return {'partial':True,'id':draft['id'],'revision':draft['revision'],
         'decision_updates':{key:draft['decisions'].get(key) for key in target_ids},
         'coverage':binding.coverage(draft),'target_states':binding.review_states(draft),
-        'review':binding_review.summarize(draft)}
+        'review':orchestration.review_projection(draft,binding_review.summarize(draft)),
+        **({'workflow_update':{k:draft['workflow'][k] for k in ('coverage','steps')}} if 'workflow' in draft else {})}
 
 
 def _error(action):
@@ -132,5 +138,16 @@ def generate(key: str, body: dict):
             con.execute('BEGIN IMMEDIATE')
             draft = _load(con,key)
             if body.get('revision') != draft['revision']: raise HTTPException(409,'검토 상태가 변경되었습니다. 다시 확인하세요')
-            return binding.generate(draft,body['out_dir'])
+            result=binding.generate(draft,body['out_dir'])
+            if 'workflow' in draft:
+                from .. import orchestration
+                w=draft['workflow']
+                w['output_revision']=draft['revision']
+                w['output']={'taxonomy':result['taxonomy'],'excel':result['excel'],
+                             'review':str(Path(body['out_dir'])/'review.json')}
+                orchestration.refresh(draft)
+                result['workflow']=w
+                Path(w['output']['review']).write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+                con.execute('UPDATE binding_reviews SET payload=? WHERE id=?',(json.dumps(draft,ensure_ascii=False),key))
+            return result
     return _error(run)

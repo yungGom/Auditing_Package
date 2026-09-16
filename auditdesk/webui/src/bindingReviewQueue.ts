@@ -1,4 +1,4 @@
-export type ReviewFilters = {state?:string; sheet?:string; section?:string; role?:string; data_type?:string; exception?:string};
+export type ReviewFilters = {state?:string; sheet?:string; section?:string; role?:string; data_type?:string; exception?:string; change?:string};
 export function applyReviewUpdate(draft:any, update:any) {
   if(update.id!==draft.id || update.revision<=draft.revision) throw Error('검토 상태가 변경되었습니다. 새로고침하세요.');
   const decisions={...draft.decisions};
@@ -6,13 +6,14 @@ export function applyReviewUpdate(draft:any, update:any) {
     if(decision===null) delete decisions[id]; else decisions[id]=decision;
   }
   return {...draft,revision:update.revision,decisions,coverage:update.coverage,
-    target_states:update.target_states,review:update.review};
+    target_states:update.target_states,review:update.review,
+    ...(update.workflow_update?{workflow:{...draft.workflow,...update.workflow_update}}:{})};
 }
 export function filterRows(rows:any[], f:ReviewFilters) {
   return rows.filter(r=>(!f.state || f.state==='all' || (f.state==='unresolved'?r.state!=='confirmed':r.state===f.state))
     && (!f.sheet || r.sheet===f.sheet) && (!f.section || r.section===f.section)
     && (!f.role || r.roles.includes(f.role)) && (!f.data_type || r.data_types.includes(f.data_type))
-    && (!f.exception || r.exceptions.includes(f.exception)));
+    && (!f.exception || r.exceptions.includes(f.exception)) && (!f.change || r.workflow_status===f.change));
 }
 export function nextUnresolved(rows:any[], id:string, filters:ReviewFilters, direction:number) {
   const visible=new Set(filterRows(rows,filters).filter(r=>r.state!=='confirmed').map(r=>r.id));
