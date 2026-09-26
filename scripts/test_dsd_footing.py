@@ -35,6 +35,8 @@ def main() -> int:
 
     env = os.environ.copy()
     env.pop("GATES_UPDATE", None)
+    # gates.py prints characters that a Windows CP949 console cannot encode.
+    env["PYTHONIOENCODING"] = "utf-8"
     failures = []
     with tempfile.TemporaryDirectory(prefix="dsd_footing_gates_") as tmp:
         for name, entry in samples.items():

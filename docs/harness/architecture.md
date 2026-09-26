@@ -14,6 +14,8 @@ Inspected `main` at `7cd756b` (2026-09-27). The repository has no root `AGENTS.m
 
 `auditdesk/GATES.json` records patch-level quality decisions and is not a test runner. `DSD_footing/GATES.json` is a metric snapshot. Neither may be auto-updated by the harness. README test counts and gate counts are historical claims, not fresh run results.
 
+The public checkout does not include every real-file fixture used by AuditDesk. On a fresh clone, `test_version_check.py::test_g2_smoke_direct` fails because `_KNOWN_GENERATIONS` is empty; other fixture-dependent tests skip. Keep this visible as an incomplete regression baseline. Supply approved public fixtures through the existing local fixture path before claiming the complete suite passed; do not change the test to hide the gap.
+
 ## Layers
 
 ```text
