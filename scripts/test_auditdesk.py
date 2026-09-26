@@ -4,6 +4,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "auditdesk"
@@ -23,11 +25,23 @@ def main() -> int:
         return 1
 
     print("[AuditDesk] Python core and DART tests", flush=True)
-    py = subprocess.run(
-        [sys.executable, "-m", "pytest", "dsd_workbench/dsd_tool/tests", "dart_explorer/tests", "-q"],
-        cwd=PROJECT,
-        check=False,
-    ).returncode
+    with tempfile.TemporaryDirectory(prefix="auditdesk_pytest_") as tmp:
+        report = Path(tmp) / "results.xml"
+        py = subprocess.run(
+            [sys.executable, "-m", "pytest", "dsd_workbench/dsd_tool/tests",
+             "dart_explorer/tests", "-q", f"--junitxml={report}"],
+            cwd=PROJECT,
+            check=False,
+        ).returncode
+        if not report.is_file():
+            print("FAIL: pytest produced no result report", flush=True)
+            py = 1
+        else:
+            suites = ET.parse(report).getroot().iter("testsuite")
+            skipped = sum(int(suite.get("skipped", "0")) for suite in suites)
+            if skipped:
+                print(f"FAIL: {skipped} AuditDesk tests skipped; required regression is incomplete", flush=True)
+                py = 1
 
     npm = shutil.which("npm")
     if npm is None or not (WEBUI / "node_modules").is_dir():

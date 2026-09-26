@@ -1,6 +1,6 @@
 # DSD_FOOTING-specific contract
 
-Read `DSD_footing/CLAUDE.md`, `GATES.json`, and the root `AGENTS.md` before work. The existing detailed accounting rules and approved exceptions in `CLAUDE.md` remain authoritative for this project.
+Read `governance/POLICY.md`, `governance/PROTECTED_ARTIFACTS.md`, `DSD_footing/CLAUDE.md`, `GATES.json`, and the root `AGENTS.md` before work. The existing detailed accounting rules and approved exceptions in `CLAUDE.md` remain authoritative for this project.
 
 - Keep the pipeline fully offline. Use synthetic fixtures or the already registered public DART sample PDFs. Never ingest private client numbers into repository or agent context.
 - Preserve `OK`, `ROUND`, `DIFF`, `SKIP (?)`, and `SIGN` distinctions. Unmatched is not zero; sign agreement by absolute value alone is not an `OK`.

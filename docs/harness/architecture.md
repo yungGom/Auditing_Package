@@ -1,4 +1,4 @@
-# AI development harness v1 — architecture and baseline
+# AI development harness v1.1 — architecture and baseline
 
 ## Current repository at baseline
 
@@ -33,6 +33,6 @@ Reviewer: diff, data boundary, test evidence, domain assumptions
 Human: accept, reject, or refine the business rule
 ```
 
-The root `AGENTS.md` owns the shared workflow. Project `AGENTS.md` files point to existing domain documents and record project-specific test gates. `scripts/test_all.py` composes entrypoints without changing product code. Issue and PR templates carry the task and evidence contract. Future projects can add a local `AGENTS.md` and independently runnable test script, then register it in the aggregator.
+`governance/POLICY.md` owns the shared workflow. Root `AGENTS.md` and `CLAUDE.md` point Codex and Claude Code to the same policy; project documents retain domain details. `scripts/test_all.py` composes entrypoints without changing product code. The protected-artifact checker, Git hooks, and Actions workflow call tool-neutral scripts. Issue and PR templates carry the task and evidence contract. Future projects can add a local `AGENTS.md`, an independently runnable test script, and protected paths, then register the entrypoint in the aggregator.
 
-This v1 documents a repeatable handoff. It does not automatically create agents, open PRs, set branch protection, run CI, or decide accounting acceptability. Those can be added after the local entrypoints have been exercised on the target development machine.
+The v1.1 workflow adds CI and optional local hooks. It does not automatically create agents, set branch protection, or decide accounting acceptability. Required checks and code-owner review must be enabled in repository settings for a failed CI job to block merge; see `enforcement.md`.

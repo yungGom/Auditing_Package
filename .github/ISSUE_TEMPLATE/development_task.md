@@ -6,13 +6,16 @@ labels: []
 assignees: []
 ---
 
-## Scope and outcome
+## Problem
 
 Project/component:
 Problem or desired behavior:
+
+## Business rule and owner
+
 Business rule source and owner:
 
-## Acceptance examples
+## Acceptance criteria
 
 Use synthetic or public data only. Include normal, mismatch, missing, and ambiguous cases where relevant.
 
@@ -20,15 +23,24 @@ Use synthetic or public data only. Include normal, mismatch, missing, and ambigu
 | --- | --- | --- |
 | | | |
 
-## Constraints
+## Reproduction
+
+Current behavior and exact reproduction command or steps:
+Expected behavior:
+
+## Protected artifacts affected
 
 Data/offline boundary:
-Existing behavior and gate baseline to preserve:
+List protected paths or symbols from `governance/PROTECTED_ARTIFACTS.md` (or `none`):
+Existing gate baseline and known exceptions to preserve:
 Out of scope:
-Human accounting decision needed:
 
-## Verification
+## Required tests
 
-Automated checks:
+Automated commands and expected evidence:
 Manual checks:
-Definition of done: implementation, applicable tests, independent review, and human business acceptance.
+
+## Human decision required
+
+Accounting judgment or protected-artifact decision (or `none`):
+Definition of done: implementation, applicable tests without hidden failures/skips, independent review, and human business acceptance.

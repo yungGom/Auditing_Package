@@ -1,6 +1,6 @@
 # AuditDesk-specific contract
 
-Read `auditdesk/README.md`, the relevant specs in `auditdesk/docs/`, and `auditdesk/GATES.json` alongside the root `AGENTS.md`. This folder also contains a separate AuditLink v2 app in `backend/` and `frontend/`; its tests are not part of the AuditDesk core entrypoint.
+Read `governance/POLICY.md`, `governance/PROTECTED_ARTIFACTS.md`, `auditdesk/README.md`, the relevant specs in `auditdesk/docs/`, and `auditdesk/GATES.json` alongside the root `AGENTS.md`. This folder also contains a separate AuditLink v2 app in `backend/` and `frontend/`; its tests are not part of the AuditDesk core entrypoint.
 
 - Keep `dsd_workbench` completely offline. Do not add network dependencies or imports to `dsd_tool`. Keep `dart_explorer` for public DART receipt, with file/cache transfer across the boundary. Run `test_offline.py` with the full core suite.
 - Preserve original DSD identity checks, byte-preserving no-change behavior, precise offset edits, and explicit unmatched/unknown output. Accounting recommendations require a person's confirmation.

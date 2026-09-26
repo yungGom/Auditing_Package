@@ -1,0 +1,69 @@
+{
+  "exact": [
+    "DSD_footing/GATES.json",
+    "auditdesk/GATES.json",
+    "auditdesk/assets/guide/guide_rules_2026.json",
+    "auditdesk/assets/guide/build_guide_rules.py",
+    "DSD_footing/CLAUDE.md",
+    "auditdesk/dsd_workbench/KNOWN_VERSIONS.md",
+    "auditdesk/docs/REQUEST_LEDGER.md",
+    "auditdesk/docs/IMPL_CHECKLIST.md",
+    "auditdesk/docs/종합_작업계획_2026반기시즌.md",
+    "auditdesk/docs/한빛정밀_검증데이터셋.md",
+    "auditdesk/dsd_workbench/dsd_tool/tests/fixture.py",
+    "auditdesk/dsd_workbench/dsd_tool/tests/hanbit_skeleton.py",
+    "auditdesk/docs/reports/2026-08-03_F-4b-lite.md",
+    "auditdesk/docs/reports/2026-08-03_F-4b-lite_판정기예외_검수자료.md"
+  ],
+  "globs": [
+    "GATES.json",
+    "ERRORS.json",
+    "**/GATES.json",
+    "**/ERRORS.json",
+    "**/golden*/**",
+    "**/golden/**",
+    "**/baseline*/**",
+    "**/baselines/**",
+    "**/truth*/**",
+    "**/truth/**",
+    "**/*known*false*positive*",
+    "DSD_footing/samples/**",
+    "auditdesk/**/fixtures/**",
+    "auditdesk/docs/*SPEC*.md"
+  ],
+  "existing_test_globs": [
+    "auditdesk/dsd_workbench/dsd_tool/tests/test_*.py",
+    "auditdesk/dart_explorer/tests/test_*.py",
+    "auditdesk/backend/tests/test_*.py"
+  ],
+  "symbols": {
+    "DSD_footing/core.py": ["EXCL_TABLE", "verdict"],
+    "DSD_footing/refmap.py": ["MIN_WON"],
+    "DSD_footing/statements.py": ["A5_RULES"],
+    "DSD_footing/prose.py": ["RULES"],
+    "auditdesk/dsd_workbench/dsd_tool/foot.py": ["DEFAULT_LIMIT", "_verdict"],
+    "auditdesk/dsd_workbench/dsd_tool/foot_excel.py": ["_classify_missing"],
+    "auditdesk/dsd_workbench/dsd_tool/mapping_sheet.py": ["_TOL"],
+    "auditdesk/dsd_workbench/dsd_tool/mapping.py": ["WEIGHTS", "SIM_MIX", "DEFAULT_THRESHOLD", "SIM_FLOOR"],
+    "auditdesk/dsd_workbench/dsd_tool/guide_check.py": ["MACHINE_RULES", "_CNC_RE", "_CHANGE_RE", "CNC_CHANGE_AXIS_WHITELIST", "machine_check"],
+    "auditdesk/dsd_workbench/dsd_tool/xbrl_recon.py": ["_tolerance"]
+  },
+  "call_keywords": {
+    "auditdesk/dsd_workbench/dsd_tool/xbrl_recon.py": ["min_sim"]
+  },
+  "self_globs": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "auditdesk/AGENTS.md",
+    "auditdesk/CLAUDE.md",
+    "DSD_footing/AGENTS.md",
+    "governance/**",
+    "scripts/check_protected.py",
+    "scripts/test_all.py",
+    "scripts/test_auditdesk.py",
+    "scripts/test_dsd_footing.py",
+    ".github/workflows/**",
+    ".github/CODEOWNERS",
+    ".githooks/**"
+  ]
+}
