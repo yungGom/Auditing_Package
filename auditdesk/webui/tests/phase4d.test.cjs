@@ -4,11 +4,11 @@ const fs=require('node:fs');
 const ts=require('typescript');
 const vm=require('node:vm');
 const path=require('node:path');
-function harness(api) {
+function harness(api,pollJob=async()=>({state:'done',result:{id:'workflow'}})) {
  let cursor=0;const state=[];
  const react={createElement:(tag,props,...children)=>({tag,props:props||{},children}),useEffect:()=>{},useRef:init=>{const i=cursor++;return state[i]??={current:init}},useState:init=>{const i=cursor++;if(!(i in state))state[i]=typeof init==='function'?init():init;return [state[i],v=>state[i]=typeof v==='function'?v(state[i]):v]}};
  const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/XbrlWorkflow.tsx'),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
- const ctx={exports:{},require:n=>n==='react'?{...react,default:react}:n==='./api'?{api,pollJob:async()=>({state:'done',result:{id:'workflow'}})}:n==='./BindingReview'?{default:'review'}:{PrimaryBtn:'button',GhostBtn:'button'},JSON};
+ const ctx={exports:{},require:n=>n==='react'?{...react,default:react}:n==='./api'?{api,pollJob}:n==='./BindingReview'?{default:'review'}:{PrimaryBtn:'button',GhostBtn:'button'},JSON};
  vm.createContext(ctx);vm.runInContext(code,ctx);return ()=>{cursor=0;return ctx.exports.default()};
 }
 function nodes(t){return t&&typeof t==='object'?[t,...(t.children||[]).flat(Infinity).flatMap(nodes)]:[]}
@@ -35,6 +35,20 @@ test('acquisition errors stay visible and can be retried on the same screen',asy
  await button(render,'전기 공시 찾기').props.onClick();
  assert.match(txt(render()),/OpenDART API 키 없음/);
  await button(render,'전기 공시 찾기').props.onClick();assert.equal(n,2);
+});
+test('polling transport failure keeps the job running and offers status retry',async()=>{
+ let polls=0,starts=0;
+ const render=harness(async(p)=>{if(p.endsWith('/start')){starts++;return {job_id:'active-job'};}return {id:'restored-workflow'};},async()=>{
+  polls++;if(polls===1)throw Object.assign(new Error('일시적인 조회 오류'),{name:'JobPollingError'});
+  return {state:'done',result:{id:'restored-workflow'}};
+ });
+ await button(render,'분석·추천 실행').props.onClick();
+ assert.match(txt(render()),/상태 확인 중단/);
+ assert.doesNotMatch(txt(render()),/추천 생성: 실패/);
+ assert.equal(button(render,'분석·추천 실행').props.disabled,true);
+ await button(render,'상태 다시 확인').props.onClick();
+ assert.equal(starts,1);
+ assert.equal(nodes(render()).find(n=>n.tag==='review').props.workflowId,'restored-workflow');
 });
 function queueHelpers(){
  const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/bindingReviewQueue.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;

@@ -32,9 +32,24 @@ export async function openFile(path: string) {
 export async function pollJob(
   jobId: string,
   onTick?: (j: Job) => void,
+  onRetry?: (attempt: number) => void,
 ): Promise<Job> {
+  let failures = 0;
   for (;;) {
-    const j: Job = await api(`/api/jobs/${jobId}`);
+    let j: Job;
+    try {
+      j = await api(`/api/jobs/${jobId}`);
+      failures = 0;
+    } catch (e: any) {
+      failures += 1;
+      if (failures >= 3) {
+        throw Object.assign(new Error(`작업 ${jobId}의 상태를 확인할 수 없습니다. 상태 다시 확인을 눌러주세요. (${e.message})`),
+          {name: 'JobPollingError', jobId});
+      }
+      onRetry?.(failures);
+      await new Promise((res) => setTimeout(res, 2000));
+      continue;
+    }
     onTick?.(j);
     if (j.state === "done" || j.state === "error" || j.state === "interrupted")
       return j;

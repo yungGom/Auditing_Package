@@ -8,6 +8,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 _DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data",
                    "app.sqlite")
 _LOCK = threading.Lock()
+_SCHEMA_LOCK = threading.Lock()
+_INITIALIZED = set()
 _POOL = ThreadPoolExecutor(max_workers=4)
 
 _SCHEMA = """
@@ -29,22 +32,66 @@ CREATE TABLE IF NOT EXISTS sessions(
 """
 
 
-def connect():
-    os.makedirs(os.path.dirname(_DB), exist_ok=True)
-    con = sqlite3.connect(_DB, timeout=30)
-    con.executescript(_SCHEMA)
-    for col in ("foot", "recon", "xbrl_recon"):
+class _ManagedConnection(sqlite3.Connection):
+    """The sqlite context manager commits but does not close by itself."""
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
         try:
-            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
-        except sqlite3.OperationalError:
-            pass
-    for col in ("pinned", "hidden"):           # UI-8: 핀·숨김 (삭제 아님)
-        try:
-            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} "
-                        "INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+            return super().__exit__(exc_type, exc_value, exc_tb)
+        finally:
+            self.close()
+
+
+def initialize():
+    """Run schema creation/migrations once per database, outside polling."""
+    path = os.path.abspath(_DB)
+    with _SCHEMA_LOCK:
+        if path in _INITIALIZED and os.path.isfile(path):
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with sqlite3.connect(path, timeout=30, factory=_ManagedConnection) as con:
+            con.execute("PRAGMA busy_timeout=30000")
+            con.execute("PRAGMA journal_mode=WAL")
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                for statement in _SCHEMA.split(";"):
+                    if statement.strip():
+                        con.execute(statement)
+                columns = {row[1] for row in con.execute("PRAGMA table_info(sessions)")}
+                for col in ("foot", "recon", "xbrl_recon"):
+                    if col not in columns:
+                        con.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
+                for col in ("pinned", "hidden"):
+                    if col not in columns:
+                        con.execute(f"ALTER TABLE sessions ADD COLUMN {col} INTEGER DEFAULT 0")
+            except Exception:
+                con.rollback()
+                raise
+        _INITIALIZED.add(path)
+
+
+def connect(timeout=30):
+    initialize()
+    con = sqlite3.connect(_DB, timeout=timeout, factory=_ManagedConnection)
+    con.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
     return con
+
+
+class JobStoreBusy(Exception):
+    """A bounded polling read could not acquire the job database."""
+
+
+def _read(query, params=()):
+    for attempt in range(3):
+        try:
+            with connect(timeout=2) as con:
+                return con.execute(query, params).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                raise
+            if attempt == 2:
+                raise JobStoreBusy("작업 상태 저장소가 사용 중입니다. 잠시 후 다시 확인하세요.") from exc
+            time.sleep(0.05 * (attempt + 1))
 
 
 def _now():
@@ -117,10 +164,10 @@ def _humanize_error(e):
 
 
 def get(job_id):
-    with connect() as con:
-        row = con.execute(
-            "SELECT id, kind, state, progress, result, error, created, "
-            "updated FROM jobs WHERE id=?", (job_id,)).fetchone()
+    rows = _read(
+        "SELECT id, kind, state, progress, result, error, created, "
+        "updated FROM jobs WHERE id=?", (job_id,))
+    row = rows[0] if rows else None
     if row is None:
         return None
     return {"job_id": row[0], "kind": row[1], "state": row[2],
@@ -131,7 +178,7 @@ def get(job_id):
 
 
 def list_jobs(active=False, kind=None):
-    q = "SELECT id FROM jobs"
+    q = "SELECT id, kind, state, progress, result, error, created, updated FROM jobs"
     conditions, params = [], []
     if active:
         conditions.append("state IN ('queued','running')")
@@ -141,6 +188,9 @@ def list_jobs(active=False, kind=None):
     if conditions:
         q += " WHERE " + " AND ".join(conditions)
     q += " ORDER BY created DESC LIMIT 50"
-    with connect() as con:
-        ids = [r[0] for r in con.execute(q, params)]
-    return [get(i) for i in ids]
+    rows = _read(q, params)
+    return [{"job_id": row[0], "kind": row[1], "state": row[2],
+             "progress": json.loads(row[3] or "{}"),
+             "result": json.loads(row[4]) if row[4] else None,
+             "error_detail": json.loads(row[5]) if row[5] else None,
+             "created": row[6], "updated": row[7]} for row in rows]

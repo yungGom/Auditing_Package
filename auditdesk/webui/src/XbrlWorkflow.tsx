@@ -25,22 +25,30 @@ export default function XbrlWorkflow() {
   const [progress,setProgress]=useState('');
   const [stage,setStage]=useState(0);
   const [error,setError]=useState('');
+  const [activeJobId,setActiveJobId]=useState('');
+  const [statusCheckFailed,setStatusCheckFailed]=useState(false);
   const pending=useRef(false);
   useEffect(()=>{api(base).then(r=>setSaved(r.workflows)).catch(e=>setError(e.message));api(base+'/assets').then(setAssets).catch(e=>setError(e.message));},[]);
   const run=async(fn:()=>Promise<void>)=>{
     if(pending.current)return;pending.current=true;setBusy(true);setError('');
-    try{await fn();}catch(e:any){setError(e.message);setProgress('실패 — 입력을 확인한 뒤 다시 실행하세요');}
+    try{await fn();}catch(e:any){setError(e.message);if(e.name==='JobPollingError'){setStatusCheckFailed(true);setProgress('작업 상태 확인 중단 — 상태 다시 확인을 눌러주세요');}else{setProgress('실패 — 입력을 확인한 뒤 다시 실행하세요');}}
     finally{pending.current=false;setBusy(false);}
   };
   const body=()=>({...paths,mode,report:{...report,comparison_ends:comparisons.split(',').map(s=>s.trim()).filter(Boolean)},current_authority:authority,report_type:reportType,fetch_prior:fetchPrior,prior_receipt:receipt});
   const findPrior=()=>run(async()=>{setReceipt('');setSearch(await api(base+'/prior-search',{method:'POST',body:JSON.stringify({...report,report_type:reportType})}));});
-  const start=()=>run(async()=>{
-    setDraft(null);setStage(0);setProgress('대기');
-    const job=await api(base+'/start',{method:'POST',body:JSON.stringify(body())});
-    const done=await pollJob(job.job_id,j=>{setProgress(j.progress?.message||states[j.state]||j.state);setStage(j.progress?.current||0);});
+  const finishJob=async(jobId:string)=>{
+    setStatusCheckFailed(false);
+    const done=await pollJob(jobId,j=>{setProgress(j.progress?.message||states[j.state]||j.state);setStage(j.progress?.current||0);},()=>setProgress('상태 확인 일시 실패 — 다시 시도 중'));
+    setActiveJobId('');
     if(done.state!=='done'||done.result?.state==='failed')throw Error(done.result?.message||done.error_detail?.detail||'작업이 중단되었습니다. 다시 실행하세요');
     const result=await api(base+'/'+done.result.id);setDraft(result);setSavedId(result.id);setProgress('분석·추천 완료 — 사용자 검토 필요');
     setSaved(s=>[{id:result.id,report:result.report||report,mode},...s]);
+  };
+  const start=()=>run(async()=>{
+    setDraft(null);setStage(0);setProgress('대기');
+    const job=await api(base+'/start',{method:'POST',body:JSON.stringify(body())});
+    setActiveJobId(job.job_id);
+    await finishJob(job.job_id);
   });
   const inputStyle={padding:6,border:'1px solid #c3c6d1',borderRadius:6,maxWidth:'100%'};
   return <div style={{padding:20,overflow:'auto',height:'100%'}}>
@@ -68,11 +76,12 @@ export default function XbrlWorkflow() {
       {search&&<><p>{search.message}</p><select aria-label="전기 공시 선택" value={receipt} onChange={e=>setReceipt(e.target.value)}><option value="">{search.documents?.length===1?'1건: 실행 시 회사·기간 재검증 후 수신':'접수번호를 선택하세요'}</option>{search.documents?.map((d:any)=><option key={d.rcept_no} value={d.rcept_no}>{d.report_nm} · {d.period_end} · {d.rcept_no}</option>)}</select></>}
       <label><input type="checkbox" checked={fetchPrior} onChange={e=>setFetchPrior(e.target.checked)}/>전기 공시 수신 (해제하면 전기 없음 상태로 당기 원천만 검토)</label>
     </fieldset>}
-    <PrimaryBtn disabled={busy} onClick={start}>분석·추천 실행</PrimaryBtn>
+    <PrimaryBtn disabled={busy||!!activeJobId} onClick={start}>분석·추천 실행</PrimaryBtn>
+    {statusCheckFailed&&activeJobId&&<PrimaryBtn disabled={busy} onClick={()=>run(()=>finishJob(activeJobId))}>상태 다시 확인</PrimaryBtn>}
     <select aria-label="저장된 전환 작업" value={savedId} onChange={e=>setSavedId(e.target.value)}><option value="">작업 선택</option>{saved.map(s=><option key={s.id} value={s.id}>{s.report?.company} · {s.report?.period_end} · {s.id.slice(0,8)}</option>)}</select>
     <PrimaryBtn disabled={busy||!savedId} onClick={()=>run(async()=>setDraft(await api(base+'/'+savedId)))}>작업 불러오기</PrimaryBtn>
     {progress&&<p role="status">{progress}</p>}{error&&<p role="alert">{error}</p>}
-    {!draft&&progress&&<ol aria-label="실행 단계">{(['DSD 분석',...(mode==='rollforward'?['전기 공시 찾기']:[]),'현재 taxonomy 확인','유사 공시 근거','추천 생성','사용자 검토','Golden 생성']).map((name,i)=><li key={name}>{name}: {i+1<stage?'완료':i+1===stage?(error?'실패':busy?'진행 중':'사용자 확인 필요'):'대기'}</li>)}</ol>}
+    {!draft&&progress&&<ol aria-label="실행 단계">{(['DSD 분석',...(mode==='rollforward'?['전기 공시 찾기']:[]),'현재 taxonomy 확인','유사 공시 근거','추천 생성','사용자 검토','Golden 생성']).map((name,i)=><li key={name}>{name}: {i+1<stage?'완료':i+1===stage?(statusCheckFailed?'상태 확인 필요':error?'실패':busy?'진행 중':'사용자 확인 필요'):'대기'}</li>)}</ol>}
     {draft&&<><p>작업 ID: {draft.id}</p><BindingReview key={draft.id} workflowId={draft.id}/></>}
   </div>;
 }
