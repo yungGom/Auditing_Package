@@ -1,6 +1,7 @@
 """Bounded orchestration behavior without network or agent calls."""
 
 from pathlib import Path
+import json
 import subprocess
 import sys
 import unittest
@@ -27,6 +28,23 @@ def args(dry_run: bool = False):
 
 
 class OrchestratorTests(unittest.TestCase):
+    def test_roles_use_separate_sandboxes_and_structured_output(self):
+        calls = []
+
+        def fake_command(argv, **kwargs):
+            calls.append((argv, kwargs))
+            output = Path(argv[argv.index("--output-last-message") + 1])
+            output.write_text(json.dumps({"decision": "PASS", "summary": "ok", "findings": []}),
+                              encoding="utf-8")
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        with patch.object(orch, "command", side_effect=fake_command):
+            orch.agent("implementer", issue(), "", 30)
+            orch.agent("reviewer", issue(), "test evidence", 30)
+        self.assertEqual(calls[0][0][calls[0][0].index("--sandbox") + 1], "workspace-write")
+        self.assertEqual(calls[1][0][calls[1][0].index("--sandbox") + 1], "read-only")
+        self.assertIn("test evidence", calls[1][1]["input_text"])
+
     def test_pilot_stops_before_agent_or_tests(self):
         pilot = issue("Approve public fixture source and handling. Protected fixture edits require owner action.")
         with patch.object(orch, "get_issue", return_value=pilot), patch.object(orch, "agent") as agent:
