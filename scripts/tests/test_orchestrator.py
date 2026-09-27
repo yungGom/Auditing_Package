@@ -28,6 +28,11 @@ def args(dry_run: bool = False):
 
 
 class OrchestratorTests(unittest.TestCase):
+    def test_template_none_allows_ready_intake(self):
+        item = issue("Accounting judgment or protected-artifact decision (or `none`): none\n"
+                     "Definition of done: implementation and review")
+        self.assertIsNone(orch.approval_pending(item))
+
     def test_roles_use_separate_sandboxes_and_structured_output(self):
         calls = []
 
