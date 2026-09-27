@@ -58,7 +58,12 @@ def approval_pending(issue: dict[str, Any]) -> str | None:
     section = issue_section(body, "Human decision required")
     if not section:
         return "Issue has no explicit Human decision required section"
-    if re.fullmatch(r"(?is)(none|not applicable|n/a)[.\s]*", section):
+    lines = [line.strip() for line in section.splitlines() if line.strip()]
+    lines = [line for line in lines if not line.startswith("Definition of done:")]
+    value = "\n".join(lines)
+    value = re.sub(r"(?i)^Accounting judgment or protected-artifact decision \(or `none`\):\s*",
+                   "", value)
+    if re.fullmatch(r"(?is)(none|not applicable|n/a)[.\s]*", value):
         return None
     # A named human decision is never inferred from an agent's text. The owner
     # updates the Issue contract after deciding, with protected edits handled
@@ -191,7 +196,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             report.update(state="HUMAN_APPROVAL", reason=impl["summary"])
             break
         if impl["decision"] == "BLOCKER":
-            feedback = impl["summary"]
+            feedback = impl["summary"] + "\n" + "\n".join(impl["findings"])
             continue
         failures = []
         for script in tests:
@@ -219,7 +224,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             report.update(state="HUMAN_APPROVAL", reason=review["summary"])
             break
         if review["decision"] == "BLOCKER" or review["findings"]:
-            feedback = review["summary"]
+            feedback = review["summary"] + "\n" + "\n".join(review["findings"])
             continue
         report.update(state="DONE", reason="Technical checks and independent review passed; business acceptance remains with Human Owner")
         break
