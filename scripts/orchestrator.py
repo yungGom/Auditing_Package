@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -19,7 +20,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = Path(__file__).with_name("orchestrator_agent.schema.json")
+PREFLIGHT_SCHEMA = Path(__file__).with_name("orchestrator_preflight.schema.json")
+PREFLIGHT_SCRIPT = Path(__file__).with_name("orchestrator_preflight.py")
 MAX_OUTPUT = 40_000
+
+
+class AgentExecutionError(RuntimeError):
+    def __init__(self, diagnostic: dict[str, Any]):
+        super().__init__("Agent CLI execution failed")
+        self.diagnostic = diagnostic
 
 
 def command(argv: list[str], *, env: dict[str, str] | None = None,
@@ -113,13 +122,132 @@ def protected_check(base: str) -> tuple[bool, str]:
         return result.returncode == 0, (result.stdout + result.stderr).strip()
 
 
-def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int) -> dict[str, Any]:
+def runtime_candidates(extra: list[str] | None = None) -> list[str]:
+    bundled = (Path.home() / ".cache" / "codex-runtimes" /
+               "codex-primary-runtime" / "dependencies" / "python" / "python.exe")
+    return list(dict.fromkeys([sys.executable, "python", "py", "python3",
+                               str(bundled), *(extra or [])]))
+
+
+def diagnostic_kind(stderr: str) -> str:
+    """Whitelist a failure class; never copy raw CLI output into the report."""
+    tail = stderr[-2000:].lower()
+    if any(token in tail for token in ("access denied", "permission denied", "winerror 5")):
+        return "ACCESS_DENIED"
+    if any(token in tail for token in ("not found", "not recognized", "no such file")):
+        return "NOT_FOUND"
+    if any(token in tail for token in ("auth", "credential", "login")):
+        return "AUTH_FAILURE"
+    if "timed out" in tail or "timeout" in tail:
+        return "TIMEOUT"
+    return "OTHER_REDACTED" if stderr else "NONE"
+
+
+def runtime_preflight(timeout: int, tests: list[str],
+                      extra_candidates: list[str] | None = None) -> dict[str, Any]:
+    """Probe inside a fresh workspace-write Codex session before Implementer.
+
+    The helper produces capability flags from executed commands. A random nonce
+    binds the structured reply to this probe; arbitrary CLI logs are discarded.
+    """
+    candidates = runtime_candidates(extra_candidates)
+    nonce = secrets.token_hex(16)
+    require_npm = any(path in tests for path in
+                      ("scripts/test_auditdesk.py", "scripts/test_all.py"))
+    prompt = (
+        "You are a runtime capability probe. Make no persistent repository "
+        "changes; the helper may create and remove only its temporary probe "
+        "file. For each Python candidate in "
+        "the listed order, actually run it with -B and the probe script. Do not infer "
+        "success from PATH or a file existing. The probe imports pytest/openpyxl, "
+        "runs python -m pytest --version and git/npm --version as applicable, and "
+        "writes/reads/deletes a temporary file inside the repository. "
+        "Choose the first candidate whose probe reports every required flag true. "
+        "Copy the probe's nonce, executable, version and flags exactly into your "
+        "structured JSON reply, adding the candidate and error_code=NONE. "
+        "If no candidate passes but at least one probe executed, copy the first "
+        "executed probe's real identity and flags; set error_code to "
+        "TEMP_NOT_WRITABLE, MISSING_DEPENDENCY, or COMMAND_FAILED as appropriate. "
+        "Only when no candidate can execute the probe, return empty "
+        "candidate/executable/version and all flags false, with ACCESS_DENIED, "
+        "NOT_FOUND, or UNKNOWN. Do not include raw "
+        "stdout, stderr, environment variables, credentials, or repository content.\n"
+        f"Candidates: {json.dumps(candidates, ensure_ascii=True)}\n"
+        f"Probe script: {PREFLIGHT_SCRIPT}\n"
+        f"Command arguments: --nonce {nonce} --temp-base {ROOT}"
+        + (" --require-npm" if require_npm else "") + "\n"
+    )
+    with tempfile.TemporaryDirectory(prefix="orchestrator_preflight_") as tmp:
+        output = Path(tmp) / "last.json"
+        argv = ["codex", "exec", "--ephemeral", "-C", str(ROOT),
+                "--sandbox", "workspace-write", "--output-schema",
+                str(PREFLIGHT_SCHEMA), "--output-last-message", str(output), "-"]
+        try:
+            result = command(argv, timeout=timeout, input_text=prompt)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            code = "TIMEOUT" if isinstance(exc, subprocess.TimeoutExpired) else "NOT_FOUND"
+            return {"ready": False, "error_code": code,
+                    "diagnostic": {"command_class": "codex exec preflight",
+                                   "exit_code": None, "stderr_tail": code}}
+        diagnostic = {"command_class": "codex exec preflight",
+                      "exit_code": result.returncode,
+                      "stderr_tail": (diagnostic_kind(result.stderr)
+                                      if result.returncode else
+                                      "REDACTED" if result.stderr else "NONE")}
+        if result.returncode or not output.is_file():
+            return {"ready": False, "error_code": diagnostic["stderr_tail"],
+                    "diagnostic": diagnostic}
+        try:
+            data = json.loads(output.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"ready": False, "error_code": "INVALID_PROBE",
+                    "diagnostic": diagnostic}
+
+    safe_codes = {"NONE", "ACCESS_DENIED", "NOT_FOUND", "MISSING_DEPENDENCY",
+                  "TEMP_NOT_WRITABLE", "COMMAND_FAILED", "UNKNOWN"}
+    if not isinstance(data, dict):
+        return {"ready": False, "error_code": "INVALID_PROBE",
+                "diagnostic": diagnostic}
+    candidate = data.get("candidate", "")
+    executable = data.get("executable", "")
+    version = data.get("version", "")
+    flags = {name: data.get(name) is True
+             for name in ("pytest", "openpyxl", "temp_write", "git", "npm")}
+    valid = (data.get("nonce") == nonce and candidate in candidates and
+             isinstance(executable, str) and Path(executable).is_absolute() and
+             isinstance(version, str) and re.fullmatch(r"\d+\.\d+\.\d+", version) and
+             data.get("error_code") in safe_codes)
+    valid_failure = (data.get("nonce") == nonce and candidate == "" and
+                     executable == "" and version == "" and
+                     data.get("error_code") in safe_codes - {"NONE"})
+    ready = bool(valid and all(flags.values()) and data["error_code"] == "NONE")
+    code = ("NONE" if ready else
+            data["error_code"] if valid_failure else
+            "INVALID_PROBE" if not valid else
+            "TEMP_NOT_WRITABLE" if not flags["temp_write"] else
+            "MISSING_DEPENDENCY" if not (flags["pytest"] and flags["openpyxl"]) else
+            "COMMAND_FAILED" if not (flags["git"] and flags["npm"]) else
+            "INVALID_PROBE")
+    return {"ready": ready, "error_code": code,
+            "selected_executable": executable if ready else None,
+            "probe_executable": executable if valid else None,
+            "candidate": candidate if valid else None,
+            "version": version if valid else None,
+            "dependencies": {"pytest": flags["pytest"], "openpyxl": flags["openpyxl"]},
+            "temp_write": flags["temp_write"], "commands": {
+                "git": flags["git"], "npm": flags["npm"]},
+            "diagnostic": diagnostic}
+
+
+def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int,
+          runtime: dict[str, Any] | None = None) -> dict[str, Any]:
     if role == "implementer":
         sandbox = "workspace-write"
         instruction = ("Implement this Issue using AGENTS.md and governance/POLICY.md. "
                        "Never edit protected artifacts or accounting/business rules. "
                        "If one is needed, stop and return HUMAN_APPROVAL. "
-                       "Do not commit, push, comment, merge, or claim tests passed. ")
+                       "Do not commit, push, comment, merge, or claim tests passed. "
+                       "Run Python only with the verified executable below. ")
     else:
         sandbox = "read-only"
         instruction = ("Independently review the Issue contract, git diff against HEAD, "
@@ -130,19 +258,38 @@ def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int) -> dict
               "Use PASS only when this role's work is complete; use BLOCKER for "
               "fixable defects and HUMAN_APPROVAL for owner decisions.\n\n"
               f"Issue #{issue['number']}: {issue['title']}\n{issue['body']}\n\n"
-              f"Current evidence / reviewer feedback:\n{feedback}")
+              f"Current evidence / reviewer feedback:\n{feedback}\n"
+              f"Verified Python executable: {(runtime or {}).get('selected_executable', 'unverified')}\n"
+              f"Verified Python version: {(runtime or {}).get('version', 'unverified')}\n"
+              f"Verified Python command prefix: {json.dumps((runtime or {}).get('selected_executable', 'unverified'))} -B\n"
+              "Use -B for Python invocations. A probe checked pytest, openpyxl, "
+              "git/npm commands and repository temporary-file writes in a fresh "
+              "workspace-write session. Recheck if your sandbox differs.")
     with tempfile.TemporaryDirectory(prefix="orchestrator_agent_") as tmp:
         output = Path(tmp) / "last.json"
-        result = command(["codex", "exec", "--ephemeral", "-C", str(ROOT),
-                          "--sandbox", sandbox, "--output-schema", str(SCHEMA),
-                          "--output-last-message", str(output), "-"], timeout=timeout,
-                         input_text=prompt)
+        try:
+            result = command(["codex", "exec", "--ephemeral", "-C", str(ROOT),
+                              "--sandbox", sandbox, "--output-schema", str(SCHEMA),
+                              "--output-last-message", str(output), "-"], timeout=timeout,
+                             input_text=prompt)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise AgentExecutionError({
+                "command_class": f"codex exec {role}", "exit_code": None,
+                "selected_runtime": (runtime or {}).get("selected_executable"),
+                "stderr_tail": "TIMEOUT" if isinstance(exc, subprocess.TimeoutExpired)
+                               else "NOT_FOUND"}) from None
+        diagnostic = {"command_class": f"codex exec {role}",
+                      "exit_code": result.returncode,
+                      "selected_runtime": (runtime or {}).get("selected_executable"),
+                      "stderr_tail": (diagnostic_kind(result.stderr)
+                                      if result.returncode else
+                                      "REDACTED" if result.stderr else "NONE")}
         if result.returncode:
-            raise RuntimeError(f"{role} failed ({result.returncode}): " +
-                               (result.stderr or result.stdout)[-MAX_OUTPUT:])
+            raise AgentExecutionError(diagnostic)
         data = json.loads(output.read_text(encoding="utf-8"))
     if data.get("decision") not in {"PASS", "BLOCKER", "HUMAN_APPROVAL"}:
         raise ValueError(f"{role} returned an invalid decision")
+    data["_diagnostic"] = diagnostic
     return data
 
 
@@ -178,14 +325,30 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if changed_files():
         report.update(state="FAILED", reason="Worktree is not clean; preserve existing work")
         return report
+    runtime = runtime_preflight(args.agent_timeout, tests,
+                                getattr(args, "python_candidate", None))
+    report["evidence"].append({"step": "runtime preflight",
+                                "status": "PASS" if runtime["ready"] else "FAIL",
+                                "detail": runtime})
+    if not runtime["ready"]:
+        report.update(state="FAILED",
+                      reason="ENVIRONMENT_BLOCKER: " + runtime["error_code"])
+        return report
     report["state"] = "IN_PROGRESS"
     feedback = ""
     for attempt in range(1, args.max_attempts + 1):
         report["attempts"] = attempt
-        impl = agent("implementer", issue, feedback, args.agent_timeout)
+        try:
+            impl = agent("implementer", issue, feedback, args.agent_timeout, runtime)
+        except AgentExecutionError as exc:
+            report["evidence"].append({"step": f"implementer {attempt}",
+                                       "status": "FAIL", "diagnostic": exc.diagnostic})
+            report.update(state="FAILED", reason="Implementer CLI execution failed")
+            break
         report["evidence"].append({"step": f"implementer {attempt}",
                                     "status": impl["decision"],
-                                    "detail": impl["summary"] + "\n" + "\n".join(impl["findings"])})
+                                    "detail": impl["summary"] + "\n" + "\n".join(impl["findings"]),
+                                    "diagnostic": impl.get("_diagnostic")})
         ok, detail = protected_check("HEAD")
         report["evidence"].append({"step": "protected check", "status": "PASS" if ok else "FAIL",
                                     "detail": detail})
@@ -199,27 +362,38 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             feedback = impl["summary"] + "\n" + "\n".join(impl["findings"])
             continue
         failures = []
-        for script in tests:
-            result = command([sys.executable, script], timeout=args.test_timeout)
-            status = "PASS" if result.returncode == 0 else "FAIL"
-            detail = (result.stdout + result.stderr)[-MAX_OUTPUT:]
-            report["evidence"].append({"step": script, "status": status, "detail": detail})
-            if result.returncode:
-                failures.append(script)
+        # A fresh base avoids an inaccessible pre-existing pytest-of-user folder.
+        with tempfile.TemporaryDirectory(prefix="orchestrator_tests_") as test_tmp:
+            test_env = dict(os.environ, TEMP=test_tmp, TMP=test_tmp, TMPDIR=test_tmp)
+            for script in tests:
+                result = command([sys.executable, script], env=test_env,
+                                 timeout=args.test_timeout)
+                status = "PASS" if result.returncode == 0 else "FAIL"
+                detail = (result.stdout + result.stderr)[-MAX_OUTPUT:]
+                report["evidence"].append({"step": script, "status": status, "detail": detail})
+                if result.returncode:
+                    failures.append(script)
         if failures:
             feedback = "Required tests failed: " + ", ".join(failures)
             continue
         before_review = worktree_fingerprint()
         review_evidence = {"steps": report["evidence"],
                            "changed_files": [name for name, _ in before_review]}
-        review = agent("reviewer", issue, json.dumps(review_evidence, ensure_ascii=False),
-                       args.agent_timeout)
+        try:
+            review = agent("reviewer", issue, json.dumps(review_evidence, ensure_ascii=False),
+                           args.agent_timeout, runtime)
+        except AgentExecutionError as exc:
+            report["evidence"].append({"step": f"reviewer {attempt}",
+                                       "status": "FAIL", "diagnostic": exc.diagnostic})
+            report.update(state="FAILED", reason="Reviewer CLI execution failed")
+            break
         if worktree_fingerprint() != before_review:
             report.update(state="FAILED", reason="Reviewer changed the worktree")
             break
         report["evidence"].append({"step": f"reviewer {attempt}",
                                     "status": review["decision"],
-                                    "detail": review["summary"] + "\n" + "\n".join(review["findings"])})
+                                    "detail": review["summary"] + "\n" + "\n".join(review["findings"]),
+                                    "diagnostic": review.get("_diagnostic")})
         if review["decision"] == "HUMAN_APPROVAL":
             report.update(state="HUMAN_APPROVAL", reason=review["summary"])
             break
@@ -244,6 +418,8 @@ def main() -> int:
     parser.add_argument("--test-timeout", type=int, default=3600)
     parser.add_argument("--no-comment", action="store_true")
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--python-candidate", action="append", default=[],
+                        help="Additional Python executable candidate (repeatable)")
     args = parser.parse_args()
     if not 1 <= args.max_attempts <= 3:
         parser.error("--max-attempts must be between 1 and 3")
@@ -262,7 +438,7 @@ def main() -> int:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                                encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps(report, ensure_ascii=True, indent=2))
     return 0 if report["state"] in {"READY", "DONE", "HUMAN_APPROVAL"} else 1
 
 

@@ -46,8 +46,31 @@ the run as FAILED. The report shows exact status and local test output. Issue
 comments include status names only, because raw test logs may contain paths or
 data unsuitable for GitHub.
 
-Issue #5 currently stops at HUMAN_APPROVAL before Implementer launch because
-the public fixture source and handling decision remains with the Human Owner.
+Issue #5's fixture-policy decision is recorded in its Issue contract.
+Its Pilot subsequently stopped at a separate protected-fixture decision.
 The current PR #4 regression remains red; this script does not reinterpret that
 failure or any skip as a pass. No automatic PR creation, merge, parallel queue,
 model routing, or business approval is included.
+
+## Runtime preflight and diagnostics
+
+Before launching an Implementer, the orchestrator starts a separate
+codex exec session with the same workspace-write sandbox and checkout. It tries
+the parent interpreter, python, py, python3, the Codex bundled interpreter,
+and repeatable --python-candidate entries in that order. Each candidate must
+execute scripts/orchestrator_preflight.py inside the sandbox. The helper
+imports pytest and openpyxl, runs pytest and Git version commands (plus npm
+when AuditDesk tests require it), and writes/reads/deletes a temporary file
+inside the repository. PATH presence alone never counts as success.
+
+A failed probe returns FAILED with an ENVIRONMENT_BLOCKER reason, attempts zero,
+and no Implementer call. It is distinct from HUMAN_APPROVAL. The report keeps
+only capability flags, the selected executable/version, command class, exit
+code, and a whitelisted stderr failure category. Raw CLI output and environment
+variables are not retained. A fresh temporary directory is used for parent
+test scripts to avoid a stale pytest shared temp folder.
+
+The UTF-8 JSON report remains human-readable. Console JSON uses ASCII escapes
+so CP949 terminals and redirected pipes can print every status without changing
+the exit code. A JSON parser recovers the same strings. This change does not
+reinterpret failed or skipped regressions as a pass.
