@@ -23,6 +23,8 @@
       "enum": [
         "IMPLEMENTATION",
         "ENVIRONMENT",
+        "IMPLEMENTER_ENVIRONMENT",
+        "VERIFICATION_ENVIRONMENT",
         "EXISTING_BASELINE",
         "HUMAN_DECISION",
         null

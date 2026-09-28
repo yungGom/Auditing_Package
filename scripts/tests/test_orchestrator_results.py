@@ -59,6 +59,256 @@ def task_pass():
 
 
 class ScopedResultsTests(unittest.TestCase):
+    def _run_with_implementer_warning(self, blocker_class, summary):
+        baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        replies = iter([
+            {"decision": "BLOCKER", "blocker_class": blocker_class,
+             "summary": summary, "findings": []},
+            {"decision": "PASS", "blocker_class": None,
+             "summary": "approved task diff", "findings": []},
+        ])
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value=runtime()), \
+             patch.object(orch, "_scoped_checks",
+                          side_effect=[baseline, [task_pass()], baseline]) as checks, \
+             patch.object(orch, "agent", side_effect=lambda *a, **k: next(replies)) as agent, \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")), \
+             patch.object(orch, "worktree_fingerprint", return_value=[]):
+            report = orch.run(args())
+        return report, checks, agent
+
+    def test_implementer_sandbox_npm_denial_parent_build_passes(self):
+        report, checks, agent = self._run_with_implementer_warning(
+            "ENVIRONMENT", "Sandbox esbuild Access denied")
+        self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(report["reviewer_result"], "PASS")
+        self.assertEqual(report["regression_checks"][0]["components"]["webui_build"], 0)
+        self.assertEqual(report["new_regressions"], [])
+        self.assertEqual(report["evidence"][2]["status"], "WARNING")
+        self.assertEqual(report["implementer_environment_warnings"][0]["code"],
+                         "IMPLEMENTER_ENVIRONMENT")
+        self.assertEqual(checks.call_count, 3)
+        self.assertEqual(agent.call_count, 2)  # Implementer once, Reviewer once.
+
+    def test_issue5_two_file_diff_and_warning_reach_independent_reviewer(self):
+        baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        changed = [
+            ("auditdesk/dsd_workbench/dsd_tool/tests/fixture_generators/"
+             "build_version_fixture.py", "generator-sha"),
+            (TASK, "test-sha"),
+        ]
+        review_feedback = []
+
+        def reply(role, issue, feedback, timeout, runtime, scoped=False):
+            if role == "implementer":
+                return {"decision": "PASS", "blocker_class": "IMPLEMENTER_ENVIRONMENT",
+                        "summary": "Synthetic implementation complete; sandbox esbuild denied",
+                        "findings": []}
+            review_feedback.append(json.loads(feedback))
+            return {"decision": "PASS", "blocker_class": None,
+                    "summary": "approved synthetic task diff", "findings": []}
+
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value=runtime()), \
+             patch.object(orch, "_scoped_checks",
+                          side_effect=[baseline, [task_pass()], baseline]), \
+             patch.object(orch, "agent", side_effect=reply), \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")) as protected, \
+             patch.object(orch, "worktree_fingerprint", return_value=changed):
+            report = orch.run(args())
+        self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+        self.assertEqual(report["task_result"], "PASS")
+        self.assertEqual(report["repository_result"], "FAIL")
+        self.assertEqual(report["reviewer_result"], "PASS")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(report["new_regressions"], [])
+        self.assertEqual(review_feedback[0]["changed_files"], [name for name, _ in changed])
+        self.assertEqual(review_feedback[0]["protected_check"]["status"], "PASS")
+        self.assertEqual(review_feedback[0]["implementer_environment_warnings"][0]["code"],
+                         "IMPLEMENTER_ENVIRONMENT")
+        protected.assert_called_once_with("HEAD")
+
+    def test_implementer_scoped_python_denial_parent_required_passes(self):
+        report, _, agent = self._run_with_implementer_warning(
+            "IMPLEMENTER_ENVIRONMENT", "Sandbox scoped Python test Access denied")
+        self.assertEqual(report["task_result"], "PASS")
+        self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(agent.call_args_list[-1].args[0], "reviewer")
+
+    def test_implementer_warning_does_not_mask_new_regression(self):
+        baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        new_id = "dsd_workbench/dsd_tool/tests/test_other.py::test_new"
+        after = [reg(x, extra=(new_id,)) for x in
+                 ("scripts/test_auditdesk.py", "scripts/test_all.py")]
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value=runtime()), \
+             patch.object(orch, "_scoped_checks", side_effect=[
+                 baseline, [task_pass()], after, [task_pass()], after]), \
+             patch.object(orch, "agent", return_value={
+                 "decision": "BLOCKER", "blocker_class": "IMPLEMENTER_ENVIRONMENT",
+                 "summary": "Sandbox npm Access denied", "findings": []}) as agent, \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")), \
+             patch.object(orch, "worktree_fingerprint") as fingerprint:
+            report = orch.run(args())
+        self.assertEqual(report["state"], "FAILED")
+        self.assertEqual(report["blocker_class"], "IMPLEMENTATION")
+        self.assertTrue(report["new_regressions"])
+        self.assertEqual(agent.call_count, 2)
+        fingerprint.assert_not_called()
+
+    def test_parent_required_check_unavailable_is_verification_environment(self):
+        baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value=runtime()), \
+             patch.object(orch, "_scoped_checks",
+                          side_effect=[baseline, OSError("Access denied")]), \
+             patch.object(orch, "agent", return_value={"decision": "PASS",
+                          "summary": "implemented", "findings": []}) as agent, \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")):
+            report = orch.run(args())
+        self.assertEqual(report["state"], "FAILED")
+        self.assertEqual(report["blocker_class"], "VERIFICATION_ENVIRONMENT")
+        self.assertIn("ENVIRONMENT_BLOCKER", report["reason"])
+        self.assertEqual(report["task_result"], "NOT_RUN")
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual(report["evidence"][-1]["diagnostic"]["code"],
+                         "COMMAND_UNAVAILABLE")
+
+    def test_parent_web_build_access_denied_is_verification_environment(self):
+        blocked = subprocess.CompletedProcess(
+            [], 1, "[AuditDesk] Web UI TypeScript and build\n"
+                   "Error: spawn C:/tools/esbuild.exe EACCES", "")
+        with patch.object(orch, "command", return_value=blocked):
+            with self.assertRaisesRegex(orch.VerificationEnvironmentError,
+                                        "ACCESS_DENIED"):
+                orch._scoped_checks(["scripts/test_auditdesk.py"], runtime(), 30,
+                                    task=False)
+
+    def test_assertion_text_is_not_misclassified_as_environment(self):
+        failed = subprocess.CompletedProcess(
+            [], 1, "FAILED test_example.py::test_esbuild_access\n"
+                   "E AssertionError: esbuild Access denied\n1 failed, 4 passed", "")
+        with patch.object(orch, "command", return_value=failed):
+            result = orch._scoped_checks(["scripts/test_auditdesk.py"], runtime(),
+                                         30, task=False)
+        self.assertEqual(result[0]["status"], "FAIL")
+        self.assertEqual(result[0]["failures"], ["test_example.py::test_esbuild_access"])
+
+    def test_nested_build_launcher_denial_is_verification_environment(self):
+        blocked = subprocess.CompletedProcess(
+            [], 1, "[AuditDesk] Web UI TypeScript and build\n"
+                   "Traceback (most recent call last):\n"
+                   "  subprocess.run([npm, 'run', 'build'])\n"
+                   "PermissionError: [WinError 5] Access is denied", "")
+        with patch.object(orch, "command", return_value=blocked):
+            with self.assertRaisesRegex(orch.VerificationEnvironmentError,
+                                        "ACCESS_DENIED"):
+                orch._scoped_checks(["scripts/test_auditdesk.py"], runtime(), 30,
+                                    task=False)
+
+    def test_missing_parent_pytest_is_verification_environment(self):
+        missing = subprocess.CompletedProcess(
+            [], 1, "", "C:/runtime/python.exe: No module named pytest\n")
+        with patch.object(orch, "command", return_value=missing):
+            with self.assertRaisesRegex(orch.VerificationEnvironmentError,
+                                        "MISSING_DEPENDENCY"):
+                orch._scoped_checks(["scripts/tests/test_orchestrator_results.py"],
+                                    runtime(), 30, task=True)
+
+    def test_environment_failure_keeps_completed_check_evidence(self):
+        first = subprocess.CompletedProcess([], 0, "1 passed", "")
+        with patch.object(orch, "command", side_effect=[first, OSError("denied")]):
+            with self.assertRaises(orch.VerificationEnvironmentError) as raised:
+                orch._scoped_checks(["scripts/test_auditdesk.py", "scripts/test_all.py"],
+                                    runtime(), 30, task=False)
+        diagnostic = orch.verification_diagnostic(raised.exception)
+        self.assertEqual(diagnostic["code"], "COMMAND_UNAVAILABLE")
+        self.assertEqual(diagnostic["command_class"], "scripts/test_all.py")
+        self.assertEqual(diagnostic["completed_checks"][0]["step"],
+                         "scripts/test_auditdesk.py")
+        self.assertNotIn("denied", str(diagnostic))
+
+    def test_reviewer_environment_does_not_consume_implementation_retry(self):
+        baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        replies = iter([
+            {"decision": "PASS", "blocker_class": None,
+             "summary": "implemented", "findings": []},
+            {"decision": "BLOCKER", "blocker_class": "IMPLEMENTER_ENVIRONMENT",
+             "summary": "reviewer command unavailable", "findings": []},
+        ])
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value=runtime()), \
+             patch.object(orch, "_scoped_checks",
+                          side_effect=[baseline, [task_pass()], baseline]), \
+             patch.object(orch, "agent", side_effect=lambda *a, **k: next(replies)) as agent, \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")), \
+             patch.object(orch, "worktree_fingerprint", return_value=[]):
+            report = orch.run(args())
+        self.assertEqual(report["state"], "FAILED")
+        self.assertEqual(report["blocker_class"], "VERIFICATION_ENVIRONMENT")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(agent.call_count, 2)
+
+    def test_parent_task_failure_is_implementation_not_environment(self):
+        baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        failed_task = dict(task_pass(), status="FAIL", exit_code=1, passed=4,
+                           failed=1, failures=[TASK + "::test_synthetic_g2_smoke_direct"])
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value=runtime()), \
+             patch.object(orch, "_scoped_checks", side_effect=[
+                 baseline, [failed_task], baseline, [failed_task], baseline]), \
+             patch.object(orch, "agent", return_value={"decision": "PASS",
+                          "summary": "implemented", "findings": []}) as agent, \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")):
+            report = orch.run(args())
+        self.assertEqual(report["state"], "FAILED")
+        self.assertEqual(report["blocker_class"], "IMPLEMENTATION")
+        self.assertEqual(report["task_result"], "FAIL")
+        self.assertEqual(report["attempts"], 2)
+        self.assertEqual(agent.call_count, 2)
+
+    def test_child_preflight_failure_parent_ready_continues(self):
+        baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value={
+                 "ready": False, "error_code": "ACCESS_DENIED"}), \
+             patch.object(orch, "verification_preflight", return_value=runtime()) as parent, \
+             patch.object(orch, "_scoped_checks",
+                          side_effect=[baseline, [task_pass()], baseline]), \
+             patch.object(orch, "agent", return_value={"decision": "PASS",
+                          "summary": "implemented", "findings": []}), \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")), \
+             patch.object(orch, "worktree_fingerprint", return_value=[]):
+            report = orch.run(args())
+        self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(report["implementer_environment_warnings"][0]["code"],
+                         "ACCESS_DENIED")
+        parent.assert_called_once()
+
+    def test_child_and_parent_preflight_failure_blocks_verification(self):
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value={
+                 "ready": False, "error_code": "ACCESS_DENIED"}), \
+             patch.object(orch, "verification_preflight", return_value={
+                 "ready": False, "error_code": "MISSING_VERIFICATION_CAPABILITY"}), \
+             patch.object(orch, "agent") as agent:
+            report = orch.run(args())
+        self.assertEqual(report["state"], "FAILED")
+        self.assertEqual(report["blocker_class"], "VERIFICATION_ENVIRONMENT")
+        self.assertEqual(report["attempts"], 0)
+        agent.assert_not_called()
+
     def test_issue5_dry_run_separates_checks_and_gaps(self):
         with patch.object(orch, "get_issue", return_value=pilot_issue()), \
              patch.object(orch, "agent") as agent:
@@ -216,7 +466,7 @@ class ScopedResultsTests(unittest.TestCase):
              patch.object(orch, "worktree_fingerprint", return_value=[]):
             report = orch.run(args())
         self.assertEqual(report["state"], "FAILED")
-        self.assertEqual(report["blocker_class"], "ENVIRONMENT")
+        self.assertEqual(report["blocker_class"], "VERIFICATION_ENVIRONMENT")
         self.assertEqual(report["attempts"], 1)
         self.assertEqual(report["reviewer_result"], "PASS")
         self.assertEqual(agent.call_count, 2)

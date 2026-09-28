@@ -31,6 +31,28 @@ class AgentExecutionError(RuntimeError):
         self.diagnostic = diagnostic
 
 
+class VerificationEnvironmentError(OSError):
+    """An official check could not start or complete in the parent runner."""
+
+    def __init__(self, code: str, path: str, completed: list[dict[str, Any]],
+                 exit_code: int | None = None):
+        super().__init__(code)
+        self.code = code
+        self.path = path
+        self.completed = completed
+        self.exit_code = exit_code
+
+
+def verification_diagnostic(exc: BaseException) -> dict[str, Any]:
+    """Keep only bounded command and status evidence, never raw test output."""
+    if isinstance(exc, VerificationEnvironmentError):
+        return {"code": exc.code, "command_class": exc.path,
+                "exit_code": exc.exit_code, "completed_checks": exc.completed}
+    return {"code": "TIMEOUT" if isinstance(exc, subprocess.TimeoutExpired)
+            else "COMMAND_UNAVAILABLE", "command_class": "official check",
+            "exit_code": None, "completed_checks": []}
+
+
 def command(argv: list[str], *, env: dict[str, str] | None = None,
             timeout: int = 3600, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(argv, cwd=ROOT, env=env, text=True, encoding="utf-8",
@@ -245,6 +267,26 @@ def runtime_preflight(timeout: int, tests: list[str],
             "diagnostic": diagnostic}
 
 
+def verification_preflight(tests: list[str]) -> dict[str, Any]:
+    """Verify the parent runner when the Implementer sandbox has no usable runtime."""
+    from orchestrator_preflight import probe
+
+    require_npm = any(path in tests for path in
+                      ("scripts/test_auditdesk.py", "scripts/test_all.py"))
+    data = probe(secrets.token_hex(16), ROOT, require_npm)
+    ready = all(data[name] is True for name in
+                ("pytest", "openpyxl", "temp_write", "git", "npm"))
+    return {"ready": ready,
+            "selected_executable": data["executable"] if ready else None,
+            "version": data["version"],
+            "dependencies": {name: data[name] for name in ("pytest", "openpyxl")},
+            "temp_write": data["temp_write"],
+            "commands": {name: data[name] for name in ("git", "npm")},
+            "npm_version": data["npm_version"] or None,
+            "sandbox_verified": False,
+            "error_code": "NONE" if ready else "MISSING_VERIFICATION_CAPABILITY"}
+
+
 def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int,
           runtime: dict[str, Any] | None = None, scoped: bool = False) -> dict[str, Any]:
     if role == "implementer":
@@ -253,26 +295,37 @@ def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int,
                        "Never edit protected artifacts or accounting/business rules. "
                        "If one is needed, stop and return HUMAN_APPROVAL. "
                        "Do not commit, push, comment, merge, or claim tests passed. "
-                       "Run Python only with the verified executable below. ")
+                       "Run Python only with the verified executable below when it works "
+                       "in your sandbox. The Orchestrator owns protected checks, task "
+                       "required checks, repository regressions and final test evidence. "
+                       "Run only focused development tests when useful; a repository-wide "
+                       "Harness or Web UI build is not a prerequisite for your PASS. "
+                       "If a sandbox-only command cannot run, report "
+                       "IMPLEMENTER_ENVIRONMENT as a warning with the implementation "
+                       "status. Do not change product behavior, expected results, baselines "
+                       "or protected artifacts to work around that environment. ")
     else:
         sandbox = "read-only"
         instruction = ("Independently review the Issue contract, git diff against HEAD, "
                        "changed files, protected check and exact test evidence. "
                        "Do not edit files or run mutating commands. Report blockers, "
                        "including FAIL, SKIP or NOT RUN required checks. ")
-    prompt = (instruction + "Return the required JSON decision; use null blocker_class for PASS. "
+    prompt = (instruction + "Return the required JSON decision; use null blocker_class "
+              "for PASS unless reporting an IMPLEMENTER_ENVIRONMENT warning. "
               "Use PASS only when this role's work is complete; use BLOCKER for "
               "fixable defects and HUMAN_APPROVAL for owner decisions.\n\n"
               f"Issue #{issue['number']}: {issue['title']}\n{issue['body']}\n\n"
               f"Current evidence / reviewer feedback:\n{feedback}\n"
               f"Verified Python executable: {(runtime or {}).get('selected_executable', 'unverified')}\n"
               f"Verified Python version: {(runtime or {}).get('version', 'unverified')}\n"
+              f"Implementer sandbox runtime verified: {(runtime or {}).get('sandbox_verified', True)}\n"
               f"Verified Python command prefix: {json.dumps((runtime or {}).get('selected_executable', 'unverified'))} -B\n"
               "Use -B for Python invocations. A probe checked pytest, openpyxl, "
               "git/npm commands and repository temporary-file writes in a fresh "
               "workspace-write session. Recheck if your sandbox differs."
               + ("\nScoped task: classify BLOCKER with blocker_class as IMPLEMENTATION, "
-                 "ENVIRONMENT, EXISTING_BASELINE, or HUMAN_DECISION. Do not spend a "
+                 "IMPLEMENTER_ENVIRONMENT, EXISTING_BASELINE, or HUMAN_DECISION. "
+                 "Only the Orchestrator may classify VERIFICATION_ENVIRONMENT. Do not spend a "
                  "retry on an existing measured baseline. Reviewer: assess the task diff "
                  "and acceptance criteria even if the repository remains red; PASS means "
                  "task implementation approved, never repository Technical PASS. "
@@ -302,7 +355,8 @@ def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int,
     if data.get("decision") not in {"PASS", "BLOCKER", "HUMAN_APPROVAL"}:
         raise ValueError(f"{role} returned an invalid decision")
     if data.get("blocker_class") is not None and data["blocker_class"] not in {
-            "IMPLEMENTATION", "ENVIRONMENT", "EXISTING_BASELINE", "HUMAN_DECISION"}:
+            "IMPLEMENTATION", "ENVIRONMENT", "IMPLEMENTER_ENVIRONMENT",
+            "VERIFICATION_ENVIRONMENT", "EXISTING_BASELINE", "HUMAN_DECISION"}:
         raise ValueError(f"{role} returned an invalid blocker class")
     data["_diagnostic"] = diagnostic
     return data
@@ -343,7 +397,28 @@ def _scoped_checks(paths: list[str], runtime: dict[str, Any], timeout: int,
                         "--basetemp", str(Path(tmp) / f"task_{index}")]
             else:
                 argv = [runtime["selected_executable"], "-B", path]
-            result = command(argv, env=env, timeout=timeout)
+            try:
+                result = command(argv, env=env, timeout=timeout)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                code = "TIMEOUT" if isinstance(exc, subprocess.TimeoutExpired) else "COMMAND_UNAVAILABLE"
+                raise VerificationEnvironmentError(code, path, summaries) from exc
+            if result.returncode:
+                output = (result.stdout + result.stderr).lower()
+                if (re.search(r"(?m)^[^\r\n]*python(?:\.exe)?: no module named pytest\s*$",
+                              output) or
+                        re.search(r"(?m)^fail: npm or webui/node_modules missing\.",
+                                  output)):
+                    raise VerificationEnvironmentError(
+                        "MISSING_DEPENDENCY", path, summaries, result.returncode)
+                # Recognize a launcher error, not an assertion that happens to
+                # mention esbuild or access denial in its test output.
+                if ("[auditdesk] web ui typescript and build" in output and
+                        (("traceback (most recent call last)" in output and
+                          "permissionerror:" in output and
+                          "subprocess.run" in output) or
+                         re.search(r"(?m)^error: spawn .*esbuild.*\b(?:eacces|eperm)\b", output))):
+                    raise VerificationEnvironmentError(
+                        "ACCESS_DENIED", path, summaries, result.returncode)
             summaries.append(summarize(path, result))
     return summaries
 
@@ -362,6 +437,7 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
         "known_unavailable_gates": sorted(declared), "task_result": "NOT_RUN",
         "repository_result": "NOT_RUN", "known_gaps": [], "new_regressions": [],
         "unclassified_baseline": [],
+        "implementer_environment_warnings": [],
         "reviewer_result": "NOT_RUN", "human_business_acceptance": "PENDING",
         "blocker_class": None,
     }
@@ -375,18 +451,28 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
     runtime = runtime_preflight(args.agent_timeout, regression,
                                 getattr(args, "python_candidate", None))
     report["evidence"].append({"step": "runtime preflight",
-                               "status": "PASS" if runtime["ready"] else "FAIL",
+                               "status": "PASS" if runtime["ready"] else "WARNING",
                                "detail": runtime})
     if not runtime["ready"]:
-        report.update(state="FAILED",
-                      reason="ENVIRONMENT_BLOCKER: " + runtime["error_code"],
-                      blocker_class="ENVIRONMENT")
-        return report
+        report["implementer_environment_warnings"].append(
+            {"phase": "sandbox runtime preflight", "code": runtime["error_code"]})
+        runtime = verification_preflight(regression)
+        report["evidence"].append({"step": "verification runtime preflight",
+                                   "status": "PASS" if runtime["ready"] else "FAIL",
+                                   "detail": runtime})
+        if not runtime["ready"]:
+            report.update(state="FAILED",
+                          reason="ENVIRONMENT_BLOCKER: verification runtime unavailable",
+                          blocker_class="VERIFICATION_ENVIRONMENT")
+            return report
     try:
         baseline = _scoped_checks(regression, runtime, args.test_timeout, task=False)
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        report.update(state="FAILED", reason=f"Baseline checks could not run: {type(exc).__name__}",
-                      blocker_class="ENVIRONMENT")
+        report["evidence"].append({"step": "regression baseline", "status": "NOT_RUN",
+                                   "diagnostic": verification_diagnostic(exc)})
+        report.update(state="FAILED",
+                      reason=f"ENVIRONMENT_BLOCKER: baseline checks could not run ({type(exc).__name__})",
+                      blocker_class="VERIFICATION_ENVIRONMENT")
         return report
     report["evidence"].append({"step": "regression baseline", "status": "RECORDED",
                                "detail": baseline})
@@ -406,11 +492,20 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
             report["evidence"].append({"step": f"implementer {attempt}", "status": "FAIL",
                                        "diagnostic": exc.diagnostic})
             report.update(state="FAILED", reason="Implementer CLI execution failed",
-                          blocker_class="ENVIRONMENT")
+                          blocker_class="IMPLEMENTER_ENVIRONMENT")
             break
         category = impl.get("blocker_class") or "IMPLEMENTATION"
+        sandbox_warning = category in {"IMPLEMENTER_ENVIRONMENT", "ENVIRONMENT",
+                                       "VERIFICATION_ENVIRONMENT"}
+        if sandbox_warning:
+            report["implementer_environment_warnings"].append(
+                {"attempt": attempt, "code": "IMPLEMENTER_ENVIRONMENT",
+                 "summary": impl["summary"]})
         report["evidence"].append({"step": f"implementer {attempt}",
-                                   "status": impl["decision"], "blocker_class": category
+                                   "status": "WARNING" if sandbox_warning else impl["decision"],
+                                   "decision": impl["decision"],
+                                   "blocker_class": "IMPLEMENTER_ENVIRONMENT"
+                                   if sandbox_warning else category
                                    if impl["decision"] != "PASS" else None,
                                    "detail": impl["summary"] + "\n" + "\n".join(impl["findings"]),
                                    "diagnostic": impl.get("_diagnostic")})
@@ -423,33 +518,42 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
                           if not ok else impl["summary"])
             break
         if impl["decision"] == "BLOCKER":
-            if category == "ENVIRONMENT":
-                report.update(state="FAILED", blocker_class="ENVIRONMENT",
-                              reason=impl["summary"])
-                break
             if category == "IMPLEMENTATION":
                 feedback = impl["summary"] + "\n" + "\n".join(impl["findings"])
                 report["blocker_class"] = "IMPLEMENTATION"
                 continue
-            # EXISTING_BASELINE is separately measured. It does not consume
-            # another Implementer attempt or prevent task review.
+            # Existing baseline and Implementer-only environment warnings do
+            # not consume a retry. Official checks decide whether work passes.
         try:
             task_results = _scoped_checks(task, runtime, args.test_timeout, task=True)
-            current = _scoped_checks(regression, runtime, args.test_timeout, task=False)
         except ValueError as exc:
             report.update(state="FAILED", reason=str(exc), blocker_class="IMPLEMENTATION")
             break
         except (OSError, subprocess.TimeoutExpired) as exc:
-            report.update(state="FAILED", reason=f"Checks could not run: {type(exc).__name__}",
-                          blocker_class="ENVIRONMENT")
+            report["evidence"].append({"step": f"task checks {attempt}",
+                                       "status": "NOT_RUN",
+                                       "diagnostic": verification_diagnostic(exc)})
+            report.update(state="FAILED",
+                          reason=f"ENVIRONMENT_BLOCKER: official checks could not run ({type(exc).__name__})",
+                          blocker_class="VERIFICATION_ENVIRONMENT")
             break
         report["task_required_checks"] = task_results
-        report["regression_checks"] = current
+        task_ok = all(x["status"] == "PASS" and x["passed"] > 0 and not x["skipped"]
+                      for x in task_results)
+        report["task_result"] = "PASS" if task_ok else "FAIL"
         report["evidence"].append({"step": f"task checks {attempt}",
-                                   "status": "PASS" if all(x["status"] == "PASS" and
-                                                           x["passed"] > 0 and
-                                                           not x["skipped"] for x in task_results)
-                                             else "FAIL", "detail": task_results})
+                                   "status": report["task_result"], "detail": task_results})
+        try:
+            current = _scoped_checks(regression, runtime, args.test_timeout, task=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            report["evidence"].append({"step": f"regression checks {attempt}",
+                                       "status": "NOT_RUN",
+                                       "diagnostic": verification_diagnostic(exc)})
+            report.update(state="FAILED",
+                          reason=f"ENVIRONMENT_BLOCKER: official regression could not run ({type(exc).__name__})",
+                          blocker_class="VERIFICATION_ENVIRONMENT")
+            break
+        report["regression_checks"] = current
         gaps, regressions, unclassified = compare(baseline, current, declared)
         report["known_gaps"] = gaps
         report["new_regressions"] = regressions
@@ -457,9 +561,6 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
         report["repository_result"] = ("PASS" if all(x["status"] == "PASS" and
                                                       not x["skipped"] for x in current)
                                        else "FAIL")
-        task_ok = all(x["status"] == "PASS" and x["passed"] > 0 and not x["skipped"]
-                      for x in task_results)
-        report["task_result"] = "PASS" if task_ok else "FAIL"
         report["evidence"].append({"step": f"regression checks {attempt}",
                                    "status": report["repository_result"],
                                    "detail": {"results": current, "known_gaps": gaps,
@@ -474,10 +575,13 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
             continue
         before_review = worktree_fingerprint()
         review_evidence = {"task_required_checks": task_results,
+                           "protected_check": {"status": "PASS", "detail": detail},
                            "regression_baseline": baseline,
                            "regression_checks": current, "known_gaps": gaps,
                            "new_regressions": [],
                            "unclassified_baseline": unclassified,
+                           "implementer_environment_warnings":
+                           report["implementer_environment_warnings"],
                            "changed_files": [name for name, _ in before_review]}
         try:
             review = agent("reviewer", issue,
@@ -486,11 +590,11 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
         except AgentExecutionError as exc:
             report["evidence"].append({"step": f"reviewer {attempt}",
                                        "status": "FAIL", "diagnostic": exc.diagnostic})
-            report.update(state="FAILED", blocker_class="ENVIRONMENT",
+            report.update(state="FAILED", blocker_class="VERIFICATION_ENVIRONMENT",
                           reason="Reviewer CLI execution failed")
             break
         if worktree_fingerprint() != before_review:
-            report.update(state="FAILED", blocker_class="ENVIRONMENT",
+            report.update(state="FAILED", blocker_class="VERIFICATION_ENVIRONMENT",
                           reason="Reviewer changed the worktree")
             break
         report["reviewer_result"] = review["decision"]
@@ -508,8 +612,9 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
                 report.update(state="HUMAN_APPROVAL", blocker_class="HUMAN_DECISION",
                               reason=review["summary"])
                 break
-            if category == "ENVIRONMENT":
-                report.update(state="FAILED", blocker_class="ENVIRONMENT",
+            if category in {"ENVIRONMENT", "VERIFICATION_ENVIRONMENT",
+                            "IMPLEMENTER_ENVIRONMENT"}:
+                report.update(state="FAILED", blocker_class="VERIFICATION_ENVIRONMENT",
                               reason=review["summary"])
                 break
             if category == "EXISTING_BASELINE":
@@ -524,7 +629,7 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
                              "identity unavailable" in item or
                              "identities unavailable" in item for item in unclassified)
             report.update(state="FAILED",
-                          blocker_class="ENVIRONMENT" if incomplete else "EXISTING_BASELINE",
+                          blocker_class="VERIFICATION_ENVIRONMENT" if incomplete else "EXISTING_BASELINE",
                           reason=("Baseline evidence is incomplete" if incomplete else
                                   "Baseline gaps could not be matched to declared known gates"))
         elif report["repository_result"] == "PASS":

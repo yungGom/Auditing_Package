@@ -64,8 +64,9 @@ imports pytest and openpyxl, runs pytest and Git version commands (plus npm
 when AuditDesk tests require it), and writes/reads/deletes a temporary file
 inside the repository. PATH presence alone never counts as success.
 
-A failed probe returns FAILED with an ENVIRONMENT_BLOCKER reason, attempts zero,
-and no Implementer call. It is distinct from HUMAN_APPROVAL. The report keeps
+A failed sandbox probe in the original unscoped flow returns FAILED with an
+ENVIRONMENT_BLOCKER reason, attempts zero, and no Implementer call. Scoped task
+completion uses the separate parent probe described below. The report keeps
 only capability flags, the selected executable/version, command class, exit
 code, and a whitelisted stderr failure category. Raw CLI output and environment
 variables are not retained. A fresh temporary directory is used for parent
@@ -96,6 +97,21 @@ runs the Implementer, protected check, task checks, and the same regression
 scripts again. Pytest reports failed, error, and skipped node summaries with
 `-rfEs`; the comparison requires the expected AuditDesk and Harness component
 results in both runs. It compares failing node IDs, skips, and component status.
+
+The Implementer owns investigation and edits and may run focused development
+tests. The Orchestrator owns the protected check, required task tests, repository
+regressions, baseline comparison, and official test evidence. A repository-wide
+Harness or Web UI build inside the workspace-write Implementer sandbox is not
+a prerequisite for task review. If such a sandbox command is denied, the
+Implementer reports `IMPLEMENTER_ENVIRONMENT`; the scoped run retains it as a
+warning and continues to the Orchestrator checks without using another retry.
+Legacy agent `ENVIRONMENT` replies are treated the same way in this scoped
+flow. If the sandbox runtime probe fails, the parent runner is probed separately
+before attempting official checks. An unusable parent runtime or an official
+check that cannot execute stops as `VERIFICATION_ENVIRONMENT` / FAILED with an
+`ENVIRONMENT_BLOCKER` reason. An official test that executes and fails remains
+a task failure or repository regression, never an environment warning.
+
 New failures, increased or newly located skips, or a component changing from
 PASS to FAIL are implementation regressions and can trigger rework. Unchanged
 failures without a declared identity or comparable skip evidence are reported
@@ -105,7 +121,8 @@ Issue acceptance criteria, and check evidence before a final decision.
 
 The local report separates `task_required_checks`, `regression_checks`,
 `known_unavailable_gates`, `known_gaps`, `new_regressions`,
-`unclassified_baseline`, `task_result`, `repository_result`,
+`unclassified_baseline`, `implementer_environment_warnings`,
+`task_result`, `repository_result`,
 `reviewer_result`, and `human_business_acceptance`. A fully green scoped run
 still ends as DONE. A scoped run with only declared, unchanged baseline gaps
 ends as TASK_PASS_WITH_KNOWN_GAPS. The old Issue contract without a task-check
