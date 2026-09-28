@@ -1,10 +1,39 @@
 {
   "type": "object",
   "properties": {
-    "decision": {"type": "string", "enum": ["PASS", "BLOCKER", "HUMAN_APPROVAL"]},
-    "summary": {"type": "string"},
-    "findings": {"type": "array", "items": {"type": "string"}}
+    "decision": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "BLOCKER",
+        "HUMAN_APPROVAL"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blocker_class": {
+      "type": ["string", "null"],
+      "enum": [
+        "IMPLEMENTATION",
+        "ENVIRONMENT",
+        "EXISTING_BASELINE",
+        "HUMAN_DECISION",
+        null
+      ]
+    }
   },
-  "required": ["decision", "summary", "findings"],
+  "required": [
+    "decision",
+    "summary",
+    "findings",
+    "blocker_class"
+  ],
   "additionalProperties": false
 }

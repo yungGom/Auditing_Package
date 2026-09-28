@@ -34,6 +34,7 @@ governance files are trusted and the new Implementer changes are checked.
 | IN_PROGRESS | Implementer, checks, tests, or Reviewer running. |
 | HUMAN_APPROVAL | Issue names a pending owner decision, an agent requests one, or protected check fails. No further agent/test runs. |
 | DONE | Required scripts returned zero and a separate read-only Reviewer returned PASS. Human business acceptance is still pending. |
+| TASK_PASS_WITH_KNOWN_GAPS | Issue-declared task checks and independent review passed, with no new regression against a measured pre-change baseline. Declared repository failures or skips remain; this is not Technical PASS and exits with code 2. Human business acceptance is pending. |
 | FAILED | Invalid input, unavailable CLI, failed command, dirty worktree, or blocker remains after two attempts. |
 
 A named Human Owner decision in the Issue stops intake even in dry-run. The
@@ -74,3 +75,38 @@ The UTF-8 JSON report remains human-readable. Console JSON uses ASCII escapes
 so CP949 terminals and redirected pipes can print every status without changing
 the exit code. A JSON parser recovers the same strings. This change does not
 reinterpret failed or skipped regressions as a pass.
+
+## Scoped task completion for known repository gaps
+
+An Issue may add a `## Task required checks` section listing backtick-quoted
+repository `test_*.py` paths. Only checked-in tests under the AuditDesk test
+directories or `scripts/tests` are accepted; Issue-supplied shell commands are
+never run. Its existing `## Required tests` section remains the repository
+regression set. For the existing Issue #5 contract, the fallback reads test
+paths only from the acceptance-criterion line beginning `Add only`; it ignores
+the generator path and does not execute any Issue-supplied command. The optional
+`## Known unavailable gates` section lists backtick-quoted pytest node IDs for
+pre-existing failures. If absent, the `## Reproduction` section provides that
+declaration. Issue #5 thus scopes the synthetic G2 test while retaining the
+AuditDesk and full Harness scripts as regression checks and the unavailable
+real-file smoke node as a known gate.
+
+The scoped run records the regression result before implementation, then
+runs the Implementer, protected check, task checks, and the same regression
+scripts again. Pytest reports failed, error, and skipped node summaries with
+`-rfEs`; the comparison requires the expected AuditDesk and Harness component
+results in both runs. It compares failing node IDs, skips, and component status.
+New failures, increased or newly located skips, or a component changing from
+PASS to FAIL are implementation regressions and can trigger rework. Unchanged
+failures without a declared identity or comparable skip evidence are reported
+as unclassified baseline gaps; they cannot yield partial completion or spend
+an Implementer retry. The read-only Reviewer still examines the task diff,
+Issue acceptance criteria, and check evidence before a final decision.
+
+The local report separates `task_required_checks`, `regression_checks`,
+`known_unavailable_gates`, `known_gaps`, `new_regressions`,
+`unclassified_baseline`, `task_result`, `repository_result`,
+`reviewer_result`, and `human_business_acceptance`. A fully green scoped run
+still ends as DONE. A scoped run with only declared, unchanged baseline gaps
+ends as TASK_PASS_WITH_KNOWN_GAPS. The old Issue contract without a task-check
+section retains the original DONE/HUMAN_APPROVAL/FAILED behavior.
