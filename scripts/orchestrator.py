@@ -163,13 +163,14 @@ def runtime_preflight(timeout: int, tests: list[str],
         "runs python -m pytest --version and git/npm --version as applicable, and "
         "writes/reads/deletes a temporary file inside the repository. "
         "Choose the first candidate whose probe reports every required flag true. "
-        "Copy the probe's nonce, executable, version and flags exactly into your "
+        "Copy the probe's nonce, executable, version, flags, and npm_version "
+        "exactly into your "
         "structured JSON reply, adding the candidate and error_code=NONE. "
         "If no candidate passes but at least one probe executed, copy the first "
         "executed probe's real identity and flags; set error_code to "
         "TEMP_NOT_WRITABLE, MISSING_DEPENDENCY, or COMMAND_FAILED as appropriate. "
         "Only when no candidate can execute the probe, return empty "
-        "candidate/executable/version and all flags false, with ACCESS_DENIED, "
+        "candidate/executable/version/npm_version and all flags false, with ACCESS_DENIED, "
         "NOT_FOUND, or UNKNOWN. Do not include raw "
         "stdout, stderr, environment variables, credentials, or repository content.\n"
         f"Candidates: {json.dumps(candidates, ensure_ascii=True)}\n"
@@ -213,12 +214,16 @@ def runtime_preflight(timeout: int, tests: list[str],
     version = data.get("version", "")
     flags = {name: data.get(name) is True
              for name in ("pytest", "openpyxl", "temp_write", "git", "npm")}
+    npm_version = data.get("npm_version", "")
     valid = (data.get("nonce") == nonce and candidate in candidates and
              isinstance(executable, str) and Path(executable).is_absolute() and
              isinstance(version, str) and re.fullmatch(r"\d+\.\d+\.\d+", version) and
-             data.get("error_code") in safe_codes)
+             data.get("error_code") in safe_codes and
+             isinstance(npm_version, str) and
+             (not npm_version or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", npm_version)) and
+             (not require_npm or not flags["npm"] or bool(npm_version)))
     valid_failure = (data.get("nonce") == nonce and candidate == "" and
-                     executable == "" and version == "" and
+                     executable == "" and version == "" and npm_version == "" and
                      data.get("error_code") in safe_codes - {"NONE"})
     ready = bool(valid and all(flags.values()) and data["error_code"] == "NONE")
     code = ("NONE" if ready else
@@ -236,6 +241,7 @@ def runtime_preflight(timeout: int, tests: list[str],
             "dependencies": {"pytest": flags["pytest"], "openpyxl": flags["openpyxl"]},
             "temp_write": flags["temp_write"], "commands": {
                 "git": flags["git"], "npm": flags["npm"]},
+            "npm_version": npm_version if valid and npm_version else None,
             "diagnostic": diagnostic}
 
 

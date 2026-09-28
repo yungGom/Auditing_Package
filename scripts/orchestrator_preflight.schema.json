@@ -10,6 +10,7 @@
     "temp_write": {"type": "boolean"},
     "git": {"type": "boolean"},
     "npm": {"type": "boolean"},
+    "npm_version": {"type": "string"},
     "error_code": {
       "type": "string",
       "enum": ["NONE", "ACCESS_DENIED", "NOT_FOUND", "MISSING_DEPENDENCY",
@@ -17,6 +18,6 @@
     }
   },
   "required": ["nonce", "candidate", "executable", "version", "pytest",
-               "openpyxl", "temp_write", "git", "npm", "error_code"],
+               "openpyxl", "temp_write", "git", "npm", "npm_version", "error_code"],
   "additionalProperties": false
 }

@@ -10,6 +10,8 @@ import argparse
 import importlib
 import json
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -32,6 +34,21 @@ def _command_available(argv: list[str]) -> bool:
         return False
 
 
+def _npm_version() -> str | None:
+    executable = shutil.which("npm")
+    if executable is None:
+        return None
+    try:
+        result = subprocess.run([executable, "--version"], capture_output=True,
+                                timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode:
+        return None
+    version = result.stdout.decode("utf-8", errors="replace").strip()
+    return version if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", version) else None
+
+
 def probe(nonce: str, temp_base: Path, require_npm: bool) -> dict:
     temp_write = False
     try:
@@ -45,7 +62,8 @@ def probe(nonce: str, temp_base: Path, require_npm: bool) -> dict:
     pytest = _module_available("pytest")
     openpyxl = _module_available("openpyxl")
     git = _command_available(["git", "--version"])
-    npm = _command_available(["npm", "--version"]) if require_npm else True
+    npm_version = _npm_version() if require_npm else None
+    npm = npm_version is not None if require_npm else True
     pytest_command = _command_available([sys.executable, "-m", "pytest", "--version"]) if pytest else False
     return {
         "nonce": nonce,
@@ -56,6 +74,7 @@ def probe(nonce: str, temp_base: Path, require_npm: bool) -> dict:
         "temp_write": temp_write,
         "git": git,
         "npm": npm,
+        "npm_version": npm_version or "",
     }
 
 

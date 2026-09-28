@@ -46,7 +46,9 @@ def probe_reply(prompt: str, **changes) -> dict:
     data = {"nonce": nonce, "candidate": orch.runtime_candidates()[-1],
             "executable": "C:/sandbox/python.exe", "version": "3.12.14",
             "pytest": True, "openpyxl": True, "temp_write": True,
-            "git": True, "npm": True, "error_code": "NONE"}
+            "git": True, "npm": True,
+            "npm_version": "11.9.0" if "--require-npm" in prompt else "",
+            "error_code": "NONE"}
     data.update(changes)
     return data
 
@@ -144,7 +146,7 @@ class PreflightTests(unittest.TestCase):
         with patch.object(orch, "command", side_effect=preflight_command(
                 candidate="", executable="", version="", pytest=False,
                 openpyxl=False, temp_write=False, git=False, npm=False,
-                error_code="NOT_FOUND")) as command:
+                npm_version="", error_code="NOT_FOUND")) as command:
             result = orch.runtime_preflight(30, ["scripts/test_auditdesk.py"])
         self.assertFalse(result["ready"])
         self.assertEqual(result["error_code"], "NOT_FOUND")
@@ -156,7 +158,7 @@ class PreflightTests(unittest.TestCase):
         with patch.object(orch, "command", side_effect=preflight_command(
                 candidate="", executable="", version="", pytest=False,
                 openpyxl=False, temp_write=False, git=False, npm=False,
-                error_code="ACCESS_DENIED")):
+                npm_version="", error_code="ACCESS_DENIED")):
             result = orch.runtime_preflight(30, [])
         self.assertEqual(result["error_code"], "ACCESS_DENIED")
 
@@ -186,6 +188,7 @@ class PreflightTests(unittest.TestCase):
             result = orch.runtime_preflight(30, ["scripts/test_all.py"])
         self.assertTrue(result["ready"])
         self.assertEqual(result["selected_executable"], "C:/sandbox/python.exe")
+        self.assertEqual(result["npm_version"], "11.9.0")
         self.assertIn("--require-npm", command.call_args.kwargs["input_text"])
         self.assertNotIn("token", json.dumps(result).lower())
         self.assertEqual(result["diagnostic"]["command_class"], "codex exec preflight")
@@ -211,13 +214,57 @@ class PreflightTests(unittest.TestCase):
     def test_probe_helper_checks_actual_modules_and_commands(self):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(probe, "_module_available", side_effect=lambda name: name == "openpyxl"), \
-             patch.object(probe, "_command_available", return_value=True):
+             patch.object(probe, "_command_available", return_value=True), \
+             patch.object(probe, "_npm_version", return_value="11.9.0"):
             result = probe.probe("nonce", Path(tmp), require_npm=True)
         self.assertFalse(result["pytest"])
         self.assertTrue(result["openpyxl"])
         self.assertTrue(result["temp_write"])
         self.assertTrue(result["git"])
         self.assertTrue(result["npm"])
+        self.assertEqual(result["npm_version"], "11.9.0")
+
+    def test_npm_uses_resolved_windows_cmd_or_bat_path(self):
+        for executable in (r"C:\Program Files\nodejs\npm.CMD", r"C:\Tools\npm.BAT"):
+            with self.subTest(executable=executable), \
+                 patch.object(probe.shutil, "which", return_value=executable) as which, \
+                 patch.object(probe.subprocess, "run", return_value=
+                              subprocess.CompletedProcess([], 0, b"11.9.0\r\n", b"")) as run:
+                self.assertEqual(probe._npm_version(), "11.9.0")
+            which.assert_called_once_with("npm")
+            self.assertEqual(run.call_args.args[0], [executable, "--version"])
+
+    def test_npm_missing_is_capability_failure(self):
+        with patch.object(probe.shutil, "which", return_value=None), \
+             patch.object(probe.subprocess, "run") as run, \
+             tempfile.TemporaryDirectory() as tmp, \
+             patch.object(probe, "_module_available", return_value=True), \
+             patch.object(probe, "_command_available", return_value=True):
+            result = probe.probe("nonce", Path(tmp), require_npm=True)
+        self.assertFalse(result["npm"])
+        self.assertEqual(result["npm_version"], "")
+        run.assert_not_called()
+
+    def test_npm_success_records_version(self):
+        with patch.object(probe.shutil, "which", return_value=r"C:\nodejs\npm.CMD"), \
+             patch.object(probe.subprocess, "run", return_value=
+                          subprocess.CompletedProcess([], 0, b"11.9.0\n", b"")), \
+             tempfile.TemporaryDirectory() as tmp, \
+             patch.object(probe, "_module_available", return_value=True), \
+             patch.object(probe, "_command_available", return_value=True):
+            result = probe.probe("nonce", Path(tmp), require_npm=True)
+        self.assertTrue(result["npm"])
+        self.assertEqual(result["npm_version"], "11.9.0")
+
+    def test_npm_execution_failure_is_capability_failure(self):
+        for outcome in (subprocess.CompletedProcess([], 1, b"", b"failed"),
+                        PermissionError("access denied")):
+            with self.subTest(outcome=type(outcome).__name__), \
+                 patch.object(probe.shutil, "which", return_value=r"C:\nodejs\npm.CMD"), \
+                 patch.object(probe.subprocess, "run", side_effect=outcome
+                              if isinstance(outcome, Exception) else None,
+                              return_value=outcome if not isinstance(outcome, Exception) else None):
+                self.assertIsNone(probe._npm_version())
 
     def test_probe_helper_reports_temp_permission_failure(self):
         with patch.object(probe.tempfile, "TemporaryDirectory", side_effect=PermissionError()), \
