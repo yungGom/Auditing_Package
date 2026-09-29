@@ -75,15 +75,16 @@ el.reviewerEdit.addEventListener("click", async () => {
 
 el.btnExport.addEventListener("click", async () => {
   el.btnExport.disabled = true;
-  say("최종 PDF를 만드는 중입니다…", "");
+  say("출력 시작 시점의 검토 상태로 최종 PDF를 만드는 중입니다…", "");
   const r = await api().export_final();
   el.btnExport.disabled = false;
   if (r && r.error) { say(`⚠ ${r.error}`, "err"); return; }
   // 미검토가 남은 상태의 출력을 막지 않는다(중간 출력이 실무에서 필요하다).
   // 다만 끝나지 않은 조서가 끝난 것처럼 보이면 안 되므로 여기서도 알린다.
   const warn = r.pending ? ` ⚠ 미검토 ${r.pending}건이 남아 있습니다.` : "";
-  say(`저장했습니다: ${r.path}  (이상없음 ${r.approved} · 차이 아님 ${r.removed}${warn})`,
-      r.pending ? "err" : "ok");
+  const cleanupWarn = r.warning ? ` ⚠ ${r.warning}` : "";
+  say(`저장했습니다: ${r.path}  (출력 시작 시점: 이상없음 ${r.approved} · 차이 아님 ${r.removed}${warn})${cleanupWarn}`,
+      r.pending || r.warning ? "err" : "ok");
 });
 
 el.btnErrors.addEventListener("click", async () => {
