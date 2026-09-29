@@ -119,10 +119,22 @@ as unclassified baseline gaps; they cannot yield partial completion or spend
 an Implementer retry. The read-only Reviewer still examines the task diff,
 Issue acceptance criteria, and check evidence before a final decision.
 
+The Reviewer returns a verdict separately from structured findings. Each
+finding has `severity` (`blocking`, `nonblocking`, `known_gap`, `question`, or
+`informational`), `summary`, and `evidence`. A PASS verdict with only
+nonblocking findings does not consume a retry; known gaps remain visible in
+the report and never become repository Technical PASS. `BLOCKING` and
+`REQUEST_CHANGES` (plus legacy `BLOCKER`) request rework only for an actionable
+implementation defect. PASS with an explicit blocking finding is a protocol
+contradiction and fails closed without rework. For older string-only findings,
+an explicit `[severity]:` prefix is honored; otherwise PASS strings migrate
+to nonblocking and blocking-verdict strings migrate to blocking, with the
+inference recorded in finding evidence.
+
 The local report separates `task_required_checks`, `regression_checks`,
 `known_unavailable_gates`, `known_gaps`, `new_regressions`,
 `unclassified_baseline`, `implementer_environment_warnings`,
-`task_result`, `repository_result`,
+`task_result`, `repository_result`, `reviewer_findings`,
 `reviewer_result`, and `human_business_acceptance`. A fully green scoped run
 still ends as DONE. A scoped run with only declared, unchanged baseline gaps
 ends as TASK_PASS_WITH_KNOWN_GAPS. The old Issue contract without a task-check

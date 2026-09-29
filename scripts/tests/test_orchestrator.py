@@ -84,6 +84,18 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(calls[0][0][calls[0][0].index("--sandbox") + 1], "workspace-write")
         self.assertEqual(calls[1][0][calls[1][0].index("--sandbox") + 1], "read-only")
         self.assertIn("test evidence", calls[1][1]["input_text"])
+        self.assertEqual(calls[0][0][calls[0][0].index("--output-schema") + 1],
+                         str(orch.SCHEMA))
+        self.assertEqual(calls[1][0][calls[1][0].index("--output-schema") + 1],
+                         str(orch.REVIEWER_SCHEMA))
+
+    def test_reviewer_schema_requires_typed_findings(self):
+        schema = json.loads(orch.REVIEWER_SCHEMA.read_text(encoding="utf-8"))
+        item = schema["properties"]["findings"]["items"]
+        self.assertEqual(set(item["required"]), {"severity", "summary", "evidence"})
+        self.assertEqual(set(item["properties"]["severity"]["enum"]),
+                         {"blocking", "nonblocking", "known_gap", "question",
+                          "informational"})
 
     def test_pilot_stops_before_agent_or_tests(self):
         pilot = issue("Approve public fixture source and handling. Protected fixture edits require owner action.")
@@ -126,6 +138,26 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result["state"], "DONE")
         self.assertEqual(result["attempts"], 2)
         self.assertEqual(agent.call_count, 4)
+
+    def test_legacy_unscoped_done_allows_informational_reviewer_finding(self):
+        replies = iter([
+            {"decision": "PASS", "summary": "implemented", "findings": []},
+            {"decision": "PASS", "blocker_class": None, "summary": "approved",
+             "findings": [{"severity": "informational", "summary": "future cleanup",
+                           "evidence": "Outside current issue"}]},
+        ])
+        with patch.object(orch, "get_issue", return_value=issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value=ready_runtime()), \
+             patch.object(orch, "agent", side_effect=lambda *a, **k: next(replies)) as agent, \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")), \
+             patch.object(orch, "command", return_value=subprocess.CompletedProcess([], 0, "2 passed", "")), \
+             patch.object(orch, "worktree_fingerprint", return_value=[]):
+            result = orch.run(args())
+        self.assertEqual(result["state"], "DONE")
+        self.assertEqual(result["attempts"], 1)
+        self.assertEqual(result["reviewer_findings"][0]["severity"], "informational")
+        self.assertEqual(agent.call_count, 2)
 
     def test_failed_required_test_never_passes(self):
         with patch.object(orch, "get_issue", return_value=issue()), \

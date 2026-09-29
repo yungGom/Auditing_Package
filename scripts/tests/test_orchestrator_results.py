@@ -59,6 +59,139 @@ def task_pass():
 
 
 class ScopedResultsTests(unittest.TestCase):
+    def _review_case(self, reviewer, *, baseline=None, after=None):
+        baseline = baseline or [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        after = after or baseline
+        replies = iter([
+            {"decision": "PASS", "blocker_class": None,
+             "summary": "synthetic implementation complete", "findings": []},
+            reviewer,
+        ])
+        with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+             patch.object(orch, "changed_files", return_value=[]), \
+             patch.object(orch, "runtime_preflight", return_value=runtime()), \
+             patch.object(orch, "_scoped_checks",
+                          side_effect=[baseline, [task_pass()], after]) as checks, \
+             patch.object(orch, "agent", side_effect=lambda *a, **k: next(replies)) as agent, \
+             patch.object(orch, "protected_check", return_value=(True, "PASS")), \
+             patch.object(orch, "worktree_fingerprint", return_value=[]):
+            report = orch.run(args())
+        return report, agent, checks
+
+    def test_reviewer_pass_empty_findings_completes(self):
+        report, agent, _ = self._review_case({
+            "decision": "PASS", "blocker_class": None,
+            "summary": "approved", "findings": []})
+        self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(agent.call_count, 2)
+
+    def test_reviewer_pass_nonblocking_finding_does_not_retry(self):
+        finding = {"severity": "nonblocking", "summary": "style suggestion",
+                   "evidence": "No acceptance criterion affected"}
+        report, agent, _ = self._review_case({
+            "decision": "PASS", "blocker_class": None,
+            "summary": "approved", "findings": [finding]})
+        self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(report["reviewer_findings"], [finding])
+        self.assertEqual(agent.call_count, 2)
+
+    def test_reviewer_pass_known_gap_finding_keeps_issue5_partial_result(self):
+        finding = {"severity": "known_gap", "summary": "real-file compatibility unavailable",
+                   "evidence": "Existing test_g2_smoke_direct failure and 76 skips match baseline"}
+        report, agent, _ = self._review_case({
+            "decision": "PASS", "blocker_class": None,
+            "summary": "synthetic task approved", "findings": [finding]})
+        self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+        self.assertEqual(report["task_required_checks"][0]["passed"], 5)
+        self.assertEqual(report["regression_checks"][0]["failed"], 1)
+        self.assertEqual(report["regression_checks"][0]["skipped"], 76)
+        self.assertEqual(report["regression_checks"][0]["components"]["webui_build"], 0)
+        self.assertEqual(report["regression_checks"][1]["components"]["dsd_footing"], 0)
+        self.assertEqual(report["new_regressions"], [])
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(agent.call_count, 2)
+        with patch.object(orch, "run", return_value=report), \
+             patch.object(sys, "argv", ["orchestrator", "5", "--no-comment"]), \
+             patch.object(sys, "stdout", io.StringIO()):
+            self.assertEqual(orch.main(), 2)
+
+    def test_reviewer_pass_informational_and_question_do_not_retry(self):
+        for severity in ("informational", "question"):
+            with self.subTest(severity=severity):
+                finding = {"severity": severity, "summary": "future consideration",
+                           "evidence": "No task blocker"}
+                report, agent, _ = self._review_case({
+                    "decision": "PASS", "blocker_class": None,
+                    "summary": "approved", "findings": [finding]})
+                self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+                self.assertEqual(report["attempts"], 1)
+                self.assertEqual(agent.call_count, 2)
+
+    def test_reviewer_pass_with_blocking_finding_fails_closed(self):
+        report, agent, _ = self._review_case({
+            "decision": "PASS", "blocker_class": None,
+            "summary": "contradictory", "findings": [
+                {"severity": "blocking", "summary": "missing check",
+                 "evidence": "Required case absent"}]})
+        self.assertEqual(report["state"], "FAILED")
+        self.assertEqual(report["attempts"], 1)
+        self.assertIn("contradict", report["reason"].lower())
+        self.assertEqual(agent.call_count, 2)
+
+    def test_reviewer_pass_with_blocker_class_fails_closed(self):
+        report, agent, _ = self._review_case({
+            "decision": "PASS", "blocker_class": "IMPLEMENTATION",
+            "summary": "contradictory", "findings": []})
+        self.assertEqual(report["state"], "FAILED")
+        self.assertEqual(report["reviewer_result"], "INVALID")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(agent.call_count, 2)
+
+    def test_reviewer_blocking_and_request_changes_retry(self):
+        baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
+        for verdict in ("BLOCKING", "REQUEST_CHANGES"):
+            with self.subTest(verdict=verdict):
+                replies = iter([
+                    {"decision": "PASS", "summary": "implemented", "findings": []},
+                    {"decision": verdict, "blocker_class": "IMPLEMENTATION",
+                     "summary": "fix required", "findings": [
+                         {"severity": "blocking", "summary": "missing edge case",
+                          "evidence": "Acceptance example absent"}]},
+                    {"decision": "PASS", "summary": "fixed", "findings": []},
+                    {"decision": "PASS", "summary": "approved", "findings": []},
+                ])
+                with patch.object(orch, "get_issue", return_value=pilot_issue()), \
+                     patch.object(orch, "changed_files", return_value=[]), \
+                     patch.object(orch, "runtime_preflight", return_value=runtime()), \
+                     patch.object(orch, "_scoped_checks", side_effect=[
+                         baseline, [task_pass()], baseline, [task_pass()], baseline]), \
+                     patch.object(orch, "agent", side_effect=lambda *a, **k: next(replies)) as agent, \
+                     patch.object(orch, "protected_check", return_value=(True, "PASS")), \
+                     patch.object(orch, "worktree_fingerprint", return_value=[]):
+                    report = orch.run(args())
+                self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+                self.assertEqual(report["attempts"], 2)
+                self.assertEqual(agent.call_count, 4)
+
+    def test_legacy_pass_strings_migrate_without_retry(self):
+        report, agent, _ = self._review_case({
+            "decision": "PASS", "blocker_class": None,
+            "summary": "approved", "findings": ["Existing real-file gap remains"]})
+        self.assertEqual(report["state"], "TASK_PASS_WITH_KNOWN_GAPS")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(report["reviewer_findings"][0]["severity"], "nonblocking")
+        self.assertEqual(agent.call_count, 2)
+
+    def test_legacy_explicit_blocking_prefix_contradicts_pass(self):
+        report, _, _ = self._review_case({
+            "decision": "PASS", "blocker_class": None,
+            "summary": "contradictory", "findings": ["[blocking]: missing acceptance case"]})
+        self.assertEqual(report["state"], "FAILED")
+        self.assertEqual(report["reviewer_result"], "INVALID")
+        self.assertEqual(report["attempts"], 1)
+
     def _run_with_implementer_warning(self, blocker_class, summary):
         baseline = [reg("scripts/test_auditdesk.py"), reg("scripts/test_all.py")]
         replies = iter([

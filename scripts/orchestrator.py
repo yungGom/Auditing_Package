@@ -20,6 +20,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = Path(__file__).with_name("orchestrator_agent.schema.json")
+REVIEWER_SCHEMA = Path(__file__).with_name("orchestrator_reviewer.schema.json")
 PREFLIGHT_SCHEMA = Path(__file__).with_name("orchestrator_preflight.schema.json")
 PREFLIGHT_SCRIPT = Path(__file__).with_name("orchestrator_preflight.py")
 MAX_OUTPUT = 40_000
@@ -51,6 +52,48 @@ def verification_diagnostic(exc: BaseException) -> dict[str, Any]:
     return {"code": "TIMEOUT" if isinstance(exc, subprocess.TimeoutExpired)
             else "COMMAND_UNAVAILABLE", "command_class": "official check",
             "exit_code": None, "completed_checks": []}
+
+
+REVIEWER_SEVERITIES = {"blocking", "nonblocking", "known_gap",
+                       "question", "informational"}
+REWORK_VERDICTS = {"BLOCKER", "BLOCKING", "REQUEST_CHANGES"}
+
+
+def reviewer_findings(review: dict[str, Any]) -> list[dict[str, str]]:
+    """Normalize typed findings and legacy strings without using text as a retry signal."""
+    items = review.get("findings", [])
+    if not isinstance(items, list):
+        raise ValueError("Reviewer findings must be an array")
+    normalized = []
+    for item in items:
+        if isinstance(item, str):
+            # Old Reviewer responses had no severity. Their explicit verdict
+            # remains authoritative unless the string has an explicit severity
+            # prefix. Keep the migration visible in evidence.
+            explicit = re.match(
+                r"^\s*\[?(blocking|nonblocking|known_gap|question|informational)\]?\s*:\s*(.+)$",
+                item, re.I | re.S)
+            severity = (explicit.group(1).lower() if explicit else
+                        "blocking" if review["decision"] in REWORK_VERDICTS
+                        else "nonblocking")
+            normalized.append({
+                "severity": severity,
+                "summary": explicit.group(2).strip() if explicit else item,
+                "evidence": "Legacy severity prefix" if explicit else
+                "Legacy untyped finding; severity inferred from reviewer verdict"})
+        elif (isinstance(item, dict) and item.get("severity") in REVIEWER_SEVERITIES
+              and isinstance(item.get("summary"), str) and item["summary"].strip()
+              and isinstance(item.get("evidence"), str) and item["evidence"].strip()):
+            normalized.append({name: item[name] for name in
+                               ("severity", "summary", "evidence")})
+        else:
+            raise ValueError("Reviewer finding is missing severity, summary or evidence")
+    return normalized
+
+
+def reviewer_feedback(summary: str, findings: list[dict[str, str]]) -> str:
+    return summary + "\n" + "\n".join(
+        f"[{item['severity']}] {item['summary']}: {item['evidence']}" for item in findings)
 
 
 def command(argv: list[str], *, env: dict[str, str] | None = None,
@@ -309,11 +352,23 @@ def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int,
         instruction = ("Independently review the Issue contract, git diff against HEAD, "
                        "changed files, protected check and exact test evidence. "
                        "Do not edit files or run mutating commands. Report blockers, "
-                       "including FAIL, SKIP or NOT RUN required checks. ")
-    prompt = (instruction + "Return the required JSON decision; use null blocker_class "
-              "for PASS unless reporting an IMPLEMENTER_ENVIRONMENT warning. "
-              "Use PASS only when this role's work is complete; use BLOCKER for "
-              "fixable defects and HUMAN_APPROVAL for owner decisions.\n\n"
+                       "including FAIL, SKIP or NOT RUN required checks. "
+                       "Give every finding a severity, summary and evidence. "
+                       "Use blocking only for an actionable task defect; use known_gap "
+                       "for unchanged repository failures or skips, and nonblocking, "
+                       "question or informational for observations that do not prevent "
+                       "task completion. A PASS verdict must have zero blocking findings. "
+                       "Use BLOCKING or REQUEST_CHANGES for fixable blocking findings. ")
+    verdict_instruction = (
+        "Use PASS only when implementation is complete; use BLOCKER for fixable "
+        "defects and HUMAN_APPROVAL for owner decisions. "
+        "PASS may carry an IMPLEMENTER_ENVIRONMENT warning. "
+        if role == "implementer" else
+        "Use PASS only when task review is complete with zero blocking findings; "
+        "use BLOCKING or REQUEST_CHANGES for fixable defects and HUMAN_APPROVAL "
+        "for owner decisions. PASS must have null blocker_class. ")
+    prompt = (instruction + "Return the required JSON decision. "
+              + verdict_instruction + "\n\n"
               f"Issue #{issue['number']}: {issue['title']}\n{issue['body']}\n\n"
               f"Current evidence / reviewer feedback:\n{feedback}\n"
               f"Verified Python executable: {(runtime or {}).get('selected_executable', 'unverified')}\n"
@@ -334,7 +389,8 @@ def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int,
         output = Path(tmp) / "last.json"
         try:
             result = command(["codex", "exec", "--ephemeral", "-C", str(ROOT),
-                              "--sandbox", sandbox, "--output-schema", str(SCHEMA),
+                              "--sandbox", sandbox, "--output-schema",
+                              str(REVIEWER_SCHEMA if role == "reviewer" else SCHEMA),
                               "--output-last-message", str(output), "-"], timeout=timeout,
                              input_text=prompt)
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -352,7 +408,11 @@ def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int,
         if result.returncode:
             raise AgentExecutionError(diagnostic)
         data = json.loads(output.read_text(encoding="utf-8"))
-    if data.get("decision") not in {"PASS", "BLOCKER", "HUMAN_APPROVAL"}:
+    allowed_decisions = ({"PASS", "BLOCKER", "HUMAN_APPROVAL"}
+                         if role == "implementer" else
+                         {"PASS", "BLOCKER", "BLOCKING", "REQUEST_CHANGES",
+                          "HUMAN_APPROVAL"})
+    if data.get("decision") not in allowed_decisions:
         raise ValueError(f"{role} returned an invalid decision")
     if data.get("blocker_class") is not None and data["blocker_class"] not in {
             "IMPLEMENTATION", "ENVIRONMENT", "IMPLEMENTER_ENVIRONMENT",
@@ -438,7 +498,8 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
         "repository_result": "NOT_RUN", "known_gaps": [], "new_regressions": [],
         "unclassified_baseline": [],
         "implementer_environment_warnings": [],
-        "reviewer_result": "NOT_RUN", "human_business_acceptance": "PENDING",
+        "reviewer_result": "NOT_RUN", "reviewer_findings": [],
+        "human_business_acceptance": "PENDING",
         "blocker_class": None,
     }
     if args.dry_run:
@@ -597,16 +658,31 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
             report.update(state="FAILED", blocker_class="VERIFICATION_ENVIRONMENT",
                           reason="Reviewer changed the worktree")
             break
+        try:
+            findings = reviewer_findings(review)
+        except ValueError as exc:
+            report.update(state="FAILED", reviewer_result="INVALID",
+                          blocker_class="VERIFICATION_ENVIRONMENT",
+                          reason=f"Reviewer response invalid: {exc}")
+            break
         report["reviewer_result"] = review["decision"]
+        report["reviewer_findings"] = findings
         report["evidence"].append({"step": f"reviewer {attempt}",
                                    "status": review["decision"],
-                                   "detail": review["summary"] + "\n" + "\n".join(review["findings"]),
+                                    "detail": reviewer_feedback(review["summary"], findings),
+                                    "findings": findings,
                                    "diagnostic": review.get("_diagnostic")})
+        if review["decision"] == "PASS" and (review.get("blocker_class") is not None or
+                any(item["severity"] == "blocking" for item in findings)):
+            report.update(state="FAILED", reviewer_result="INVALID",
+                          blocker_class="VERIFICATION_ENVIRONMENT",
+                          reason="Reviewer response contradictory: PASS with blocking signal")
+            break
         if review["decision"] == "HUMAN_APPROVAL":
             report.update(state="HUMAN_APPROVAL", blocker_class="HUMAN_DECISION",
                           reason=review["summary"])
             break
-        if review["decision"] != "PASS" or review["findings"]:
+        if review["decision"] in REWORK_VERDICTS:
             category = review.get("blocker_class") or "IMPLEMENTATION"
             if category == "HUMAN_DECISION":
                 report.update(state="HUMAN_APPROVAL", blocker_class="HUMAN_DECISION",
@@ -621,7 +697,7 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
                 report.update(state="FAILED", blocker_class="EXISTING_BASELINE",
                               reason="Reviewer did not approve task implementation")
                 break
-            feedback = review["summary"] + "\n" + "\n".join(review["findings"])
+            feedback = reviewer_feedback(review["summary"], findings)
             report["blocker_class"] = "IMPLEMENTATION"
             continue
         if unclassified:
@@ -732,15 +808,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if worktree_fingerprint() != before_review:
             report.update(state="FAILED", reason="Reviewer changed the worktree")
             break
+        try:
+            findings = reviewer_findings(review)
+        except ValueError as exc:
+            report.update(state="FAILED", reviewer_result="INVALID",
+                          reason=f"Reviewer response invalid: {exc}")
+            break
+        report["reviewer_result"] = review["decision"]
+        report["reviewer_findings"] = findings
         report["evidence"].append({"step": f"reviewer {attempt}",
                                     "status": review["decision"],
-                                    "detail": review["summary"] + "\n" + "\n".join(review["findings"]),
+                                    "detail": reviewer_feedback(review["summary"], findings),
+                                    "findings": findings,
                                     "diagnostic": review.get("_diagnostic")})
+        if review["decision"] == "PASS" and (review.get("blocker_class") is not None or
+                any(item["severity"] == "blocking" for item in findings)):
+            report.update(state="FAILED", reviewer_result="INVALID",
+                          reason="Reviewer response contradictory: PASS with blocking signal")
+            break
         if review["decision"] == "HUMAN_APPROVAL":
             report.update(state="HUMAN_APPROVAL", reason=review["summary"])
             break
-        if review["decision"] == "BLOCKER" or review["findings"]:
-            feedback = review["summary"] + "\n" + "\n".join(review["findings"])
+        if review["decision"] in REWORK_VERDICTS:
+            feedback = reviewer_feedback(review["summary"], findings)
             continue
         report.update(state="DONE", reason="Technical checks and independent review passed; business acceptance remains with Human Owner")
         break
