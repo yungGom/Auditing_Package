@@ -7,6 +7,11 @@
 개발자도구 Network 탭에 잡히지 않는다(설계안 §1 안 1).
 """
 import base64
+import copy
+import functools
+import hashlib
+import io
+import tempfile
 import datetime
 import json
 import os
@@ -53,8 +58,38 @@ def _atomic_write(path, text):
     os.replace(tmp, path)
 
 
+def _state_locked(method):
+    """Serialize state loading/saving with export snapshot capture, not rendering."""
+    @functools.wraps(method)
+    def locked(self, *args, **kwargs):
+        with self._state_lock:
+            return method(self, *args, **kwargs)
+    return locked
+
+
+def _validate_export(path, source_pages):
+    """Reopen staged bytes and force lazy page/content parsing before publication."""
+    with open(path, "rb") as stream:
+        reader = PdfReader(stream, strict=True)
+        if reader.is_encrypted or len(reader.pages) <= source_pages:
+            raise ValueError("완료 PDF의 본문 또는 요약 페이지가 없습니다.")
+        for index, page in enumerate(reader.pages):
+            if float(page.mediabox.width) <= 0 or float(page.mediabox.height) <= 0:
+                raise ValueError("완료 PDF의 페이지 크기가 올바르지 않습니다.")
+            contents = page.get_contents()
+            # Blank source pages are valid; parsing every present stream detects
+            # broken references, decoding failures and malformed content syntax.
+            if contents is not None:
+                contents.get_data()
+                contents.operations
+            if index >= source_pages and (contents is None or not contents.operations):
+                raise ValueError("완료 PDF의 요약 내용 스트림이 비어 있습니다.")
+
+
 class Api:
     def __init__(self, pdf_path=None, marks_path=None, review_path=None):
+        self._state_lock = threading.RLock()
+        self._export_lock = threading.Lock()
         self._pdf_path = pdf_path
         self._marks_path = marks_path
         self._review_path = review_path
@@ -91,6 +126,7 @@ class Api:
         return {"name": os.path.basename(self._pdf_path),
                 "base64": base64.b64encode(data).decode("ascii")}
 
+    @_state_locked
     def get_marks(self):
         """→ {marks, counts}. annotations[]는 여기서부터 걸러 JS로 아예 보내지 않는다 —
         U-2 요구("annotations는 목록에 넣지 않는다")를 렌더 단계가 아니라 전송 단계에서
@@ -106,12 +142,14 @@ class Api:
         except json.JSONDecodeError as e:
             return {"error": f"marks.json 형식이 올바르지 않습니다: {e}"}
         self._doc = doc
-        res = {"marks": doc.get("marks", []),
-               "counts": doc.get("document", {}).get("counts", {})}
+        res = {"marks": copy.deepcopy(doc.get("marks", [])),
+               "counts": copy.deepcopy(doc.get("document", {}).get("counts", {}))}
         # 저장된 판단을 얹어 보낸다. 실패는 조용히 넘기지 않는다 — 판단이 사라진 것처럼
         # 보이면 회계사가 다시 검토하게 되고, 그건 조서 신뢰의 문제다.
         rv = self._load_review(doc)
         if rv.get("error"):
+            self._doc = None
+            self._judgments = {}
             res["review_error"] = rv["error"]
         else:
             self._judgments = rv.get("judgments", {})
@@ -152,6 +190,7 @@ class Api:
                               f"파일 경로: {self._review_path}")}
         return rv
 
+    @_state_locked
     def save_judgment(self, mark_id, status, comment=None):
         """판단 1건을 즉시 파일에 쓴다. 쓰는 대상은 판단 파일뿐 — marks.json·PDF에는
         절대 쓰지 않는다(분석 산출물은 UI가 손대지 않는다는 U-1 이래의 경계)."""
@@ -159,11 +198,13 @@ class Api:
             return {"error": "판단을 저장할 경로가 없습니다."}
         if self._doc is None:
             return {"error": "marks.json을 아직 읽지 않았습니다."}
-        self._judgments[mark_id] = {
+        judgments = copy.deepcopy(self._judgments)
+        reviewer = self.get_reviewer().get("reviewer") or ""
+        judgments[mark_id] = {
             "status": status,
             "comment": (comment or "").strip() or None,
             "reviewed_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "reviewed_by": self.get_reviewer().get("reviewer") or None,
+            "reviewed_by": reviewer or None,
         }
         src = self._doc.get("source") or {}
         payload = {
@@ -171,14 +212,15 @@ class Api:
             "source_pdf": src.get("pdf"),
             "source_sha256": src.get("sha256"),
             "marks_run": (self._doc.get("run") or {}).get("run_ts"),
-            "reviewer": self.get_reviewer().get("reviewer") or "",
+            "reviewer": reviewer,
             "saved_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "judgments": self._judgments,
+            "judgments": judgments,
         }
         try:
             _atomic_write(self._review_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
         except OSError as e:
             return {"error": f"판단을 저장하지 못했습니다: {e}"}
+        self._judgments = judgments
         return {"ok": True, "saved": len(self._judgments), "path": self._review_path}
 
     # ── 검토자 · 개발자 모드 ────────────────────────────────────────────
@@ -189,11 +231,13 @@ class Api:
         except (OSError, json.JSONDecodeError):
             return {}
 
+    @_state_locked
     def get_reviewer(self):
         """ui/config.json에 이름 하나만 둔다. 인증이 아니라 '누가 검토했는지'다.
         이 파일은 .gitignore 대상 — 사람 이름이 저장소에 들어가면 안 된다."""
         return {"reviewer": str(self._load_config().get("reviewer") or "").strip()}
 
+    @_state_locked
     def set_reviewer(self, name):
         name = (name or "").strip()
         if not name:
@@ -236,6 +280,7 @@ class Api:
                         "last_opened": r.get("last_opened") or "", "exists": os.path.isfile(p)})
         return {"recents": out}
 
+    @_state_locked
     def remove_recent(self, path):
         cfg = self._load_config()
         cfg["recents"] = [r for r in cfg.get("recents", []) if r.get("path") != path]
@@ -245,6 +290,7 @@ class Api:
             return {"error": str(e)}
         return {"ok": True}
 
+    @_state_locked
     def _touch_recent(self, tick_path):
         """표시 이름은 원본 보고서 이름이다(_틱마크.pdf가 아니다) — 회계사는 원본
         파일명으로 문서를 기억한다. 저장 실패는 조용히 넘어간다 — 최근 목록은
@@ -331,12 +377,13 @@ class Api:
         if not os.path.isfile(tick_path):
             return {"error": f"파일을 찾을 수 없습니다: {tick_path}"}
         base = tick_path[:-len("_틱마크.pdf")]
-        self._pdf_path = tick_path
-        marks_path = base + "_marks.json"
-        self._marks_path = marks_path if os.path.isfile(marks_path) else None
-        self._review_path = base + "_판단.json"
-        self._doc = None; self._judgments = {}
-        self._touch_recent(tick_path)
+        with self._state_lock:
+            self._pdf_path = tick_path
+            marks_path = base + "_marks.json"
+            self._marks_path = marks_path if os.path.isfile(marks_path) else None
+            self._review_path = base + "_판단.json"
+            self._doc = None; self._judgments = {}
+            self._touch_recent(tick_path)
         self._goto_viewer()
         return {"status": "opened"}
 
@@ -400,11 +447,12 @@ class Api:
         if not os.path.isfile(paths["tick"]):
             self._push_progress({"error": "분석이 끝났지만 산출물을 찾을 수 없습니다."})
             return
-        self._pdf_path = paths["tick"]
-        self._marks_path = paths["marks"] if os.path.isfile(paths["marks"]) else None
-        self._review_path = paths["review"]
-        self._doc = None; self._judgments = {}
-        self._touch_recent(paths["tick"])
+        with self._state_lock:
+            self._pdf_path = paths["tick"]
+            self._marks_path = paths["marks"] if os.path.isfile(paths["marks"]) else None
+            self._review_path = paths["review"]
+            self._doc = None; self._judgments = {}
+            self._touch_recent(paths["tick"])
         self._goto_viewer()
 
     def cancel_analysis(self):
@@ -445,31 +493,87 @@ class Api:
 
     # ── 최종 출력 ────────────────────────────────────────────────────
     def export_final(self):
-        """판단을 반영한 <원본>_검토완료.pdf. 원본 marks.json은 읽기만 하고,
-        status를 반영한 **사본**을 render_all에 넘긴다."""
-        import copy, render, summary
-        if self._doc is None:
-            return {"error": "marks.json을 아직 읽지 않았습니다."}
-        base = self._pdf_path[:-len("_틱마크.pdf")] if self._pdf_path.endswith("_틱마크.pdf") \
-            else os.path.splitext(self._pdf_path)[0]
-        src_pdf = base + ".pdf"
-        if not os.path.isfile(src_pdf):
-            return {"error": f"원본 PDF를 찾을 수 없습니다: {src_pdf}"}
-        out = base + "_검토완료.pdf"
+        """Export one saved-state snapshot; publish only a validated complete PDF.
+
+        Later review/document changes belong to the next export. Each call owns
+        its staging directory, including summary.append_to's internal .tmp file.
+        """
+        import render, summary
+        if not self._export_lock.acquire(blocking=False):
+            return {"error": "이미 최종 출력이 진행 중입니다. 완료 후 다시 시도하십시오."}
+        staging = None
+        result = None
+        published = False
         try:
-            doc = copy.deepcopy(self._doc)
-            for m in doc.get("marks", []):
-                j = self._judgments.get(m["id"])
-                if j: m["status"] = j.get("status", m.get("status"))
-            tick = base + "_틱마크.pdf"
-            render.render_all(src_pdf, doc, tick + ".tmp_final", quiet=True)
-            t = summary.append_to(tick + ".tmp_final", doc, self._judgments,
-                                  self.get_reviewer().get("reviewer"), out)
-            os.remove(tick + ".tmp_final")
+            with self._state_lock:
+                if self._doc is None:
+                    return {"error": "marks.json을 아직 읽지 않았습니다."}
+                doc = copy.deepcopy(self._doc)
+                judgments = copy.deepcopy(self._judgments)
+                reviewer = self.get_reviewer().get("reviewer") or ""
+                pdf_path = self._pdf_path
+                base = pdf_path[:-len("_틱마크.pdf")] if pdf_path.endswith("_틱마크.pdf") \
+                    else os.path.splitext(pdf_path)[0]
+                src_pdf = base + ".pdf"
+                out = os.path.abspath(base + "_검토완료.pdf")
+                # Read once while state is fixed. No renderer reopens the live
+                # source path; recorded marks hash also rejects a changed source.
+                with open(src_pdf, "rb") as source:
+                    before = os.fstat(source.fileno())
+                    source_bytes = source.read()
+                    after = os.fstat(source.fileno())
+                if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                    raise ValueError("원본 PDF가 읽는 중 변경되었습니다. 다시 시도하십시오.")
+                expected = (doc.get("source") or {}).get("sha256")
+                if expected and hashlib.sha256(source_bytes).hexdigest() != expected:
+                    raise ValueError("원본 PDF가 분석 당시와 다릅니다. 다시 분석하십시오.")
+            source_pages = len(PdfReader(io.BytesIO(source_bytes), strict=True).pages)
+            if not source_pages:
+                raise ValueError("원본 PDF에 페이지가 없습니다.")
+            for mark in doc.get("marks", []):
+                judgment = judgments.get(mark["id"])
+                if judgment:
+                    mark["status"] = judgment.get("status", mark.get("status"))
+            staging = tempfile.mkdtemp(prefix=".dsd-export-", dir=os.path.dirname(out))
+            source_copy = os.path.join(staging, "source.pdf")
+            tick = os.path.join(staging, "body.pdf")
+            completed = os.path.join(staging, "completed.pdf")
+            with open(source_copy, "wb") as source:
+                source.write(source_bytes)
+            render.render_all(source_copy, doc, tick, quiet=True)
+            t = summary.append_to(tick, doc, judgments, reviewer, completed)
+            _validate_export(completed, source_pages)
+            # Build the response and remove disposable input/body before commit.
+            # Neither step may turn an already-published PDF into a failure.
+            result = {"ok": True, "path": out, "pending": t["pending"],
+                      "approved": t["approved"], "removed": t["removed"], "total": t["total"]}
+            os.remove(source_copy)
+            os.remove(tick)
+            os.replace(completed, out)
+            published = True
         except Exception as e:
-            return {"error": f"출력에 실패했습니다: {type(e).__name__}: {e}"}
-        return {"ok": True, "path": out, "pending": t["pending"],
-                "approved": t["approved"], "removed": t["removed"], "total": t["total"]}
+            result = {"error": f"출력에 실패했습니다: {type(e).__name__}: {e}"}
+        finally:
+            if staging is not None:
+                # Windows may transiently retain deleted directory entries.
+                # Retry only our unique directory; never glob neighboring files.
+                for attempt in range(3):
+                    try:
+                        shutil.rmtree(staging)
+                        break
+                    except FileNotFoundError:
+                        break
+                    except OSError as cleanup_error:
+                        if attempt < 2:
+                            time.sleep(0.05 * (attempt + 1))
+                        if attempt == 2:
+                            warning = f"임시 출력 정리 실패: {staging}: {cleanup_error}"
+                            if published:
+                                result["warning"] = warning
+                            elif result is not None:
+                                result["error"] += " / " + warning
+            self._export_lock.release()
+        return result
 
     def export_errors_snippet(self):
         """'차이 아님'으로 판정한 항목을 ERRORS.json 형식 문자열로 만든다.
