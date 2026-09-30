@@ -2,9 +2,9 @@
 
 ## 한눈에 보기
 
-**전체 단계:** 현재 작업 브랜치에는 Issue 한 건을 읽어 변경·자동 검사·독립 검토·결과 보고까지 진행하는 도구가 있습니다. GitHub의 기본 브랜치에 배포됐다는 뜻은 아닙니다. **지금 사용할 수 있는 부분:** 정해진 양식으로 Issue를 작성하고, 보호 파일 검사와 제품별 검사를 실행하며, 결과와 남은 공백을 구분해 보고할 수 있습니다. **사람이 해야 하는 부분:** 요청과 업무 판단 확인, Pull Request 작성·최종 수용·병합, 수동 화면 확인과 작업 현황판 갱신입니다. 다음으로 효과가 큰 일은 ① GitHub Project를 만들고 Issue와 연결하기, ② 처음과 마지막 사람 승인 기록을 명확하게 강제하기, ③ 병합 전 필수 검사를 저장소 설정에서 의무화하기입니다.
+**전체 단계:** 현재 작업 브랜치에는 Issue 한 건을 읽어 변경·자동 검사·독립 검토·결과 보고까지 진행하는 도구가 있습니다. GitHub의 기본 브랜치에 배포됐다는 뜻은 아닙니다. **지금 사용할 수 있는 부분:** 정해진 양식으로 Issue를 작성하고, 보호 파일 검사와 제품별 검사를 실행하며, 결과와 남은 공백을 구분해 보고할 수 있습니다. 전체 작업 현황판을 위한 공개 Issue 12건을 조사·복원했으나, GitHub Project 자체는 인증 대기 중입니다. **사람이 해야 하는 부분:** 요청과 업무 판단 확인, Pull Request 작성·최종 수용·병합, 수동 화면 확인과 Project 현황 갱신입니다. 다음으로 효과가 큰 일은 ① 인증 후 기존 Project를 확인하고 현황판 만들기, ② 처음과 마지막 사람 승인 기록을 명확하게 강제하기, ③ 병합 전 필수 검사를 저장소 설정에서 의무화하기입니다.
 
-**판정 기준:** 2026-09-30에 조사한 `feat/orchestrator-mvp`의 `6be6f79`와 당시 작업트리에 있던 Harness 보고서 관련 변경. 아래 상태는 그 **조사 시점의 구현**을 뜻하며, 기본 브랜치 반영·GitHub 설정 적용·실제 업무 승인을 뜻하지 않습니다. [이전 architecture 조사 기록](architecture_history.md)은 더 이른 기준의 자료이므로 현재 판정에는 사용하지 않았습니다.
+**판정 기준:** 2026-09-30에 조사한 `feat/orchestrator-mvp`의 `cfb01bd` 및 같은 날 GitHub Issue·PR 목록. 아래 상태는 그 **조사 시점의 구현과 확인된 원격 상태**를 뜻하며, 기본 브랜치 반영·GitHub 설정 적용·실제 업무 승인을 뜻하지 않습니다. [이전 architecture 조사 기록](architecture_history.md)은 더 이른 기준의 자료이므로 현재 판정에는 사용하지 않았습니다.
 
 | 구성요소 | 상태 | 현재 동작 | 근거 | 다음 단계 |
 | --- | --- | --- | --- | --- |
@@ -26,27 +26,21 @@
 | PR 생성 | 🟡 부분 구현 / 수동 단계 존재 | 인계 절차와 템플릿은 있으나 자동 생성 없음 | [PR 템플릿](../../.github/pull_request_template.md), [`development_workflow.md`](development_workflow.md), [`orchestrator_mvp.md`](orchestrator_mvp.md) | 사람이 Issue 연결과 결과 기재 |
 | PR 검증 정보 | 🟡 부분 구현 / 수동 단계 존재 | PR 템플릿이 검사·보호 결과를 요구하고 CI 두 작업이 정의됨; 기록·실행 결과 확인은 필요 | [PR 템플릿](../../.github/pull_request_template.md), [CI](../../.github/workflows/harness.yml) | 실제 PR마다 FAIL/SKIP/NOT RUN 정확히 적기 |
 | Merge 전 검증 | 🟡 부분 구현 / 수동 단계 존재 | CI 검사 정의와 CODEOWNERS가 있으나 브랜치 규칙의 강제 적용은 확인되지 않음 | [CI](../../.github/workflows/harness.yml), [적용 한계](enforcement.md), [CODEOWNERS](../../.github/CODEOWNERS) | 저장소 소유자가 필수 검사·검토 규칙 확인/설정 |
-| GitHub Project 연동 | ❌ 미구현 | 코드 연동 없음. 공개 목록에서 Project가 보이지 않았고, 비공개 Project는 인증 실패로 조회하지 못함. 이번 작업에서 생성·상태 열 설정 불가 | [`orchestrator_mvp.md`](orchestrator_mvp.md) (연동 범위 밖), [공개 Project 목록](https://github.com/yungGom?tab=projects) | GitHub에 다시 인증해 기존 비공개 Project 확인 후 현황판 생성·상태 열 구성 |
+| GitHub Project 연동 | ❌ 미구현 | 코드 연동 없음. 공개 목록에서 Project가 보이지 않았고, 비공개 Project는 인증 실패로 조회하지 못함. 실제 Project 생성·필드·View 설정 전 | [`orchestrator_mvp.md`](orchestrator_mvp.md) (연동 범위 밖), [Project 설정안](MASTER_DASHBOARD_BACKFILL.md) | 인증 후 기존 비공개 Project 확인, 중복 없이 Master Dashboard 생성 |
+| Master Request Registry | 🟡 부분 구현 / 수동 단계 존재 | Issue 12건을 조사·복원했으나 Project에 등록되지 않음; 고유 Request ID 미부여 | [Backfill 기록](MASTER_DASHBOARD_BACKFILL.md), [현황판 Issue #14](https://github.com/yungGom/Auditing_Package/issues/14) | Project 목록·기존 ID 확인 뒤 불변 ID 부여·Issue 연결 |
+| Owner Inbox | ❌ 미구현 | 즉시 사람 행동 후보는 기록했지만 필터 View는 없음 | [Backfill 기록](MASTER_DASHBOARD_BACKFILL.md) | Owner Action 필드와 Done 제외 필터를 실제로 구성·검증 |
+| Project status update | ❌ 미구현 | Orchestrator와 Project 간 상태 갱신 없음 | [`orchestrator_mvp.md`](orchestrator_mvp.md), [동기화 책임](MASTER_DASHBOARD_BACKFILL.md) | Issue 증거와 Project 상태를 먼저 수동 일치시킨 뒤 자동화 검토 |
+| Issue → Project registration | ❌ 미구현 | Issue는 생겼으나 Project 항목 연결 기능·설정 없음 | [Backfill 기록](MASTER_DASHBOARD_BACKFILL.md), [`development_workflow.md`](development_workflow.md) | Project 생성 뒤 기존 Issue 12건부터 연결 |
+| Verification → Project status update | ❌ 미구현 | 검증 결과는 Issue/보고서에 남아도 Project에는 반영되지 않음 | [`scripts/orchestrator.py`](../../scripts/orchestrator.py), [동기화 책임](MASTER_DASHBOARD_BACKFILL.md) | 검증 증거 확인 후 수동 갱신, 자동화는 별도 설계 |
+| Merge → Done update | ❌ 미구현 | 병합·업무 수용 확인과 Project Done 연결 없음 | [`development_workflow.md`](development_workflow.md), [동기화 책임](MASTER_DASHBOARD_BACKFILL.md) | 실제 병합·수용 근거를 확인하는 전환 규칙 마련 |
+| Backfill | 🟡 부분 구현 / 수동 단계 존재 | 열린 Issue 6건 재사용, 근거가 있던 미기록 작업 6건을 Issue로 복원; 과거 병합 PR·세부 DSD/AuditDesk 항목은 추가 조사 필요 | [Backfill 기록](MASTER_DASHBOARD_BACKFILL.md), [#14](https://github.com/yungGom/Auditing_Package/issues/14)–[#19](https://github.com/yungGom/Auditing_Package/issues/19) | 완료 추측 없이 남은 이력 확인, Project에 연결 |
 | Agent 간 자동 routing | ❌ 미구현 | Issue 한 건의 고정된 Implementer·Reviewer 순서만 존재; 동적 배정 없음 | [`orchestrator_mvp.md`](orchestrator_mvp.md), [`scripts/orchestrator.py`](../../scripts/orchestrator.py) | 배정 규칙·권한·실패 인계 설계 |
 | 전체 end-to-end 자동화 | ❌ 미구현 | Issue 작성/첫 승인, Project, PR 생성, 최종 승인, 병합이 수동 | [`development_workflow.md`](development_workflow.md), [`orchestrator_mvp.md`](orchestrator_mvp.md) | 사람 판단을 남긴 채 단계 연결 설계 |
 
 **알려진 검사 공백:** [`enforcement.md`](enforcement.md)는 현재 공개 체크아웃에서 AuditDesk의 실제 파일이 없어 전체 CI 회귀 검사가 실패할 수 있다고 명시합니다. 부분 작업의 성공과 저장소 전체의 기술 검증 통과를 혼동하지 않습니다. 실제 검사 결과는 해당 실행의 보고서에서 확인해야 하며, 이 문서의 상태 표가 개별 테스트의 PASS를 보증하지는 않습니다.
 
-## GitHub Project를 만들 수 있을 때의 상태 열
+## GitHub Project 설정 대기
 
-아래는 **설정 완료된 현황판이 아니라 설정안**입니다. `Auditing_Package Harness`라는 Project를 만들거나 같은 목적의 기존 Project를 확인한 뒤, Status 필드와 Board view에 순서대로 적용할 수 있습니다. 각 칸의 이동은 현재 자동화되지 않았습니다. `PR` 칸은 최종 수용 후 병합을 준비하는 상태를 뜻하며, 검증 결과 인계용 Pull Request 자체는 그 전에 열릴 수 있습니다.
-
-| 순서 | Status | 뜻 |
-| --- | --- | --- |
-| 1 | Intake | 업무 요청 접수 |
-| 2 | Issue Drafted | 요구사항 정리 중 |
-| 3 | Awaiting Owner Approval | 최초 업무 판단 대기 |
-| 4 | Implementing | 변경 작업 중 |
-| 5 | Automated Test | 자동 검사 중 |
-| 6 | Reviewer | 독립 검토 중 |
-| 7 | Verification Report | 결과 보고 준비 중 |
-| 8 | Awaiting Final Approval | 최종 업무 수용 대기 |
-| 9 | PR | 변경 제안 검토·병합 대기 |
-| 10 | Done | 사람의 수용·병합 결정 후 완료 |
+[Master Dashboard Backfill 기록](MASTER_DASHBOARD_BACKFILL.md)에 9개 필드, 요청한 저장 View, 11개 Status(별도 `Blocked` 포함), Issue별 등록 초안과 수동/자동 동기화 경계를 정리했습니다. 이는 **설정 완료된 현황판이 아닙니다.** Project 접근이 복구되면 실제 Project·기존 ID를 먼저 확인하고 등록해야 합니다. `PR` 상태는 최종 수용 뒤 병합을 준비하는 단계로 쓰되, 검증 결과를 전달할 초안 PR은 그 전에 열릴 수 있습니다.
 
 상태가 바뀌는 Harness 변경에서는 근거와 다음 단계를 다시 확인합니다. 구조도 함께 바뀐다면 [ARCHITECTURE.md](ARCHITECTURE.md)도 갱신합니다.

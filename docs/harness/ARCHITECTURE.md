@@ -50,7 +50,7 @@ Harness는 요청, 지켜야 할 기준, 검사 결과와 사람의 결정을 �
 
 ## D. Information Flow
 
-업무 요구사항은 사람이 [Issue 템플릿](../../.github/ISSUE_TEMPLATE/development_task.md)의 쉬운 요약과 **Developer Details**에 기록합니다. 실행 도구는 열린 Issue의 승인·검사 계약을 읽고 Implementer에 전달합니다. Implementer 변경은 Git diff로 남습니다. 보호 검사와 제품별 검사가 증거를 만들고, Reviewer는 Issue, diff와 공식 검사 결과를 함께 봅니다. 보고서는 실패·건너뜀·기존 공백·새 문제와 검토 의견을 구분합니다. [PR 템플릿](../../.github/pull_request_template.md)은 결과를 사람에게 인계합니다. GitHub Project로의 상태 전파는 자동화되지 않았습니다.
+업무 요구사항은 사람이 [Issue 템플릿](../../.github/ISSUE_TEMPLATE/development_task.md)의 쉬운 요약과 **Developer Details**에 기록합니다. Issue가 작업·결정·상세 증거의 기준 기록이며, 실행 세션은 임시 작업 공간입니다. 실행 도구는 열린 Issue의 승인·검사 계약을 읽고 Implementer에 전달합니다. Implementer 변경은 Git diff로 남습니다. 보호 검사와 제품별 검사가 증거를 만들고, Reviewer는 Issue, diff와 공식 검사 결과를 함께 봅니다. 보고서는 실패·건너뜀·기존 공백·새 문제와 검토 의견을 구분합니다. [PR 템플릿](../../.github/pull_request_template.md)은 결과를 사람에게 인계합니다. GitHub Project로의 상태 전파는 자동화되지 않았습니다.
 
 ## E. 업무 담당자 영역과 개발자 영역
 
@@ -92,3 +92,28 @@ Auditing_Package/
 ## G. 구조 변경 시 문서 동기화
 
 Harness 단계, 승인 경계, 담당 역할, 검사 또는 보고 경로를 바꾸는 Pull Request에서는 이 문서의 그림·표·설명을 함께 검토합니다. 그래야 코드가 바뀌었는데 GitHub 구조도는 예전 동작을 설명하는 일을 막을 수 있습니다. 구현 상태가 바뀌면 [HARNESS_STATUS.md](HARNESS_STATUS.md)의 근거와 다음 단계도 갱신합니다. [PR 템플릿](../../.github/pull_request_template.md)에 확인 항목이 있습니다.
+
+## H. 전체 개발 요청 현황판 목표 구조 — 아직 미구현
+
+아래는 **설정 목표**입니다. 실제 GitHub Project가 존재한다는 뜻이 아닙니다. DSD_FOOTING, AuditDesk, XBRL, Harness 등의 요청은 각각 Issue로 관리하고, Master Dashboard에는 짧은 현재 상태·다음 행동·업무 담당자 확인사항만 표시합니다. 세부 결정·검사·검토 이력은 Issue에 남깁니다. [Backfill 기록과 설정안](MASTER_DASHBOARD_BACKFILL.md)에 실제로 확인한 Issue와 필드·View 계획을 구분해 두었습니다.
+
+```mermaid
+flowchart TD
+    O["업무 담당자"] --> M["Master Dashboard: 생성 대기"]
+    M --> R["전체 요청 현황: Issue 연결 예정"]
+    R --> I1["DSD_FOOTING Issue"]
+    R --> I2["AuditDesk·XBRL Issue"]
+    R --> I3["Harness·공통 Issue"]
+    I1 --> W["한 건의 Issue 실행"]
+    I2 --> W
+    I3 --> W
+    W --> E["Implementer"]
+    W --> V["자동 검사와 Reviewer"]
+    E --> V
+    V --> P["검증 결과는 Issue에 기록"]
+    P --> U["Project 요약 수동 갱신 예정"]
+    U --> B["업무 담당자 확인 목록: 생성 대기"]
+    B --> O
+```
+
+Project 등록, 상태 이동, Owner Inbox와 병합 후 Done 변경은 현재 구현되지 않았습니다. 도구가 검사를 실행하더라도 Project에는 자동 반영되지 않으며, 사람이 Issue의 근거를 확인해 갱신해야 합니다. Project가 실제 생성되면 URL, 필드와 View를 검증한 뒤 이 절을 현재 구조로 수정합니다.

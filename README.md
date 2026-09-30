@@ -16,6 +16,7 @@
 
 - [Harness 구조와 업무 흐름](docs/harness/ARCHITECTURE.md)
 - [현재 구현 상태와 남은 수동 단계](docs/harness/HARNESS_STATUS.md)
+- [전체 개발 요청 현황판 준비·복원 기록](docs/harness/MASTER_DASHBOARD_BACKFILL.md)
 - [개발 절차](docs/harness/development_workflow.md)
 - [공통 정책](governance/POLICY.md) · [Agent 안내](AGENTS.md)
 
