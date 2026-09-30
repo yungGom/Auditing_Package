@@ -423,7 +423,12 @@ def agent(role: str, issue: dict[str, Any], feedback: str, timeout: int,
 
 
 def comment(repo: str, issue_number: int, report: dict[str, Any]) -> str | None:
-    lines = [f"Orchestrator MVP: **{report['state']}**", report["reason"],
+    from orchestrator_reporting import human_owner_summary
+
+    lines = [report.get("human_owner_summary") or human_owner_summary(report),
+             "", "## Developer Details", "",
+             f"Orchestrator MVP: **{report['state']}**",
+             f"Blocker class: {report.get('blocker_class') or 'NONE'}",
              f"Attempts: {report['attempts']}"]
     for step in report["evidence"]:
         # Full logs remain in the local JSON report; a comment only carries
@@ -862,6 +867,9 @@ def main() -> int:
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
         report = {"issue": args.issue, "state": "FAILED", "reason": str(exc),
                   "attempts": 0, "evidence": []}
+    from orchestrator_reporting import human_owner_summary
+
+    report = {"human_owner_summary": human_owner_summary(report), **report}
     if not args.dry_run and not args.no_comment and not args.issue_json:
         error = comment(args.repo, args.issue, report)
         if error:

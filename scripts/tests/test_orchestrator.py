@@ -360,7 +360,10 @@ class PreflightTests(unittest.TestCase):
                 printed = json.loads(buffer.getvalue().decode("cp949"))
                 saved = json.loads(output.read_text(encoding="utf-8"))
                 self.assertEqual(printed, saved)
-                self.assertEqual(saved, report)
+                self.assertEqual({key: value for key, value in saved.items()
+                                  if key != "human_owner_summary"}, report)
+                self.assertEqual(next(iter(saved)), "human_owner_summary")
+                self.assertTrue(saved["human_owner_summary"].startswith("## 한눈에 보기"))
                 self.assertEqual(code, expected_code)
 
     def test_happy_path_keeps_preflight_diagnostic_and_reviewer(self):

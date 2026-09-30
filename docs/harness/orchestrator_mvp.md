@@ -139,3 +139,17 @@ The local report separates `task_required_checks`, `regression_checks`,
 still ends as DONE. A scoped run with only declared, unchanged baseline gaps
 ends as TASK_PASS_WITH_KNOWN_GAPS. The old Issue contract without a task-check
 section retains the original DONE/HUMAN_APPROVAL/FAILED behavior.
+
+Every final JSON report starts with a `human_owner_summary` field containing
+the six-question Korean `## 한눈에 보기` section. The existing machine-readable
+state, evidence, task/repository results, Reviewer findings, and decision
+fields remain at the top level as Developer Details for compatibility. Issue
+status comments use the same summary, followed by `## Developer Details` and
+bounded status evidence. They omit freeform reason and agent text; the full
+reason remains in the local JSON. The summary never converts FAIL, SKIP,
+NOT RUN, or an observed known gap into a pass. It uses only structured state
+and check outcomes, not arbitrary Issue or agent prose, so it cannot supply
+specific business change descriptions or approval options. A separate reviewed
+Human Approval request must state those options in its own top summary before
+the owner decides. See `report_template.md` for other Harness reports,
+including UAT and Human Approval requests.
