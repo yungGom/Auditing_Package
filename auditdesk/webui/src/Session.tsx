@@ -1,6 +1,6 @@
 // 세션 상세 — 개요(파이프라인)·시트 뷰·수정 확인(반영 전 확인)·이력 + 반영 완료 모달
 // (UI-7: 화면 용어는 GLOSSARY 기준 — API 경로·reason 코드는 계약 불변)
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, Job, pollJob } from "./api";
 import {
   Card, chip, ErrorBanner, F_HEAD, F_LABEL, GhostBtn, Icon, MONO,
@@ -32,26 +32,86 @@ export default function Session({ sessionId, initialTab }: {
   const [err, setErr] = useState("");
   const [job, setJob] = useState<Job | null>(null);
   const [modal, setModal] = useState<any>(null);
+  const activeSession = useRef<string | null>(sessionId);
+  const reloadSerial = useRef(0);
+  const jobSerial = useRef(0);
+  const xbrlPending = useRef(false);
+  const xbrlSerial = useRef(0);
+  activeSession.current = sessionId;
 
   const reload = useCallback(() => {
-    api(`/api/workbench/sessions/${sessionId}`).then(setS)
-      .catch((e) => setErr(e.message));
+    const serial = ++reloadSerial.current;
+    api(`/api/workbench/sessions/${sessionId}`).then((next) => {
+      if (activeSession.current === sessionId &&
+          serial === reloadSerial.current) {
+        setS(xbrlPending.current ? { ...next, xbrl_result: null } : next);
+      }
+    }).catch((e) => {
+      if (activeSession.current === sessionId &&
+          serial === reloadSerial.current) setErr(e.message);
+    });
   }, [sessionId]);
-  useEffect(reload, [reload]);
+  useEffect(() => {
+    activeSession.current = sessionId;
+    setS(null);
+    setErr("");
+    setJob(null);
+    reload();
+    const refresh = window.setInterval(reload, 2000);
+    return () => {
+      window.clearInterval(refresh);
+      activeSession.current = null;
+      reloadSerial.current++;
+      jobSerial.current++;
+      xbrlSerial.current++;
+      xbrlPending.current = false;
+    };
+  }, [reload]);
 
   const runJob = async (path: string, body?: any, method = "POST") => {
+    const serial = ++jobSerial.current;
+    const current = () => activeSession.current === sessionId &&
+      serial === jobSerial.current;
+    const invalidatesXbrl = path.endsWith("/extract") ||
+      path === "/api/studio/xbrl-recon";
+    const xbrlRun = invalidatesXbrl ? ++xbrlSerial.current : null;
+    const ownsXbrl = () => invalidatesXbrl &&
+      activeSession.current === sessionId &&
+      xbrlRun === xbrlSerial.current;
     setErr("");
+    if (invalidatesXbrl) {
+      // Discard an earlier reload before it can restore a superseded result.
+      reloadSerial.current++;
+      xbrlPending.current = true;
+      setS((old: any) => old ? {
+        ...old, xbrl_result: null,
+        ...(path.endsWith("/extract") ? { xlsx_path: null,
+          xbrl_revision: null } : {}),
+      } : old);
+    }
     try {
       const r = await api(path, {
         method, body: JSON.stringify(body || {}),
       });
-      const done = await pollJob(r.job_id, setJob);
+      const done = await pollJob(r.job_id, (tick) => {
+        if (current()) setJob(tick);
+      });
+      if (ownsXbrl()) {
+        xbrlPending.current = false;
+        reload();
+      }
+      if (!current()) return null;
       setJob(null);
       if (done.state === "error")
         setErr(done.error_detail?.detail || "작업 실패");
       reload();
       return done;
     } catch (e: any) {
+      if (ownsXbrl()) {
+        xbrlPending.current = false;
+        reload();
+      }
+      if (!current()) return null;
       setJob(null);
       setErr(e.message);
       reload();
@@ -59,7 +119,8 @@ export default function Session({ sessionId, initialTab }: {
     }
   };
 
-  if (!s) return <div style={{ padding: 24 }}><ErrorBanner msg={err} /></div>;
+  if (!s || s.session_id !== sessionId)
+    return <div style={{ padding: 24 }}><ErrorBanner msg={err} /></div>;
 
   const meta = s.meta || {};
   const stateChip: Record<string, React.CSSProperties> = {
@@ -793,39 +854,38 @@ function FootingTab({ sessionId, s, runJob, setErr, initialSub }: {
           priorPath={priorPath} setPriorPath={setPriorPath} />
       )}
       {sub === "xrecon" && (
-        <XbrlReconSub sessionId={sessionId} runJob={runJob} />
+        <XbrlReconSub sessionId={sessionId} runJob={runJob}
+          result={s.xbrl_result} />
       )}
     </div>
   );
 }
 
 // ---- XBRL 대사 서브탭 (V-1) — DSD ↔ 인스턴스 태깅 검증 ----
-function XbrlReconSub({ sessionId, runJob }: {
+function XbrlReconSub({ sessionId, runJob, result }: {
   sessionId: string;
   runJob: (path: string, body?: any) => Promise<any>;
+  result: any;
 }) {
   const [pkg, setPkg] = useState("");
   const [tol, setTol] = useState("");
-  const [result, setResult] = useState<any>(null);
   const [falseOnly, setFalseOnly] = useState(true);
   const [pkgs, setPkgs] = useState<any[]>([]);
 
   useEffect(() => {
-    api("/api/explorer/packages").then((r) =>
-      setPkgs(r.packages)).catch(() => {});
-    api("/api/jobs?kind=xbrl-recon").then((r) => {
-      const last = (r.jobs || []).find((j: any) =>
-        j.state === "done" && j.result);
-      if (last) setResult((c: any) => c ?? last.result);
+    let active = true;
+    setPkgs([]);
+    api("/api/explorer/packages").then((r) => {
+      if (active) setPkgs(r.packages || []);
     }).catch(() => {});
-  }, []);
+    return () => { active = false; };
+  }, [sessionId]);
 
   const run = async () => {
-    const done = await runJob("/api/studio/xbrl-recon", {
+    await runJob("/api/studio/xbrl-recon", {
       session_id: sessionId, package_dir: pkg,
       tolerance: tol ? Number(tol) : undefined,
     });
-    if (done?.state === "done") setResult(done.result);
   };
 
   const c = result?.counts || {};
