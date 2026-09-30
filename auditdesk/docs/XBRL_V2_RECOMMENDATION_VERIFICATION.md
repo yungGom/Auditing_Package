@@ -24,7 +24,7 @@
 
 ### 6. 지금 남은 일은 무엇인가?
 
-기능과 검증 보고서는 로컬에 저장했고 독립 검토까지 마쳤습니다. 사용자의 명시적 승인에 따라 앞선 SQLite 수정 이력을 포함한 검토 기준 브랜치를 공개 GitHub에 게시했습니다. 이번 기능의 작업 브랜치와 초안 PR은 게시 절차를 진행 중입니다. 실제 공시에서 사용할지는 공식 분류체계와 실자료 검증 후 별도로 판단해야 합니다.
+기능 구현과 독립 검토를 마치고, 사용자의 명시적 승인에 따라 GitHub에 [초안 PR #13](https://github.com/yungGom/Auditing_Package/pull/13)을 열었습니다. 앞선 SQLite 수정 이력을 포함한 검토 기준 브랜치도 게시했습니다. 실제 공시에서 사용할지는 공식 분류체계와 실자료 검증 후 별도로 판단해야 합니다.
 
 ## 개발자용 상세 근거
 
@@ -108,4 +108,4 @@ Manual real-report accuracy, official namespace/applicability confirmation, full
 
 ## Publication status
 
-The initial automatic approval review rejected publishing the foundation because authorization for the broader inherited payload was not explicit. The Human Owner subsequently authorized that exact scope. The published foundation includes the integration merge `713d4e5` and the existing SQLite/polling fix `b0e83b0` (8 files, 393 insertions and 34 deletions, including its historical verification report). The task branch and draft PR are being prepared separately; no merge was performed.
+The initial automatic approval review rejected publishing the foundation because authorization for the broader inherited payload was not explicit. The Human Owner subsequently authorized that exact scope. The published foundation includes the integration merge `713d4e5` and the existing SQLite/polling fix `b0e83b0` (8 files, 393 insertions and 34 deletions, including its historical verification report). The task branch is published and [draft PR #13](https://github.com/yungGom/Auditing_Package/pull/13) compares the 18 new Issue #9 files against the foundation. No merge was performed.
