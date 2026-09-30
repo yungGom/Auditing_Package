@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "nonce": {"type": "string"},
+    "candidate": {"type": "string"},
+    "executable": {"type": "string"},
+    "version": {"type": "string"},
+    "pytest": {"type": "boolean"},
+    "openpyxl": {"type": "boolean"},
+    "temp_write": {"type": "boolean"},
+    "git": {"type": "boolean"},
+    "npm": {"type": "boolean"},
+    "npm_version": {"type": "string"},
+    "error_code": {
+      "type": "string",
+      "enum": ["NONE", "ACCESS_DENIED", "NOT_FOUND", "MISSING_DEPENDENCY",
+               "TEMP_NOT_WRITABLE", "COMMAND_FAILED", "UNKNOWN"]
+    }
+  },
+  "required": ["nonce", "candidate", "executable", "version", "pytest",
+               "openpyxl", "temp_write", "git", "npm", "npm_version", "error_code"],
+  "additionalProperties": false
+}

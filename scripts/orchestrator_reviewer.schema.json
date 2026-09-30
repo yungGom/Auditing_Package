@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["PASS", "BLOCKER", "BLOCKING", "REQUEST_CHANGES", "HUMAN_APPROVAL"]
+    },
+    "summary": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocking", "nonblocking", "known_gap", "question", "informational"]
+          },
+          "summary": {"type": "string"},
+          "evidence": {"type": "string"}
+        },
+        "required": ["severity", "summary", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "blocker_class": {
+      "type": ["string", "null"],
+      "enum": ["IMPLEMENTATION", "ENVIRONMENT", "IMPLEMENTER_ENVIRONMENT",
+               "VERIFICATION_ENVIRONMENT", "EXISTING_BASELINE", "HUMAN_DECISION", null]
+    }
+  },
+  "required": ["decision", "summary", "findings", "blocker_class"],
+  "additionalProperties": false
+}
