@@ -24,7 +24,7 @@
 
 ### 6. 지금 남은 일은 무엇인가?
 
-기능과 검증 보고서는 로컬에 저장했고 독립 검토까지 마쳤습니다. 공개 GitHub 게시와 초안 PR은 아직 진행되지 않았습니다. 게시하려면 이번 기능 외에 앞선 SQLite 수정 이력과 검증 보고서도 함께 공개되므로, 그 범위에 대한 명시적 승인이 필요합니다. 실제 공시에서 사용할지는 공식 분류체계와 실자료 검증 후 별도로 판단해야 합니다.
+기능과 검증 보고서는 로컬에 저장했고 독립 검토까지 마쳤습니다. 사용자의 명시적 승인에 따라 앞선 SQLite 수정 이력을 포함한 검토 기준 브랜치를 공개 GitHub에 게시했습니다. 이번 기능의 작업 브랜치와 초안 PR은 게시 절차를 진행 중입니다. 실제 공시에서 사용할지는 공식 분류체계와 실자료 검증 후 별도로 판단해야 합니다.
 
 ## 개발자용 상세 근거
 
@@ -41,7 +41,7 @@ New modules: `dsd.py`, `taxonomy.py`, `recommendation.py`, `__main__.py` under `
 - Product source: `b0e83b00a3a0a5defe2ee7bea93a9f601519e2c2`.
 - Harness source: `6be6f791cd2e9456c24174b90777c6b1f4a88468`.
 - Isolated starting merge: `713d4e5a6dad431cf71d3cef48c23e448d894ed6`.
-- The proposed foundation branch at that exact starting merge is the review base. It includes pre-existing product/Harness history and is not a new approval to merge that history into main. The recommendation branch adds only the listed V2 code, tests and documentation above it. Publication is pending approval; neither foundation nor recommendation branch has been pushed.
+- The published `codex/current-first-foundation` branch at that exact starting merge is the review base. It includes pre-existing product/Harness history and is not a new approval to merge that history into main. The recommendation branch adds only the listed V2 code, tests and documentation above it.
 - Parent Orchestrator managed separate Implementer agents, official checks, and a read-only independent Reviewer. The MVP CLI does not allow these `auditdesk/tests` task commands. Its enforcement was unchanged; this report does not claim automatic `scripts/orchestrator.py` DONE.
 
 ## Acceptance and independent review
@@ -108,4 +108,4 @@ Manual real-report accuracy, official namespace/applicability confirmation, full
 
 ## Publication status
 
-Automatic approval review rejected pushing the proposed foundation to the public repository because authorization for the broader inherited payload was not explicit. The push was not executed and no workaround was attempted. Comparing the starting merge against all known origin refs identifies two unpublished commits: the integration merge `713d4e5` and the existing SQLite/polling fix `b0e83b0` (8 files, 393 insertions and 34 deletions, including its historical verification report). Publishing this ancestry requires an explicit Human Owner decision separate from reviewing the new V2 files. A draft PR body is prepared locally; no PR or merge was created.
+The initial automatic approval review rejected publishing the foundation because authorization for the broader inherited payload was not explicit. The Human Owner subsequently authorized that exact scope. The published foundation includes the integration merge `713d4e5` and the existing SQLite/polling fix `b0e83b0` (8 files, 393 insertions and 34 deletions, including its historical verification report). The task branch and draft PR are being prepared separately; no merge was performed.
