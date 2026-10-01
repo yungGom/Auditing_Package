@@ -1,3 +1,5 @@
+> Repository-wide AI governance: read `governance/POLICY.md` and `governance/PROTECTED_ARTIFACTS.md` first. The AuditLink-specific rules below remain in force for AuditLink.
+
 # AuditLink - 회계감사 일정관리 데스크톱 앱
 
 ## 기술 스택
