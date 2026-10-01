@@ -29,7 +29,8 @@ def main() -> int:
         report = Path(tmp) / "results.xml"
         py = subprocess.run(
             [sys.executable, "-m", "pytest", "dsd_workbench/dsd_tool/tests",
-             "dart_explorer/tests", "-q", f"--junitxml={report}"],
+             "dart_explorer/tests", "-q", f"--junitxml={report}",
+             f"--basetemp={Path(tmp) / 'pytest'}"],
             cwd=PROJECT,
             check=False,
         ).returncode
