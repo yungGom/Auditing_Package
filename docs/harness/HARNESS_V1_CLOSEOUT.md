@@ -116,3 +116,5 @@ Issue 등록, 검사·검토 후 상태 이동, 병합 후 완료, Inbox 알림,
 - Orchestrator는 새 구조화 결과의 자료 공백을 읽어 Reviewer에게 전달하며 scoped/legacy 실행 모두 TASK_PASS_WITH_KNOWN_GAPS와 업무 승인 대기를 유지합니다. 기존 Technical Gate 밖의 실패를 삭제하거나 업무 완료로 자동 승격하지 않습니다.
 
 구현 이후 clean checkout/CI/독립 검토 결과와 PR별 재평가는 Issue #23 검증보고서에서 확인합니다. #4/#6/#20 HEAD는 후속 승인 코드를 아직 포함하지 않으므로 기존 red 상태를 green으로 바꿔 적지 않습니다. 승인 후속 코드 반영·재검사와 전체 증거 확인이 필요합니다.
+
+[Issue #23 최신 검증보고서](ISSUE_23_VERIFICATION.md)는 승인 구현의 실제 결과를 기록합니다. 위 승인 전 실패 이력과 현재 후속 코드 결과를 혼동하지 않습니다.

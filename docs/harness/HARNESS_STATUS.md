@@ -47,7 +47,7 @@
 
 ## 수동 운영 준비
 
-[OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md)는 등록·번호·담당자 행동·완료·막힘의 수동 운영 책임을 설명합니다. #23/HARNESS-004는 정식 운영 마무리 요청이며 전체 실패가 남아 있습니다. 이 문서는 운영 완료나 Technical PASS를 선언하지 않습니다. [현재 병합 경로와 결정안](HARNESS_V1_CLOSEOUT.md)을 함께 확인합니다.
+[OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md)는 등록·번호·담당자 행동·완료·막힘의 수동 운영 책임을 설명합니다. #23/HARNESS-004는 정식 운영 마무리 요청입니다. 승인 전 조사 시점에는 전체 실패가 남아 있었습니다. 아래 최신 승인 구현과 검증보고서는 기본 검사 통과를 확인했지만 실제 자료 호환성·업무 수용·기본 브랜치 반영은 완료로 선언하지 않습니다. [현재 병합 경로와 결정안](HARNESS_V1_CLOSEOUT.md)을 함께 확인합니다.
 
 ## Issue #23 승인 구현 — 2026-10-01
 
@@ -58,3 +58,5 @@
 - 새 시간 제한·실행하지 못한 검사·결과 근거 검사: [`harness_process.py`](../../scripts/harness_process.py), [`harness_evidence.py`](../../scripts/harness_evidence.py).
 - 검사 범위 목록의 변경에는 새 Owner Decision이 필요합니다. 보호 checker 자동 등록은 보호 정책의 정확한 변경 승인 후 별도로 처리합니다.
 - PR별 실제 검사 결과와 병합 가능 상태는 [Issue #23](https://github.com/yungGom/Auditing_Package/issues/23) 최신 검증보고서를 따릅니다. 위 초기 red 기록은 승인 구현 전 조사 이력입니다.
+
+최신 승인 구현과 실제 검사 결과는 [Issue #23 검증보고서](ISSUE_23_VERIFICATION.md)를 함께 읽습니다. 기본 검사 통과와 실제 자료 81건 미확인, 선행 PR의 미반영 상태를 구분합니다.
