@@ -1,0 +1,337 @@
+{
+  "owner_decision": "https://github.com/yungGom/Auditing_Package/issues/23#issuecomment-5923919699",
+  "checks": [
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_attr_check.py::test_g1_three_companies",
+      "material": "3사 패키지 캐시 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_attr_check.py::test_g2_tamper_three_kinds",
+      "material": "3사 패키지 캐시 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_attr_check.py::test_g3_guide_sheet_in_v2_report",
+      "material": "3사 패키지 캐시 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_gf1_all_match",
+      "material": "한빛정밀 합성 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_gf2_single_corruption",
+      "material": "한빛정밀 합성 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_gf4_note_matching",
+      "material": "한빛정밀 합성 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_level_override_detects_mismatch",
+      "material": "한빛정밀 합성 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_foot_cli",
+      "material": "한빛정밀 합성 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_gf3_samsung_real",
+      "material": "한빛정밀 합성 DSD 없음; 실제 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot_excel.py::test_gate1_sheet_and_summary_structure",
+      "material": "삼성 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot_excel.py::test_gate2_counts_match_foot",
+      "material": "삼성 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_foot_excel.py::test_gate3_hyperlink_roundtrip_and_marks",
+      "material": "삼성 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_guide_check.py::test_scaffold_guide_check_attached",
+      "material": "실제 수신 자료/편집기 산출물 필요",
+      "required_paths": [
+        "dart_explorer/cache/xbrl/00136925/20260323000596_11011",
+        "dart_explorer/cache/document/00136925/20250814001572.dsd",
+        "dart_explorer/cache/document/00136925/20260323000596.dsd",
+        "dart_explorer/cache/xbrl/00136925/20260323000596_11011/succession_assets.json"
+      ]
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_hanbit.py::test_build_report",
+      "material": "뼈대 DSD(삼성전자 별도) 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_hanbit.py::test_v_points",
+      "material": "뼈대 DSD(삼성전자 별도) 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_hanbit.py::test_s1_extract_dirty",
+      "material": "뼈대 DSD(삼성전자 별도) 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_hanbit.py::test_s2_v1_positional_replace",
+      "material": "뼈대 DSD(삼성전자 별도) 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_hanbit.py::test_s3_clean_output",
+      "material": "뼈대 DSD(삼성전자 별도) 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_hanbit.py::test_s4_keep_modes_byte_identity",
+      "material": "뼈대 DSD(삼성전자 별도) 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_note_worksheet.py::test_gate1_role_assignment",
+      "material": "삼성 페어 또는 표준 자산 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_note_worksheet.py::test_gate3_routing_and_benchmark",
+      "material": "삼성 페어 또는 표준 자산 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_note_worksheet.py::test_gate4_unassigned_table_warning",
+      "material": "삼성 페어 또는 표준 자산 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_note_worksheet.py::test_gate2_dimension_mapping_spotcheck",
+      "material": "삼성 페어 또는 표준 자산 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_pipeline.py::test_note_dedup_real_samsung",
+      "material": "실제 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_pipeline.py::test_clean_cr_real_samsung",
+      "material": "실제 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_recon.py::test_gate1_statements_all_true",
+      "material": "삼성 FY2025/FY2024 페어 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_recon.py::test_gate2_note_false_breakdown",
+      "material": "삼성 FY2025/FY2024 페어 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_recon.py::test_gate3_tamper_detection",
+      "material": "삼성 FY2025/FY2024 페어 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_recon.py::test_output_format",
+      "material": "삼성 FY2025/FY2024 페어 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_recon.py::test_verdicts_are_formulas_all_sheets",
+      "material": "삼성 FY2025/FY2024 페어 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_recon.py::test_summary_equals_rendered_verdicts",
+      "material": "삼성 FY2025/FY2024 페어 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_rollforward.py::test_g1_scaffold_fill_rate",
+      "material": "신원 캐시 자료 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_rollforward.py::test_g2_prefill_sample_crosscheck",
+      "material": "신원 캐시 자료 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_rollforward.py::test_g3_period_labels_rolled",
+      "material": "신원 캐시 자료 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_rollforward.py::test_g4_update_mode",
+      "material": "신원 캐시 자료 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_succession.py::test_gate1_succession_roundtrip",
+      "material": "신원종합개발 기말/반기 캐시 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_succession.py::test_gate2_period_conversion",
+      "material": "신원종합개발 기말/반기 캐시 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_succession.py::test_gate3_succession_worksheet",
+      "material": "삼성 DSD/기말 캐시 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_version.py::test_editver_extraction_all_real_files",
+      "material": "실제 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_version.py::test_editver_in_extract_info_and_meta_sheet",
+      "material": "실제 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_version_check.py::test_g2_smoke_direct",
+      "material": "실제 수신 자료/편집기 산출물 필요"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_version_check.py::test_gate_known_generations_pass",
+      "material": "기존 세대 픽스처 3종 미확보"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_version_check.py::test_gate_known_generations_cli",
+      "material": "기존 세대 픽스처 3종 미확보"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_worksheet.py::test_gate_f1_samsung_holdout",
+      "material": "삼성 DSD 또는 XBRL 캐시 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_worksheet.py::test_worksheet_structure",
+      "material": "한빛 DSD 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_xbrl_recon.py::test_g1_roundtrip_report",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dsd_workbench/dsd_tool/tests/test_xbrl_recon.py::test_g2_tamper_detection",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_client.py::test_gate_live_search_and_offline_cache",
+      "material": "OPENDART_API_KEY 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_corpus.py::test_extract_package_fields",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_corpus.py::test_build_with_fake_client",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_corpus.py::test_gate_pilot_corpus",
+      "material": "파일럿 코퍼스 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table.py::TestShinwon::test_gate1_flat_bs",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table.py::TestShinwon::test_gate2_one_axis_ce",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table.py::TestShinwon::test_render_excel",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table.py::TestSamsung::test_consolidated_filter",
+      "material": "삼성 캐시 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table.py::TestSamsung::test_gate3_two_axis_nested",
+      "material": "삼성 캐시 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table.py::TestSamsung::test_subrole_merge",
+      "material": "삼성 캐시 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table_d2b.py::test_gate_shinwon_half_year_labels",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table_d2b.py::test_gate_samsung_sheet_naming",
+      "material": "삼성 캐시 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table_d2b.py::test_gate_samsung_annual_pl_duration_no_suffix",
+      "material": "삼성 캐시 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table_d2c.py::test_g2_sample_matches_distribution_xlsx",
+      "material": "신원 패키지 또는 배포 엑셀 자산 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table_d2c.py::test_extension_marked_not_blank",
+      "material": "신원 패키지 또는 배포 엑셀 자산 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_dimension_table_d2c.py::test_fill_rate_line_and_summary",
+      "material": "신원 패키지 또는 배포 엑셀 자산 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_document_structure.py::test_unwrap_document",
+      "material": "OpenDART 원본 픽스처 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_document_structure.py::test_extract_and_note_dedup_noop",
+      "material": "OpenDART 원본 픽스처 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_document_structure.py::test_wrapped_roundtrip_byte_identity",
+      "material": "OpenDART 원본 픽스처 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_document_structure.py::test_contamination_is_dartdb_artifact",
+      "material": "OpenDART 원본 픽스처 없음; dartdb 픽스처 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy.py::test_gate_shinwon_tree",
+      "material": "신원 패키지 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy.py::test_gate_samsung_extensions",
+      "material": "삼성 XBRL 캐시 없음 (B-3 파이프라인 선실행 필요)"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy.py::test_fss_xlsm_viewer",
+      "material": "금감원 xlsm 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy_diff.py::test_detect_version",
+      "material": "택사노미 2세대 미배치"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy_diff.py::test_parse_concepts_ko_label_not_english",
+      "material": "택사노미 2세대 미배치"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy_diff.py::test_gate1_taxdiff_expected_counts",
+      "material": "택사노미 2세대 미배치"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy_diff.py::test_gate2_taxcheck_deprecation_and_replacement",
+      "material": "택사노미 2세대 또는 전기 XBRL 캐시 미확보"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy_diff.py::test_gate3_promotion_detection",
+      "material": "택사노미 2세대 미배치"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy_diff.py::test_taxcheck_integrates_promotions",
+      "material": "택사노미 2세대 또는 전기 XBRL 캐시 미확보"
+    },
+    {
+      "selector": "dart_explorer/tests/test_taxonomy_diff.py::test_taxdiff_cli",
+      "material": "택사노미 2세대 미배치"
+    },
+    {
+      "selector": "dart_explorer/tests/test_xbrl.py::test_gate_live_pipeline_and_offline_rerun",
+      "material": "OPENDART_API_KEY 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_xbrl.py::test_gate_rows_match_legacy_tool",
+      "material": "OPENDART_API_KEY 없음"
+    },
+    {
+      "selector": "dart_explorer/tests/test_xbrl.py::test_gate_identity_with_manual_download",
+      "material": "수동 다운로드 파일 없음 (tests/fixtures/manual_xbrl/*.zip)"
+    }
+  ],
+  "technical_marker_overrides": [
+    "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_bottom_sum",
+    "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_top_subtotal_and_multilevel",
+    "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_fuzzy_within_limit",
+    "dsd_workbench/dsd_tool/tests/test_foot.py::test_relations_from_levels_mismatch"
+  ]
+}

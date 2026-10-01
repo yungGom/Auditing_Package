@@ -2,7 +2,7 @@
 
 ## 한눈에 보기
 
-Auditing_Package의 개발 요청은 **GitHub Issue를 기준 기록**으로 삼습니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)는 Issue의 현재 상태·다음 행동을 한눈에 보여 주는 현황판이며, 검사 로그나 업무 판단의 원본이 아닙니다. 2026-09-30 현재 기존 Issue 6건을 재사용하고, Issue가 없던 작업 8건을 [#14](https://github.com/yungGom/Auditing_Package/issues/14)–[#19](https://github.com/yungGom/Auditing_Package/issues/19), [#21](https://github.com/yungGom/Auditing_Package/issues/21)–[#22](https://github.com/yungGom/Auditing_Package/issues/22)로 복원했습니다. **14건 모두 실제 Project에 연결했습니다.** Project ID는 `PVT_kwHODHEC7M4BlLOK`입니다. 현황판은 수동으로 갱신하며 자동 동기화가 된다고 주장하지 않습니다.
+Auditing_Package의 개발 요청은 **GitHub Issue를 기준 기록**으로 삼습니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)는 Issue의 현재 상태·다음 행동을 한눈에 보여 주는 현황판이며, 검사 로그나 업무 판단의 원본이 아닙니다. 초기2026-09-30 복원 시점에 기존 Issue 6건을 재사용하고, Issue가 없던 작업 8건을 [#14](https://github.com/yungGom/Auditing_Package/issues/14)–[#19](https://github.com/yungGom/Auditing_Package/issues/19), [#21](https://github.com/yungGom/Auditing_Package/issues/21)–[#22](https://github.com/yungGom/Auditing_Package/issues/22)로 복원했습니다. **14건 모두 실제 Project에 연결했습니다.** Project ID는 `PVT_kwHODHEC7M4BlLOK`입니다. 현황판은 수동으로 갱신하며 자동 동기화가 된다고 주장하지 않습니다.
 
 ## 등록·갱신 기준
 
@@ -35,7 +35,7 @@ Auditing_Package의 개발 요청은 **GitHub Issue를 기준 기록**으로 삼
 
 실제로 부여한 Request ID: #5 AD-001, #7 AD-002, #17 AD-003, #19 AD-004; #8 DSD-001, #18 DSD-002; #9 XBRL-001, #11 XBRL-002, #12 XBRL-003; #14 HARNESS-001, #15 HARNESS-002, #16 HARNESS-003; #21 AUDITLINK-001, #22 TOOLBOX-001. **14개가 모두 고유합니다.** 기존 작업 코드 AD-03·TC-020은 Issue 이력에 그대로 남습니다.
 
-2026-10-01 최종 확인 기준 **14개 Issue 항목**: DSD_FOOTING 2, AuditDesk 4, XBRL 3, Harness 3, AuditLink 1, Audit Toolbox 1. Blocked는 3건(#15–#17), 지금 Owner Action은 2건(#8의 화면 확인, #14의 현황판 결과 확인)입니다. #8의 화면 확인은 PR·테스트 상황을 다시 읽고 담당자와 시나리오를 정한 뒤 진행해야 합니다.
+초기2026-10-01 확인 당시 **14개 Issue 항목**: DSD_FOOTING 2, AuditDesk 4, XBRL 3, Harness 3, AuditLink 1, Audit Toolbox 1. Blocked는 3건(#15–#17), 지금 Owner Action은 2건(#8의 화면 확인, #14의 현황판 결과 확인)입니다. #8의 화면 확인은 PR·테스트 상황을 다시 읽고 담당자와 시나리오를 정한 뒤 진행해야 합니다.
 
 병합된 [PR #2](https://github.com/yungGom/Auditing_Package/pull/2)와 [PR #3](https://github.com/yungGom/Auditing_Package/pull/3)는 각각 #21·#22로 복원했습니다. [PR #1](https://github.com/yungGom/Auditing_Package/pull/1)은 병합되지 않아 완료로 등록하지 않았습니다. 과거 DSD_FOOTING·AuditDesk 세부 항목은 #18·#19에서 현재 코드와 계속 대조합니다. 로컬 브랜치의 존재는 병합이나 업무 수용의 증거가 아닙니다.
 
@@ -77,3 +77,10 @@ Auditing_Package의 개발 요청은 **GitHub Issue를 기준 기록**으로 삼
 | Merge → Done | 수동 / 자동 연동 없음. #21·#22는 병합·현재 코드 근거로 과거 구현 완료로 분류; 당시 별도 UAT는 주장하지 않음 | 실제 병합과 업무 수용 범위를 확인한 뒤 Done. CI 성공만으로 Done 금지 |
 
 Project 화면과 필드는 설정됐지만 **상태 전환 자동화는 없습니다.** 기본 하위 Issue 자동 등록도 껐으며 활성 Project workflow는 없습니다. Issue 승인·검사·검토 증거를 확인한 사람이 Project 요약을 갱신해야 합니다. 현황판을 만들었다는 사실만으로 제품 개발이나 전체 검사가 완료된 것은 아닙니다. Project는 비공개이며 권한 있는 계정으로 접근합니다.
+
+
+## 2026-10-01 통합 재검증 현황
+
+위14건 표는 최초 복원 이력입니다. 현재 Project API는15개 실제 Issue 항목과15개 고유 Request ID를 확인했습니다. 추가 항목은 [Issue #23](https://github.com/yungGom/Auditing_Package/issues/23), HARNESS-004(운영 마무리)입니다. 제품별 수는 DSD_FOOTING2·AuditDesk4·XBRL3·Harness4·AuditLink1·Audit Toolbox1입니다.9개 업무 필드·12개 저장 화면(상태 보드 포함)을 재확인했으며 Inbox 필터는 `-owner-action:None -status:Done`입니다. 상태 갱신은 계속 수동입니다.
+
+PR #4·#25·#6은 승인 후 main에 병합됐습니다. #15의 공통 검사 구현은 반영됐지만 기본 브랜치의 강제 검사 설정은 별도 확인·결정 대상입니다. #16의 도구 구현도 반영됐지만 실제 자료 호환성 완료를 주장하지 않습니다. 최신 main 보호 설정은404(Branch not protected), rulesets빈목록으로 확인했으며 변경하지 않았습니다. #14의 현황판 분류·상태 수용과 PR #20 병합은 아직 대기입니다. 기존POLICY의 현황판/제목 규칙 추가분은 main 대비 보호 검사 대상으로 남아 별도 Owner 판단이 필요합니다. 새 자동화·제품 변경·기존 기준 완화는 하지 않습니다.

@@ -50,7 +50,7 @@ Harness는 요청, 지켜야 할 기준, 검사 결과와 사람의 결정을 �
 
 ## D. Information Flow
 
-업무 요구사항은 사람이 [Issue 템플릿](../../.github/ISSUE_TEMPLATE/development_task.md)의 쉬운 요약과 **Developer Details**에 기록합니다. Issue가 작업·결정·상세 증거의 기준 기록이며, 실행 세션은 임시 작업 공간입니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)는 각 Issue의 상태·다음 행동·담당자 확인사항을 짧게 보여 줍니다. 실행 도구는 열린 Issue의 승인·검사 계약을 읽고 Implementer에 전달합니다. Implementer 변경은 Git diff로 남습니다. 보호 검사와 제품별 검사가 증거를 만들고, Reviewer는 Issue, diff와 공식 검사 결과를 함께 봅니다. 보고서는 실패·건너뜀·기존 공백·새 문제와 검토 의견을 구분합니다. [PR 템플릿](../../.github/pull_request_template.md)은 결과를 사람에게 인계합니다. GitHub Project로의 상태 전파는 자동화되지 않아 사람이 갱신합니다.
+업무 요구사항은 사람이 [Issue 템플릿](../../.github/ISSUE_TEMPLATE/development_task.md)의 쉬운 요약과 **Developer Details**에 기록합니다. Issue가 작업·결정·상세 증거의 기준 기록이며, 실행 세션은 임시 작업 공간입니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)는 각 Issue의 상태·다음 행동·담당자 확인사항을 짧게 보여 줍니다. 실행 도구는 열린 Issue의 승인·검사 계약을 읽고 Implementer에 전달합니다. Implementer 변경은 Git diff로 남습니다. 보호 검사와 제품별 검사가 증거를 만들고, Reviewer는 Issue, diff와 공식 검사 결과를 함께 봅니다. 보고서는 실패·건너뜀·기존 공백·새 문제와 검토 의견을 구분합니다. [PR 템플릿](../../.github/pull_request_template.md)은 결과를 사람에게 인계합니다. GitHub Project로의 상태 전파는 자동화되지 않아 사람이 갱신합니다. 공통 정책과 반복 검사 절차, 한 건 실행 도구는 PR #4·#25·#6으로 main에 반영됐습니다. 공개·합성 검사와 실제 자료 확인은 분리하며 자료 없음은 통과로 취급하지 않습니다. 이 현황판 문서 변경은 PR #20에서 별도 검토 대기입니다.
 
 ## E. 업무 담당자 영역과 개발자 영역
 

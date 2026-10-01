@@ -128,7 +128,7 @@ class OrchestratorTests(unittest.TestCase):
                         {"decision": "BLOCKER", "summary": "missing edge case", "findings": ["edge"]},
                         {"decision": "PASS", "summary": "fixed", "findings": []},
                         {"decision": "PASS", "summary": "review clean", "findings": []}])
-        with patch.object(orch, "get_issue", return_value=issue()), \
+        with patch.object(orch, "get_issue", return_value=dict(issue(), body=issue()['body'].replace('`python scripts/test_all.py`\n', ''))), \
              patch.object(orch, "changed_files", return_value=[]), \
              patch.object(orch, "runtime_preflight", return_value=ready_runtime()), \
              patch.object(orch, "agent", side_effect=lambda *a: next(replies)) as agent, \
@@ -146,7 +146,7 @@ class OrchestratorTests(unittest.TestCase):
              "findings": [{"severity": "informational", "summary": "future cleanup",
                            "evidence": "Outside current issue"}]},
         ])
-        with patch.object(orch, "get_issue", return_value=issue()), \
+        with patch.object(orch, "get_issue", return_value=dict(issue(), body=issue()['body'].replace('`python scripts/test_all.py`\n', ''))), \
              patch.object(orch, "changed_files", return_value=[]), \
              patch.object(orch, "runtime_preflight", return_value=ready_runtime()), \
              patch.object(orch, "agent", side_effect=lambda *a, **k: next(replies)) as agent, \
@@ -373,7 +373,7 @@ class PreflightTests(unittest.TestCase):
                         {"decision": "PASS", "summary": "review clean", "findings": [],
                          "_diagnostic": {"command_class": "codex exec reviewer",
                                          "exit_code": 0, "stderr_tail": "NONE"}}])
-        with patch.object(orch, "get_issue", return_value=issue()), \
+        with patch.object(orch, "get_issue", return_value=dict(issue(), body=issue()['body'].replace('`python scripts/test_all.py`\n', ''))), \
              patch.object(orch, "changed_files", return_value=[]), \
              patch.object(orch, "runtime_preflight", return_value=ready_runtime()), \
              patch.object(orch, "agent", side_effect=lambda *a: next(replies)), \

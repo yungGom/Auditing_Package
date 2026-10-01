@@ -34,7 +34,7 @@ governance files are trusted and the new Implementer changes are checked.
 | IN_PROGRESS | Implementer, checks, tests, or Reviewer running. |
 | HUMAN_APPROVAL | Issue names a pending owner decision, an agent requests one, or protected check fails. No further agent/test runs. |
 | DONE | Required scripts returned zero and a separate read-only Reviewer returned PASS. Human business acceptance is still pending. |
-| TASK_PASS_WITH_KNOWN_GAPS | Issue-declared task checks and independent review passed, with no new regression against a measured pre-change baseline. Declared repository failures or skips remain; this is not Technical PASS and exits with code 2. Human business acceptance is pending. |
+| TASK_PASS_WITH_KNOWN_GAPS | Issue-declared task checks and independent review passed, with no new regression against a measured pre-change baseline. Declared repository failures or skips remain; the state is not full-repository Technical PASS or real-material compatibility acceptance and exits with code 2. Separately reported public/synthetic Technical Gate PASS applies only to its executed scope. Human business acceptance is pending. |
 | FAILED | Invalid input, unavailable CLI, failed command, dirty worktree, or blocker remains after two attempts. |
 
 A named Human Owner decision in the Issue stops intake even in dry-run. The
@@ -47,10 +47,13 @@ the run as FAILED. The report shows exact status and local test output. Issue
 comments include status names only, because raw test logs may contain paths or
 data unsuitable for GitHub.
 
-Issue #5's fixture-policy decision is recorded in its Issue contract.
-Its Pilot subsequently stopped at a separate protected-fixture decision.
-The current PR #4 regression remains red; this script does not reinterpret that
-failure or any skip as a pass. No automatic PR creation, merge, parallel queue,
+Issue #5's synthetic-only approval and remaining actual-material gap are recorded
+in its Issue contract. PR #4 was merged into main at 4e00a1c after Owner Approval.
+Under Issue #23, test_all.py emits validated HARNESS_REPORT_JSON evidence for
+the public/synthetic Technical Gate and separately records actual-material
+BLOCKED/NOT RUN. The Orchestrator retains those gaps in both scoped and unscoped
+runs; exit zero from the aggregate never implies full compatibility or business
+acceptance. Invalid or missing structured evidence cannot produce completion. No automatic PR creation, merge, parallel queue,
 model routing, or business approval is included.
 
 ## Runtime preflight and diagnostics
