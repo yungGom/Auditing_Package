@@ -108,11 +108,11 @@ Issue 등록, 검사·검토 후 상태 이동, 병합 후 완료, Inbox 알림,
 
 [Owner Decision](https://github.com/yungGom/Auditing_Package/issues/23#issuecomment-5923919699)에 따라 공개·합성 입력 기반 Technical Gate와 실제 자료 호환성을 분리했습니다. 기존 분석과 실패 기록은 역사적 조사 결과이며 위의 미승인 C 표기는 승인 전 시점입니다.
 
-- `scripts/auditdesk_compatibility.json`은 실제 기존 테스트의 자료 의존 selector 84개를 명시합니다(빈/parameterized 사례 때문에 clean collection은 85개). 새 테스트는 기본적으로 Technical Gate에 포함합니다. 새 skip, 삭제·이름 변경된 catalog 항목, 수집 오류는 실패합니다. 기존 테스트 파일·expected result·fixture는 변경하지 않습니다.
+- `scripts/auditdesk_compatibility.json`은 실제 기존 테스트의 자료 의존 selector 80개를 명시합니다(빈/parameterized 사례 때문에 clean collection은 81개). 자료가 필요 없는 계산 검사 4개는 Technical Gate에서 그대로 실행합니다. 새 테스트는 기본적으로 Technical Gate에 포함합니다. 새 skip, 삭제·이름 변경된 catalog 항목, 수집 오류는 실패합니다. 기존 테스트 파일·expected result·fixture는 변경하지 않습니다.
 - `scripts/auditdesk_partition.py`는 기본 Technical 모드에서 기존 합성/단위 검사만 실행하고 자료 의존 검사는 BLOCKED 또는 NOT RUN으로 각각 기록합니다. 자료가 있어도 실행하지 않으면 NOT RUN입니다. 기존 외부 업무 경로는 새 Harness에서 실행하지 않으며 경로·자료 내용·API key를 JSON에 남기지 않습니다.
-- 실제 자료 검사의 목적·기대값은 보존됩니다. 별도 `--compatibility --approved-public-materials` 실행은 승인된 공개 입력만 허용하며, 자료 부족은 exit 2입니다. 기존 `test_auditdesk.py`의 전체 검사도 그대로 유지합니다. 이 명령의 FAIL/SKIP을 Technical 모드 PASS로 덮어 쓰지 않습니다. 새 자료 확보는 별도 출처·경로·SHA 승인 절차입니다.
-- `scripts/test_all.py`의 기본 exit 0은 **선택한 공개/합성 Technical Gate PASS만** 뜻합니다. 실제 자료 호환성·업무 수용 완료를 뜻하지 않습니다. Technical 실패/미실행은 exit 1, 요청한 compatibility가 미완료면 exit 2. 미선택 프로젝트는 NOT RUN입니다.
-- 개별 공식 검사 default timeout 600초. timeout에서 Windows taskkill /T /F 또는 POSIX process group 종료 후 FAIL을 기록하고 다른 검사는 계속 실행합니다. CI job은 30분 제한이며 안전한 구조화 결과만 artifact로 남깁니다. 전체 취소나 CI setup 실패는 결과 파일이 없을 수 있고 NOT RUN이며 PASS가 아닙니다.
+- 실제 자료 검사의 목적·기대값은 보존됩니다. 새 runner는 실제 자료 검사의 상태 확인만 수행하며 실제 자료를 실행하지 않습니다. boolean 옵션만으로 출처·사용 권한을 증명할 수 없으므로 자동 실행 옵션은 제공하지 않습니다. 별도 `auditdesk_partition.py --mode compatibility --report <path>`도 상태 확인만 하며 미완료 exit 2입니다. 기존 `test_auditdesk.py`의 전체 검사도 그대로 유지합니다. 이 명령의 FAIL/SKIP을 Technical 모드 PASS로 덮어 쓰지 않습니다. 새 자료 확보는 별도 출처·경로·SHA 승인 절차입니다.
+- `scripts/test_all.py`의 기본 exit 0은 **선택한 공개/합성 Technical Gate PASS만** 뜻합니다. 실제 자료 호환성·업무 수용 완료를 뜻하지 않습니다. Technical 실패/미실행은 exit 1입니다. 실제 자료 검사의 미완료 상태는 독립된 결과로 반드시 보존합니다. 미선택 프로젝트는 NOT RUN입니다.
+- 개별 공식 검사 default timeout 600초. timeout에서 Windows에서는 정지된 자식에 kill-on-close Job Object를 먼저 연결한 뒤 실행하고, POSIX에서는 process group을 사용합니다. 시간 초과 후 전체 종료하고 FAIL을 기록하고 다른 검사는 계속 실행합니다. CI job은 30분 제한이며 안전한 구조화 결과만 artifact로 남깁니다. 전체 취소나 CI setup 실패는 결과 파일이 없을 수 있고 NOT RUN이며 PASS가 아닙니다.
 - Orchestrator는 새 구조화 결과의 자료 공백을 읽어 Reviewer에게 전달하며 scoped/legacy 실행 모두 TASK_PASS_WITH_KNOWN_GAPS와 업무 승인 대기를 유지합니다. 기존 Technical Gate 밖의 실패를 삭제하거나 업무 완료로 자동 승격하지 않습니다.
 
 구현 이후 clean checkout/CI/독립 검토 결과와 PR별 재평가는 Issue #23 검증보고서에서 확인합니다. #4/#6/#20 HEAD는 후속 승인 코드를 아직 포함하지 않으므로 기존 red 상태를 green으로 바꿔 적지 않습니다. 승인 후속 코드 반영·재검사와 전체 증거 확인이 필요합니다.

@@ -12,7 +12,10 @@ sys.path.insert(0,str(Path(__file__).parents[1]))
 import test_all as gate
 import auditdesk_partition as partition
 from harness_process import run_check
-import orchestrator_results as results
+import time
+import os
+import harness_evidence as evidence
+import harness_process as process_helper
 
 NODE='dsd_workbench/dsd_tool/tests/test_version_check.py::test_g2_smoke_direct'
 
@@ -20,7 +23,10 @@ class GateTests(unittest.TestCase):
     def fake_run(self, argv,cwd,timeout):
         if 'auditdesk_partition.py' in ' '.join(argv):
             target=Path(argv[argv.index('--report')+1])
-            target.write_text(json.dumps({'status':'PASS','counts':{'PASS':3,'FAIL':0,'SKIP':0,'NOT RUN':0},'technical_checks':{'test_fake':{'status':'PASS'}},'compatibility_checks':{NODE:{'status':partition.BLOCKED}}}))
+            manifest=json.loads(partition.MANIFEST.read_text(encoding='utf-8'))
+            technical={n:{'status':'PASS'} for n in ['test_fake']+manifest['technical_marker_overrides']}
+            compatibility={r['selector']:{'status':partition.BLOCKED} for r in manifest['checks']}
+            target.write_text(json.dumps({'status':'PASS','counts':{s:len(technical) if s=='PASS' else 0 for s in evidence.STATUSES},'technical_checks':technical,'compatibility_checks':compatibility,'collected':len(technical)+len(compatibility),'collection_errors':0}))
         return {'status':'PASS','reason':'COMPLETED','exit_code':0}
 
     def test_technical_pass_with_material_blocker(self):
@@ -61,7 +67,7 @@ class GateTests(unittest.TestCase):
 class PartitionTests(unittest.TestCase):
     def plugin(self): return partition.Partition('technical',{'checks':[{'selector':NODE,'material':'DSD generation'}]})
     def item(self,node=NODE,missing=True):
-        mark=SimpleNamespace(args=(missing,))
+        mark=SimpleNamespace(args=(missing,),name="skipif")
         return SimpleNamespace(nodeid=node,module=SimpleNamespace(_KNOWN_GENERATIONS=[] if missing else ['public']),iter_markers=lambda name:[mark])
     def collect(self,p,items):
         hook=SimpleNamespace(pytest_deselected=lambda **kw:None)
@@ -103,18 +109,106 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(r['reason'],'TIMEOUT')
         self.assertEqual(r['status'],'FAIL')
     def test_invalid_timeout(self):
-        with self.assertRaises(ValueError): run_check(['fake'],Path.cwd(),0)
+        for timeout in (0, -1, float('inf'), float('nan')):
+            with self.assertRaises(ValueError): run_check(['fake'],Path.cwd(),timeout)
 
-class EvidenceTests(unittest.TestCase):
-    def report(self):
-        return {'technical_gate':'PASS','technical_checks':{'auditdesk_python':{'status':'PASS','counts':{'PASS':221},'checks':{}},'webui_build':{'status':'PASS'},'dsd_footing':{'status':'PASS'}},'real_material_compatibility':{'status':partition.BLOCKED,'checks':{NODE:{'status':partition.BLOCKED}}}}
-    def test_orchestrator_retains_gap(self):
-        r=results.summarize('scripts/test_all.py',SimpleNamespace(stdout='HARNESS_REPORT_JSON:'+json.dumps(self.report()),stderr='',returncode=0))
-        gaps,regressions,unknown=results.compare([r],[r],set())
-        self.assertEqual(len(gaps),1);self.assertFalse(regressions);self.assertFalse(unknown)
-    def test_new_compatibility_failure_not_partial_pass(self):
-        before=results.summarize('scripts/test_all.py',SimpleNamespace(stdout='HARNESS_REPORT_JSON:'+json.dumps(self.report()),stderr='',returncode=0))
-        after=json.loads(json.dumps(before));after['real_material_compatibility']['checks'][NODE]['status']='FAIL'
-        self.assertTrue(results.compare([before],[after],set())[1])
 
-if __name__=='__main__': unittest.main()
+
+class MoreGateTests(unittest.TestCase):
+    fake_run = GateTests.fake_run
+    def test_empty_or_inconsistent_or_missing_catalog_evidence_fails(self):
+        for corruption in ('empty', 'count', 'catalog', 'status', 'json'):
+            with self.subTest(corruption=corruption):
+                def run(argv, cwd, timeout):
+                    result=self.fake_run(argv,cwd,timeout)
+                    if 'auditdesk_partition.py' in ' '.join(argv):
+                        target=Path(argv[argv.index('--report')+1]);r=json.loads(target.read_text())
+                        if corruption=='empty': r['technical_checks']={}
+                        if corruption=='count': r['counts']['PASS']+=1
+                        if corruption=='catalog': r['compatibility_checks']={}
+                        if corruption=='status': r['technical_checks']['test_fake']['status']='UNKNOWN'
+                        target.write_text('broken' if corruption=='json' else json.dumps(r))
+                    return result
+                with patch.object(gate,'run_check',side_effect=run),patch.object(gate.shutil,'which',return_value=None):
+                    r=gate.run_all('auditdesk')
+                self.assertEqual(r['technical_gate'],'FAIL')
+                self.assertEqual(r['technical_checks']['auditdesk_python']['reason'],'INVALID_EVIDENCE')
+
+class MorePartitionTests(unittest.TestCase):
+    plugin = PartitionTests.plugin
+    item = PartitionTests.item
+    collect = PartitionTests.collect
+    def test_parameter_labels_do_not_leak(self):
+        p=self.plugin(); self.collect(p,[self.item(NODE+'[C:\\private\\client.dsd]')])
+        encoded=json.dumps(p.result(5))
+        self.assertNotIn('private',encoded);self.assertNotIn('client',encoded)
+        self.assertIn(NODE+'[case:1]',p.compatibility)
+
+    def test_compatibility_mode_is_assessment_only_even_when_present(self):
+        p=partition.Partition('compatibility',{'checks':[{'selector':NODE,'material':'DSD'}]})
+        items=[self.item(missing=False)];self.collect(p,items)
+        self.assertEqual(items,[]);self.assertEqual(p.result(5)['status'],'NOT RUN')
+
+    def test_pure_numeric_test_kept_without_inherited_material_mark(self):
+        p=partition.Partition('technical',{'checks':[], 'technical_marker_overrides':['test_pure']})
+        inherited=SimpleNamespace(name='skipif',args=(True,))
+        own=SimpleNamespace(name='skipif',args=(False,))
+        item=SimpleNamespace(nodeid='test_pure',module=SimpleNamespace(pytestmark=inherited),iter_markers=lambda name=None:[own,inherited])
+        self.collect(p,[item])
+        self.assertEqual(list(item.iter_markers('skipif')),[own])
+        self.assertEqual(p.technical['test_pure']['status'],'NOT RUN')
+
+class MoreProcessTests(unittest.TestCase):
+    def test_cleanup_failure_is_not_timeout_success(self):
+        fake=SimpleNamespace(pid=123,returncode=None,wait=lambda timeout: (_ for _ in ()).throw(subprocess.TimeoutExpired('fake',timeout)))
+        with patch.object(process_helper.subprocess,'Popen',return_value=fake),patch.object(process_helper,'stop',return_value=False),patch.object(sys,'stdout',io.StringIO()),patch('os.name','posix'):
+            r=run_check(['fake'],'.',0.1)
+        self.assertEqual(r['status'],'FAIL');self.assertEqual(r['reason'],'CLEANUP_FAILED')
+
+    def test_timeout_stops_descendant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pidfile=Path(tmp)/'pid'
+            child=f"import os,time;open({str(pidfile)!r},'w').write(str(os.getpid()));time.sleep(30)"
+            parent=f"import subprocess,sys,time;subprocess.Popen([sys.executable,'-c',{child!r}]);time.sleep(30)"
+            with patch.object(sys,'stdout',io.StringIO()):
+                result=run_check([sys.executable,'-c',parent],Path.cwd(),2)
+            self.assertEqual(result['reason'],'TIMEOUT')
+            self.assertTrue(pidfile.exists())
+            pid=int(pidfile.read_text())
+            if os.name=='nt':
+                import ctypes
+                from ctypes import wintypes
+                api=ctypes.WinDLL('kernel32',use_last_error=True)
+                api.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD];api.OpenProcess.restype=wintypes.HANDLE
+                api.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD];api.WaitForSingleObject.restype=wintypes.DWORD
+                api.CloseHandle.argtypes=[wintypes.HANDLE]
+                handle=api.OpenProcess(0x100000,False,pid)
+                if handle:
+                    try:self.assertEqual(api.WaitForSingleObject(handle,5000),0)
+                    finally:api.CloseHandle(handle)
+            else:
+                stat=Path(f'/proc/{pid}/stat')
+                if stat.exists(): self.assertEqual(stat.read_text().split()[2],'Z')
+
+    def test_cp949_preserves_unencodable_output_by_escape(self):
+        raw=io.BytesIO();out=io.TextIOWrapper(raw,encoding='cp949',write_through=True)
+        with patch.object(sys,'stdout',out):
+            r=run_check([sys.executable,'-c',"print('한글 \\u2014')"],Path.cwd(),5)
+        self.assertEqual(r['status'],'PASS')
+        text=raw.getvalue().decode('cp949')
+        self.assertIn('한글',text);self.assertIn('\\u2014',text)
+
+
+class ConsoleTests(unittest.TestCase):
+    def test_cp949_report_file_and_console_are_equal(self):
+        raw=io.BytesIO();out=io.TextIOWrapper(raw,encoding='cp949',write_through=True)
+        report={'technical_gate':'PASS','technical_checks':{},'real_material_compatibility':{'status':partition.BLOCKED},'note':'한글 —'}
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'result.json'
+            with patch.object(gate,'run_all',return_value=report),patch.object(sys,'argv',['gate','--report',str(path)]),patch.object(sys,'stdout',out):
+                self.assertEqual(gate.main(),0)
+            console=json.loads(raw.getvalue().decode('cp949').split('HARNESS_REPORT_JSON:')[1].splitlines()[0])
+            self.assertEqual(console,json.loads(path.read_text(encoding='utf-8')))
+
+
+if __name__=="__main__": unittest.main()

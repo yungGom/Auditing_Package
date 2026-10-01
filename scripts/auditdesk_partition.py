@@ -21,6 +21,9 @@ class Partition:
         self.material = {r['selector']: r['material'] for r in manifest['checks']}
         if len(self.material) != len(manifest['checks']):
             raise ValueError('duplicate compatibility selector')
+        self.overrides = set(manifest.get("technical_marker_overrides", []))
+        self.safe_ids = {}
+        self.case_counts = {}
         self.technical = {}
         self.compatibility = {}
         self.collection_errors = 0
@@ -35,8 +38,24 @@ class Partition:
         matched = set()
         for item in items:
             base = selector(item.nodeid)
+            # Never serialize pytest parameter labels: they may contain workstation/client paths.
+            self.case_counts[base] = self.case_counts.get(base, 0) + 1
+            safe = base if '[' not in item.nodeid else f'{base}[case:{self.case_counts[base]}]'
+            self.safe_ids[item.nodeid] = safe
+            if base in self.overrides:
+                # These four reviewed tests use only literal numeric arrays, no material fixture.
+                # Remove the module's availability mark for these items only; retain any own/new mark.
+                module_marks = getattr(item.module, 'pytestmark', [])
+                if not isinstance(module_marks, (list, tuple)):
+                    module_marks = [module_marks]
+                ignored = {id(m.mark if hasattr(m, 'mark') else m) for m in module_marks
+                           if m.name == 'skipif'}
+                original = item.iter_markers
+                item.iter_markers = lambda name=None, original=original, ignored=ignored: (
+                    m for m in original(name) if id(m) not in ignored)
+
             if base not in self.material:
-                self.technical[item.nodeid] = {'status': 'NOT RUN'}
+                self.technical[safe] = {'status': 'NOT RUN'}
                 if self.mode == 'technical':
                     kept.append(item)
                 else:
@@ -54,20 +73,18 @@ class Partition:
             row = {'status': BLOCKED if unavailable else 'NOT RUN', 'material': self.material[base]}
             if outside:
                 row['reason'] = 'OUTSIDE_REPOSITORY_MATERIAL_NOT_AUTHORIZED'
-            self.compatibility[item.nodeid] = row
-            if self.mode == 'compatibility' and not unavailable:
-                kept.append(item)
-            else:
-                removed.append(item)
+            self.compatibility[safe] = row
+            # Assessment only: no boolean flag can authorize arbitrary local material.
+            removed.append(item)
         # Deleted/renamed catalogued checks must not disappear silently.
-        if self.material.keys() - matched:
+        if self.material.keys() - matched or self.overrides - set(self.case_counts):
             raise pytest.UsageError('compatibility catalog contains missing tests; explicit review required')
         items[:] = kept
         config.hook.pytest_deselected(items=removed)
 
     def pytest_runtest_logreport(self, report):
         target = self.compatibility if selector(report.nodeid) in self.material else self.technical
-        row = target.setdefault(report.nodeid, {'status': 'NOT RUN'})
+        row = target.setdefault(self.safe_ids.get(report.nodeid, selector(report.nodeid)), {'status': 'NOT RUN'})
         if report.failed:
             row['status'] = 'FAIL'
         elif report.skipped and row['status'] != 'FAIL':
@@ -83,22 +100,21 @@ class Partition:
         if self.mode == 'technical' and status != 'PASS':
             status = 'FAIL'
         return {'status': status, 'counts': counts, 'collection_errors': self.collection_errors,
-                'technical_checks': self.technical, 'compatibility_checks': self.compatibility}
+                'technical_checks': self.technical, 'compatibility_checks': self.compatibility,
+                'collected': len(self.safe_ids)}
 
 
 def main():
     import pytest
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['technical','compatibility'], default='technical')
-    parser.add_argument('--approved-public-materials', action='store_true')
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
-    if args.mode == 'compatibility' and not args.approved_public_materials:
-        parser.error('Compatibility execution requires explicitly approved public material; use legacy tests only in an authorized environment.')
     plugin = Partition(args.mode, json.loads(MANIFEST.read_text(encoding='utf-8-sig')))
     with tempfile.TemporaryDirectory(prefix='harness_auditdesk_') as tmp:
         code = pytest.main(['dsd_workbench/dsd_tool/tests','dart_explorer/tests','-q','-ra',f'--basetemp={Path(tmp)/"pytest"}'], plugins=[plugin])
     result = plugin.result(code)
+    args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     return 0 if result['status'] == 'PASS' else 2 if result['status'] in {BLOCKED,'NOT RUN'} else 1
 

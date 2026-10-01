@@ -14,22 +14,6 @@
       "material": "3사 패키지 캐시 없음"
     },
     {
-      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_bottom_sum",
-      "material": "한빛정밀 합성 DSD 없음"
-    },
-    {
-      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_top_subtotal_and_multilevel",
-      "material": "한빛정밀 합성 DSD 없음"
-    },
-    {
-      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_fuzzy_within_limit",
-      "material": "한빛정밀 합성 DSD 없음"
-    },
-    {
-      "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_relations_from_levels_mismatch",
-      "material": "한빛정밀 합성 DSD 없음"
-    },
-    {
       "selector": "dsd_workbench/dsd_tool/tests/test_foot.py::test_gf1_all_match",
       "material": "한빛정밀 합성 DSD 없음"
     },
@@ -337,5 +321,11 @@
       "selector": "dart_explorer/tests/test_xbrl.py::test_gate_identity_with_manual_download",
       "material": "수동 다운로드 파일 없음 (tests/fixtures/manual_xbrl/*.zip)"
     }
+  ],
+  "technical_marker_overrides": [
+    "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_bottom_sum",
+    "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_top_subtotal_and_multilevel",
+    "dsd_workbench/dsd_tool/tests/test_foot.py::test_infer_fuzzy_within_limit",
+    "dsd_workbench/dsd_tool/tests/test_foot.py::test_relations_from_levels_mismatch"
   ]
 }

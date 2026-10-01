@@ -1,17 +1,19 @@
 """Run reproducible Technical Gate; report real-material compatibility separately."""
 from pathlib import Path
 import argparse
+import math
 import json
 import shutil
 import sys
 import tempfile
 from harness_process import run_check
+from harness_evidence import validate_partition
 
 ROOT = Path(__file__).resolve().parents[1]
 BLOCKED = 'BLOCKED: REQUIRED MATERIAL UNAVAILABLE'
 
 
-def run_all(project='all', timeout=600, compatibility=False, approved=False):
+def run_all(project='all', timeout=600):
     checks = {name: {'status': 'NOT RUN', 'reason': 'NOT_SELECTED'} for name in ['auditdesk_python','webui_build','dsd_footing']}
     compatibility_result = {'status': 'NOT RUN', 'reason': 'AUDITDESK_NOT_SELECTED', 'checks': {}}
     if project in ['all','auditdesk']:
@@ -23,14 +25,15 @@ def run_all(project='all', timeout=600, compatibility=False, approved=False):
             if report.is_file() and py['reason']=='COMPLETED':
                 try:
                     evidence = json.loads(report.read_text(encoding='utf-8'))
-                    if not isinstance(evidence.get('technical_checks'), dict) or not isinstance(evidence.get('compatibility_checks'), dict):
-                        raise ValueError('invalid evidence')
+                    validate_partition(evidence)
                 except (OSError, ValueError, KeyError, TypeError):
                     evidence = {'status':'FAIL','counts':{},'technical_checks':{},'compatibility_checks':{}}
                     py['reason'] = 'INVALID_EVIDENCE'
                 py['counts'] = evidence['counts']
                 py['status'] = evidence['status'] if py['exit_code']==0 else 'FAIL'
                 py['checks'] = evidence['technical_checks']
+                py['collected'] = evidence.get('collected', 0)
+                py['collection_errors'] = evidence.get('collection_errors', 1)
                 rows = evidence['compatibility_checks']
                 statuses = {r['status'] for r in rows.values()}
                 compatibility_result = {'status': BLOCKED if BLOCKED in statuses else 'NOT RUN', 'reason': 'MATERIAL_ASSESSMENT_ONLY', 'counts': {s:sum(r['status']==s for r in rows.values()) for s in ['PASS','FAIL','SKIP','NOT RUN',BLOCKED]}, 'checks': rows}
@@ -38,16 +41,6 @@ def run_all(project='all', timeout=600, compatibility=False, approved=False):
                 if py['status'] == 'PASS':
                     py.update(status='FAIL',reason='MISSING_EVIDENCE')
                 compatibility_result = {'status':'NOT RUN','reason':'COLLECTION_NOT_COMPLETED','checks':{}}
-            if compatibility:
-                report.unlink(missing_ok=True)
-                if not approved:
-                    raise ValueError('public material approval is required')
-                comp = run_check(command+['--mode','compatibility','--approved-public-materials'],ROOT/'auditdesk',timeout)
-                if report.is_file() and comp['reason']=='COMPLETED':
-                    evidence = json.loads(report.read_text(encoding='utf-8'))
-                    compatibility_result = {'status':evidence['status'],'counts':evidence['counts'],'checks':evidence['compatibility_checks']}
-                else:
-                    compatibility_result = comp
         npm=shutil.which('npm')
         if npm and (ROOT/'auditdesk/webui/node_modules').is_dir():
             checks['webui_build']=run_check([npm,'run','build'],ROOT/'auditdesk/webui',timeout)
@@ -66,12 +59,10 @@ def main():
     parser.add_argument('--project',choices=['all','auditdesk','dsd_footing'],default='all')
     parser.add_argument('--timeout',type=float,default=600,help='Maximum seconds per official check, including descendants')
     parser.add_argument('--report',type=Path)
-    parser.add_argument('--compatibility',action='store_true',help='Also execute existing real-material tests, using approved public material only')
-    parser.add_argument('--approved-public-materials',action='store_true')
     args=parser.parse_args()
-    if args.timeout<=0 or args.compatibility and not args.approved_public_materials:
-        parser.error('positive timeout and explicit public material approval required')
-    result=run_all(args.project,args.timeout,args.compatibility,args.approved_public_materials)
+    if not math.isfinite(args.timeout) or args.timeout<=0:
+        parser.error('positive timeout required')
+    result=run_all(args.project,args.timeout)
     print('\n## 한눈에 보기')
     print('### 1. 이번에 무엇을 했나?\n새 환경에서 반복할 수 있는 자동검사를 실행했습니다.')
     print('### 2. 실제로 무엇이 달라졌나?\n반복 검사와 실제 자료 확인 결과를 따로 표시합니다.')
@@ -86,17 +77,12 @@ def main():
     print('### 6. 지금 상태는?\n' + ('완료 후보. 전체 업무 수용 완료는 아닙니다.' if result['technical_gate']=='PASS' else '문제 발견. 실패와 미실행 원인을 확인해야 합니다.'))
     print('## Developer Details')
     console = json.loads(json.dumps(result))
-    for row in console['technical_checks'].values():
-        if 'checks' in row:
-            row['checks'] = {n:r for n,r in row['checks'].items() if r['status'] != 'PASS'}
     print('HARNESS_REPORT_JSON:' + json.dumps(console,ensure_ascii=True))
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
     if result['technical_gate']!='PASS':
         return 1
-    if args.compatibility and result['real_material_compatibility']['status']!='PASS':
-        return 2
     return 0
 
 

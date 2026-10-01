@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import json
+from harness_evidence import validate_harness
 
 TASK_PATH = re.compile(r"(?:auditdesk/(?:dsd_workbench/dsd_tool|dart_explorer|backend)/tests|scripts/tests)/test_[A-Za-z0-9_]+\.py$")
 FAILURE = re.compile(r"(?m)^(?:FAILED|ERROR)\s+(\S+)")
@@ -65,6 +66,7 @@ def summarize(script: str, result) -> dict:
     if marker in output:
         try:
             report = json.loads(output.rsplit(marker, 1)[1].splitlines()[0])
+            validate_harness(report)
             checks = report["technical_checks"]
             counts = checks["auditdesk_python"].get("counts", {})
             component = lambda key: 0 if checks[key]["status"] == "PASS" else 1
@@ -81,6 +83,10 @@ def summarize(script: str, result) -> dict:
                     "human_business_acceptance": "PENDING"}
         except (ValueError, KeyError, TypeError):
             return {"step":script,"status":"FAIL","exit_code":result.returncode,"passed":0,"failed":0,"skipped":0,"errors":1,"failures":[],"skip_sites":[],"components":{}}
+    if script == "scripts/test_all.py":
+        return {"step": script, "status": "FAIL", "exit_code": result.returncode,
+                "passed": 0, "failed": 0, "skipped": 0, "errors": 1,
+                "failures": [], "skip_sites": [], "components": {}}
     counts = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
     for number, kind in SUMMARY.findall(output):
         key = "errors" if kind in {"error", "errors"} else kind
@@ -122,7 +128,10 @@ def compare(before: list[dict], after: list[dict], declared: set[str]) -> tuple[
             gaps.append({"script": name, "status": compatibility["status"],
                          "real_material_compatibility": compatibility})
         old_compat = prior.get("real_material_compatibility", {}).get("checks", {})
-        for node, row in (compatibility or {}).get("checks", {}).items():
+        new_compat = (compatibility or {}).get("checks", {})
+        if old_compat.keys() - new_compat.keys():
+            regressions.append(f"{name}: compatibility evidence disappeared")
+        for node, row in new_compat.items():
             if row["status"] == "FAIL" and old_compat.get(node, {}).get("status") != "FAIL":
                 regressions.append(f"{name}: new compatibility failure {node}")
             if old_compat.get(node, {}).get("status") == "PASS" and row["status"] != "PASS":

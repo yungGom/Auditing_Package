@@ -797,12 +797,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 status = "PASS" if result.returncode == 0 else "FAIL"
                 from orchestrator_results import summarize
                 structured = summarize(script, result)
+                status = structured["status"]
                 compatibility = structured.get("real_material_compatibility")
                 if compatibility and compatibility["status"] != "PASS":
                     compatibility_gaps.append(compatibility)
                 detail = (result.stdout + result.stderr)[-MAX_OUTPUT:]
                 report["evidence"].append({"step": script, "status": status, "detail": detail})
-                if result.returncode:
+                if status != "PASS":
                     failures.append(script)
         if failures:
             feedback = "Required tests failed: " + ", ".join(failures)
