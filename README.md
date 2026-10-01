@@ -10,6 +10,15 @@
 > ⚠️ 이 저장소의 모든 예시·스크린샷·시드 데이터는 더미입니다(예: `㈜샘플전자`, `ABC상사`).
 > 실제 클라이언트명과 재무 수치는 포함하지 않으며, 실데이터 경로는 `.gitignore`로 커밋에서 제외됩니다.
 
+## Development Harness
+
+개발 요청이 어떤 순서로 처리되고 어디까지 구현됐는지 확인할 수 있습니다.
+
+- [Harness 구조와 업무 흐름](docs/harness/ARCHITECTURE.md)
+- [현재 구현 상태와 남은 수동 단계](docs/harness/HARNESS_STATUS.md)
+- [개발 절차](docs/harness/development_workflow.md)
+- [공통 정책](governance/POLICY.md) · [Agent 안내](AGENTS.md)
+
 ---
 
 ## 한눈에 보기

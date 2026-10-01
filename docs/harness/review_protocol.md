@@ -13,7 +13,18 @@ Mark findings `blocking`, `nonblocking`, or `question`, with file, evidence, and
 
 ## Final report format
 
+Use `report_template.md` for Reviewer findings, Human Approval requests, UAT results, intermediate updates, and final handoffs. The six-question Korean summary must come first; it must disclose failures and outstanding decisions without requiring the owner to read the technical section. Preserve the full evidence below it:
+
 ```text
+## 한눈에 보기
+### 1. 이번에 무엇을 했나?
+### 2. 실제로 무엇이 달라졌나?
+### 3. 확인 결과는 어땠나?
+### 4. 아직 남은 문제는?
+### 5. 내가 결정해야 할 게 있나?
+### 6. 지금 상태는?
+
+## Developer Details
 Goal / root cause:
 Changed behavior and files:
 Reproduction or acceptance examples:
@@ -25,5 +36,7 @@ Manual checks: completed / pending and who must perform them
 Remaining risks and known exceptions:
 Business acceptance needed: explicit decision or none
 ```
+
+For a Reviewer result, include the verdict and each finding's severity and evidence in Developer Details. For UAT, include the operator, scenario, expected and observed result, and untested steps. For Human Approval, put the decision and plain-language options with tradeoffs in question 5, then record exact protected before/after and gate impact in Developer Details. Do not call an unfinished or unrun check complete.
 
 Technical PASS means the stated automated checks passed. Business acceptance remains a human decision. Never say “all tests passed” when a required suite was not run.

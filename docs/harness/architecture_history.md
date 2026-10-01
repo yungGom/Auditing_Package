@@ -1,5 +1,7 @@
 # AI development harness v1.1 — architecture and baseline
 
+> Historical snapshot inspected at `main` commit `7cd756b` on 2026-09-27. For the current Harness, use [ARCHITECTURE.md](ARCHITECTURE.md) and [HARNESS_STATUS.md](HARNESS_STATUS.md). Statements below describe that earlier checkout and are not current implementation claims.
+
 ## Current repository at baseline
 
 Inspected `main` at `7cd756b` (2026-09-27). The repository has no root `AGENTS.md`, `.github` templates, or GitHub Actions workflow at this baseline. It has a root `CLAUDE.md` focused on AuditLink, a detailed `DSD_footing/CLAUDE.md`, and project READMEs and gate ledgers. The harness adds files and leaves those sources intact.
