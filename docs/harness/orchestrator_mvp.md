@@ -34,7 +34,7 @@ governance files are trusted and the new Implementer changes are checked.
 | IN_PROGRESS | Implementer, checks, tests, or Reviewer running. |
 | HUMAN_APPROVAL | Issue names a pending owner decision, an agent requests one, or protected check fails. No further agent/test runs. |
 | DONE | Required scripts returned zero and a separate read-only Reviewer returned PASS. Human business acceptance is still pending. |
-| TASK_PASS_WITH_KNOWN_GAPS | Issue-declared task checks and independent review passed, with no new regression against a measured pre-change baseline. Declared repository failures or skips remain; this is not Technical PASS and exits with code 2. Human business acceptance is pending. |
+| TASK_PASS_WITH_KNOWN_GAPS | Issue-declared task checks and independent review passed, with no new regression against a measured pre-change baseline. Declared repository failures or skips remain; the state is not full-repository Technical PASS or real-material compatibility acceptance and exits with code 2. Separately reported public/synthetic Technical Gate PASS applies only to its executed scope. Human business acceptance is pending. |
 | FAILED | Invalid input, unavailable CLI, failed command, dirty worktree, or blocker remains after two attempts. |
 
 A named Human Owner decision in the Issue stops intake even in dry-run. The

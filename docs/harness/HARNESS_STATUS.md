@@ -34,7 +34,7 @@
 
 ## GitHub Project를 만들 수 있을 때의 상태 열
 
-아래는 최초 Harness 전용 현황판의 **이전 설계안**입니다. 실제 운영 현황은 [Master Dashboard](https://github.com/users/yungGom/projects/1)에서 확인합니다. 자동 이동은 구현하지 않았으며 후속 PR #20의 운영 설명은 별도 반영 대상입니다. `Auditing_Package Harness`라는 Project를 만들거나 같은 목적의 기존 Project를 확인한 뒤, Status 필드와 Board view에 순서대로 적용할 수 있습니다. 각 칸의 이동은 현재 자동화되지 않았습니다. `PR` 칸은 최종 수용 후 병합을 준비하는 상태를 뜻하며, 검증 결과 인계용 Pull Request 자체는 그 전에 열릴 수 있습니다.
+아래는 최초 Harness 전용 현황판의 **이전 설계안**입니다. 실제 운영 현황은 [Master Dashboard](https://github.com/users/yungGom/projects/1)에서 확인합니다. 자동 이동은 구현하지 않았으며 후속 PR #20의 운영 설명은 별도 반영 대상입니다. 당시에는 `Auditing_Package Harness`라는 이름과 아래 상태 순서를 제안했습니다. 새 현황판 생성 지시가 아니며, 실제 운영은 기존 Master Dashboard를 재사용합니다. 각 칸의 이동은 현재 자동화되지 않았습니다. `PR` 칸은 최종 수용 후 병합을 준비하는 상태를 뜻하며, 검증 결과 인계용 Pull Request 자체는 그 전에 열릴 수 있습니다.
 
 | 순서 | Status | 뜻 |
 | --- | --- | --- |
