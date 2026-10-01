@@ -2,9 +2,9 @@
 
 ## 한눈에 보기
 
-**전체 단계:** 현재 작업 브랜치에는 Issue 한 건을 읽어 변경·자동 검사·독립 검토·결과 보고까지 진행하는 도구가 있습니다. GitHub의 기본 브랜치에 배포됐다는 뜻은 아닙니다. **지금 사용할 수 있는 부분:** 정해진 양식으로 Issue를 작성하고, 보호 파일 검사와 제품별 검사를 실행하며, 결과와 남은 공백을 구분해 보고할 수 있습니다. **사람이 해야 하는 부분:** 요청과 업무 판단 확인, Pull Request 작성·최종 수용·병합, 수동 화면 확인과 작업 현황판 갱신입니다. 다음으로 효과가 큰 일은 ① GitHub Project를 만들고 Issue와 연결하기, ② 처음과 마지막 사람 승인 기록을 명확하게 강제하기, ③ 병합 전 필수 검사를 저장소 설정에서 의무화하기입니다.
+**전체 단계:** 현재 작업 브랜치에는 Issue 한 건을 읽어 변경·자동 검사·독립 검토·결과 보고까지 진행하는 도구가 있습니다. 공통 정책과 반복 검사 절차는 첫 번째 승인 후 기본 코드에 반영됐습니다. 한 건 실행 도구와 이 상태표는 두 번째 변경의 사람 검토를 기다립니다. **지금 사용할 수 있는 부분:** 정해진 양식으로 Issue를 작성하고, 보호 파일 검사와 제품별 검사를 실행하며, 결과와 남은 공백을 구분해 보고할 수 있습니다. **사람이 해야 하는 부분:** 요청과 업무 판단 확인, Pull Request 작성·최종 수용·병합, 수동 화면 확인과 작업 현황판 갱신입니다. 다음으로 효과가 큰 일은 ① 이미 만든 작업 현황판을 수동 운영하기, ② 처음과 마지막 사람 승인 기록을 명확하게 강제하기, ③ 병합 전 필수 검사를 저장소 설정에서 의무화하기입니다.
 
-**판정 기준:** 2026-09-30에 조사한 `feat/orchestrator-mvp`의 `6be6f79`와 당시 작업트리에 있던 Harness 보고서 관련 변경. 아래 상태는 그 **조사 시점의 구현**을 뜻하며, 기본 브랜치 반영·GitHub 설정 적용·실제 업무 승인을 뜻하지 않습니다. [이전 architecture 조사 기록](architecture_history.md)은 더 이른 기준의 자료이므로 현재 판정에는 사용하지 않았습니다.
+**판정 기준:** 2026-10-01. PR #4는 Owner Approval 후 main `4e00a1c`에 병합됐습니다. 이 작업 브랜치는 그 main을 반영한 PR #6 검증 대상입니다. Master Dashboard는 실제 존재하지만 자동 상태 갱신은 없습니다. PR #6·#20은 아직 병합하지 않았습니다. 상태 표는 기능 존재와 운영 경계를 설명하며 개별 실행의 PASS를 보증하지 않습니다.
 
 | 구성요소 | 상태 | 현재 동작 | 근거 | 다음 단계 |
 | --- | --- | --- | --- | --- |
@@ -26,15 +26,15 @@
 | PR 생성 | 🟡 부분 구현 / 수동 단계 존재 | 인계 절차와 템플릿은 있으나 자동 생성 없음 | [PR 템플릿](../../.github/pull_request_template.md), [`development_workflow.md`](development_workflow.md), [`orchestrator_mvp.md`](orchestrator_mvp.md) | 사람이 Issue 연결과 결과 기재 |
 | PR 검증 정보 | 🟡 부분 구현 / 수동 단계 존재 | PR 템플릿이 검사·보호 결과를 요구하고 CI 두 작업이 정의됨; 기록·실행 결과 확인은 필요 | [PR 템플릿](../../.github/pull_request_template.md), [CI](../../.github/workflows/harness.yml) | 실제 PR마다 FAIL/SKIP/NOT RUN 정확히 적기 |
 | Merge 전 검증 | 🟡 부분 구현 / 수동 단계 존재 | CI 검사 정의와 CODEOWNERS가 있으나 브랜치 규칙의 강제 적용은 확인되지 않음 | [CI](../../.github/workflows/harness.yml), [적용 한계](enforcement.md), [CODEOWNERS](../../.github/CODEOWNERS) | 저장소 소유자가 필수 검사·검토 규칙 확인/설정 |
-| GitHub Project 연동 | ❌ 미구현 | 코드 연동 없음. 공개 목록에서 Project가 보이지 않았고, 비공개 Project는 인증 실패로 조회하지 못함. 이번 작업에서 생성·상태 열 설정 불가 | [`orchestrator_mvp.md`](orchestrator_mvp.md) (연동 범위 밖), [공개 Project 목록](https://github.com/yungGom?tab=projects) | GitHub에 다시 인증해 기존 비공개 Project 확인 후 현황판 생성·상태 열 구성 |
+| GitHub Project 연동 | 🟡 부분 구현 / 수동 단계 존재 | [Master Dashboard](https://github.com/users/yungGom/projects/1)에 Issue를 수동 등록·갱신; 코드 자동 연동 없음 | 실제 GitHub Project, [`orchestrator_mvp.md`](orchestrator_mvp.md) | 후속 PR #20의 운영 문서는 별도 검토·병합 |
 | Agent 간 자동 routing | ❌ 미구현 | Issue 한 건의 고정된 Implementer·Reviewer 순서만 존재; 동적 배정 없음 | [`orchestrator_mvp.md`](orchestrator_mvp.md), [`scripts/orchestrator.py`](../../scripts/orchestrator.py) | 배정 규칙·권한·실패 인계 설계 |
 | 전체 end-to-end 자동화 | ❌ 미구현 | Issue 작성/첫 승인, Project, PR 생성, 최종 승인, 병합이 수동 | [`development_workflow.md`](development_workflow.md), [`orchestrator_mvp.md`](orchestrator_mvp.md) | 사람 판단을 남긴 채 단계 연결 설계 |
 
-**알려진 검사 공백:** [`enforcement.md`](enforcement.md)는 현재 공개 체크아웃에서 AuditDesk의 실제 파일이 없어 전체 CI 회귀 검사가 실패할 수 있다고 명시합니다. 부분 작업의 성공과 저장소 전체의 기술 검증 통과를 혼동하지 않습니다. 실제 검사 결과는 해당 실행의 보고서에서 확인해야 하며, 이 문서의 상태 표가 개별 테스트의 PASS를 보증하지는 않습니다.
+**알려진 검사 공백:** Issue #23 승인에 따라 공개·합성 반복 검사와 실제 자료 호환성을 분리합니다. `test_all.py`는 전자를 실행하며 후자는 BLOCKED/NOT RUN으로 남깁니다. 실제 자료 검사 완료나 업무 수용을 뜻하지 않습니다. 기존 strict `test_auditdesk.py`와 제품 테스트·기대값은 유지됩니다.
 
 ## GitHub Project를 만들 수 있을 때의 상태 열
 
-아래는 **설정 완료된 현황판이 아니라 설정안**입니다. `Auditing_Package Harness`라는 Project를 만들거나 같은 목적의 기존 Project를 확인한 뒤, Status 필드와 Board view에 순서대로 적용할 수 있습니다. 각 칸의 이동은 현재 자동화되지 않았습니다. `PR` 칸은 최종 수용 후 병합을 준비하는 상태를 뜻하며, 검증 결과 인계용 Pull Request 자체는 그 전에 열릴 수 있습니다.
+아래는 최초 Harness 전용 현황판의 **이전 설계안**입니다. 실제 운영 현황은 [Master Dashboard](https://github.com/users/yungGom/projects/1)에서 확인합니다. 자동 이동은 구현하지 않았으며 후속 PR #20의 운영 설명은 별도 반영 대상입니다. `Auditing_Package Harness`라는 Project를 만들거나 같은 목적의 기존 Project를 확인한 뒤, Status 필드와 Board view에 순서대로 적용할 수 있습니다. 각 칸의 이동은 현재 자동화되지 않았습니다. `PR` 칸은 최종 수용 후 병합을 준비하는 상태를 뜻하며, 검증 결과 인계용 Pull Request 자체는 그 전에 열릴 수 있습니다.
 
 | 순서 | Status | 뜻 |
 | --- | --- | --- |
