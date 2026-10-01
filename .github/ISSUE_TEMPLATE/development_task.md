@@ -44,7 +44,7 @@ assignees: []
 
 아래는 개발 계약과 검증 기록입니다. 기존 제목을 유지해야 Harness가 필요한 항목을 읽을 수 있습니다. 위 한국어 요약과 내용이 일치해야 합니다. Branch, PR, push, fixture, regression, baseline, snapshot, atomic publish, golden, orchestrator, Technical PASS 같은 표현은 원칙적으로 이 아래에만 적으세요.
 
-이 Issue가 작업의 기준 기록입니다. 실행 세션은 임시 작업 공간입니다. GitHub Project가 연결되면 현재 상태와 다음 행동만 짧게 동기화하고, 결정·검증의 상세 근거는 이 Issue에 남기세요.
+이 Issue가 작업의 기준 기록입니다. 실행 세션은 임시 작업 공간입니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)에 이 Issue를 연결하고 현재 상태와 다음 행동만 짧게 적으세요. 결정·검증의 상세 근거는 이 Issue에 남기세요. Project 갱신은 현재 수동입니다.
 
 ## 이번 Issue에서 알아두면 좋은 용어
 
