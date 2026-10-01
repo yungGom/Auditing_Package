@@ -627,6 +627,8 @@ def _run_scoped(args: argparse.Namespace, issue: dict[str, Any],
         report["repository_result"] = ("PASS" if all(x["status"] == "PASS" and
                                                       not x["skipped"] for x in current)
                                        else "FAIL")
+        if gaps:
+            report["repository_result"] = "FAIL"
         report["evidence"].append({"step": f"regression checks {attempt}",
                                    "status": report["repository_result"],
                                    "detail": {"results": current, "known_gaps": gaps,
@@ -785,6 +787,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             feedback = impl["summary"] + "\n" + "\n".join(impl["findings"])
             continue
         failures = []
+        compatibility_gaps = []
         # A fresh base avoids an inaccessible pre-existing pytest-of-user folder.
         with tempfile.TemporaryDirectory(prefix="orchestrator_tests_") as test_tmp:
             test_env = dict(os.environ, TEMP=test_tmp, TMP=test_tmp, TMPDIR=test_tmp)
@@ -792,15 +795,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 result = command([sys.executable, script], env=test_env,
                                  timeout=args.test_timeout)
                 status = "PASS" if result.returncode == 0 else "FAIL"
+                from orchestrator_results import summarize
+                structured = summarize(script, result)
+                status = structured["status"]
+                compatibility = structured.get("real_material_compatibility")
+                if compatibility and compatibility["status"] != "PASS":
+                    compatibility_gaps.append(compatibility)
                 detail = (result.stdout + result.stderr)[-MAX_OUTPUT:]
                 report["evidence"].append({"step": script, "status": status, "detail": detail})
-                if result.returncode:
+                if status != "PASS":
                     failures.append(script)
         if failures:
             feedback = "Required tests failed: " + ", ".join(failures)
             continue
+        report["known_gaps"] = compatibility_gaps
+        report["human_business_acceptance"] = "PENDING"
         before_review = worktree_fingerprint()
-        review_evidence = {"steps": report["evidence"],
+        review_evidence = {"steps": report["evidence"], "real_material_compatibility": compatibility_gaps,
                            "changed_files": [name for name, _ in before_review]}
         try:
             review = agent("reviewer", issue, json.dumps(review_evidence, ensure_ascii=False),
@@ -837,7 +848,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if review["decision"] in REWORK_VERDICTS:
             feedback = reviewer_feedback(review["summary"], findings)
             continue
-        report.update(state="DONE", reason="Technical checks and independent review passed; business acceptance remains with Human Owner")
+        report.update(state="TASK_PASS_WITH_KNOWN_GAPS" if compatibility_gaps else "DONE", reason="Technical checks and independent review passed; real-material gaps and business acceptance remain with Human Owner" if compatibility_gaps else "Technical checks and independent review passed; business acceptance remains with Human Owner")
         break
     else:
         report.update(state="FAILED", reason=f"Retry limit reached ({args.max_attempts}); last blocker: {feedback}")

@@ -20,3 +20,7 @@ Use `report_template.md` for every intermediate or final implementation, verific
 | DSD_FOOTING | For each `GATES.json` sample: from `DSD_footing/`, `python run_gates.py <temporary public PDF copy> <registered tolerance>` |
 
 The AuditDesk README identifies browser E2E gates as manual; record them separately. A DSD_FOOTING gate pass means recorded metrics did not change, including recorded exceptions; it does not mean every accounting result is correct. If a task touches the separate AuditLink v2 under `auditdesk/backend` or `auditdesk/frontend`, run `python -m pytest -q` in `auditdesk/backend`, plus the applicable `npm run lint` and `npm run build` in `auditdesk/frontend`, and record those separately.
+
+Manual operation responsibilities and completion/blocker rules: [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md). Current PR dependency and bootstrap protection order: [HARNESS_V1_CLOSEOUT.md](HARNESS_V1_CLOSEOUT.md). These documents do not waive failed/skipped required checks.
+
+Issue #23 approved separate reproducible Technical Gate and real-material compatibility. Default `test_all.py` exit 0 is scoped Technical PASS; read structured compatibility/NOT RUN/BLOCKED and pending business acceptance independently. The legacy AuditDesk entrypoint retains full strict FAIL/SKIP behavior. `--timeout` bounds each check; missing technical execution or timeout fails the Technical Gate. Never infer compatibility from a synthetic test.

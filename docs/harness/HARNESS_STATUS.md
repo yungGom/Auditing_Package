@@ -2,9 +2,9 @@
 
 ## 한눈에 보기
 
-**전체 단계:** 현재 작업 브랜치에는 Issue 한 건을 읽어 변경·자동 검사·독립 검토·결과 보고까지 진행하는 도구가 있습니다. GitHub의 기본 브랜치에 배포됐다는 뜻은 아닙니다. **지금 사용할 수 있는 부분:** 정해진 양식으로 Issue를 작성하고, 보호 파일 검사와 제품별 검사를 실행하며, 결과와 남은 공백을 구분해 보고할 수 있습니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)에 요청 14건을 연결해 현재 상태와 다음 행동을 볼 수 있습니다. **사람이 해야 하는 부분:** 요청과 업무 판단 확인, Pull Request 작성·최종 수용·병합, 수동 화면 확인과 Project 현황 갱신입니다. 다음으로 효과가 큰 일은 ① 새 Issue·검사·병합에 따른 Project 상태 갱신 자동화, ② 처음과 마지막 사람 승인 기록을 명확하게 강제하기, ③ 병합 전 필수 검사를 저장소 설정에서 의무화하기입니다.
+**전체 단계:** 현재 작업 브랜치에는 Issue 한 건을 읽어 변경·자동 검사·독립 검토·결과 보고까지 진행하는 도구가 있습니다. GitHub의 기본 브랜치에 배포됐다는 뜻은 아닙니다. **지금 사용할 수 있는 부분:** 정해진 양식으로 Issue를 작성하고, 보호 파일 검사와 제품별 검사를 실행하며, 결과와 남은 공백을 구분해 보고할 수 있습니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)에 요청 15건을 연결해 현재 상태와 다음 행동을 볼 수 있습니다. **사람이 해야 하는 부분:** 요청과 업무 판단 확인, Pull Request 작성·최종 수용·병합, 수동 화면 확인과 Project 현황 갱신입니다. 현재 우선 마무리할 일은 ① 실제 자료 검사 공백의 처리 계약 확인, ② 선행 변경의 안전한 병합, ③ 실제 성공 검사를 확인한 뒤 병합 보호 설정입니다. 자동화 추가는 이번 범위가 아닙니다.
 
-**판정 기준:** 2026-09-30에 조사한 `feat/orchestrator-mvp`의 `cfb01bd`, GitHub Issue·PR과 [실제 Project](https://github.com/users/yungGom/projects/1) 설정. 아래 상태는 그 **조사 시점의 구현과 확인된 원격 상태**를 뜻하며, 기본 브랜치 반영·실제 업무 승인을 뜻하지 않습니다. [이전 architecture 조사 기록](architecture_history.md)은 더 이른 기준의 자료이므로 현재 판정에는 사용하지 않았습니다.
+**판정 기준:** 2026-09-30에 조사한 `feat/orchestrator-mvp`의 `cfb01bd`, GitHub Issue·PR과 [실제 Project](https://github.com/users/yungGom/projects/1) 설정. 아래 상태는 그 **조사 시점의 구현과 확인된 원격 상태**를 뜻하며, 기본 브랜치 반영·실제 업무 승인을 뜻하지 않습니다. 2026-10-01 운영 준비 재조사에서는 #4/#6/#20 모두 초안·회귀 CI 실패, main protection 없음·rulesets 없음, closeout 요청 #23 추가로 총 15건을 확인했습니다. 상세 근거는 [마무리 계획](HARNESS_V1_CLOSEOUT.md)에 있습니다. [이전 architecture 조사 기록](architecture_history.md)은 더 이른 기준의 자료이므로 현재 판정에는 사용하지 않았습니다.
 
 | 구성요소 | 상태 | 현재 동작 | 근거 | 다음 단계 |
 | --- | --- | --- | --- | --- |
@@ -25,7 +25,7 @@
 | Owner Final Approval Gate | 🟡 부분 구현 / 수동 단계 존재 | 최종 보고·PR에서 수용 판단을 요청; 도구가 승인을 기록하거나 병합을 제어하지는 않음 | [`POLICY.md`](../../governance/POLICY.md), [PR 템플릿](../../.github/pull_request_template.md), [`development_workflow.md`](development_workflow.md) | 최종 결정의 위치·증거를 운영 규칙으로 확정 |
 | PR 생성 | 🟡 부분 구현 / 수동 단계 존재 | 인계 절차와 템플릿은 있으나 자동 생성 없음 | [PR 템플릿](../../.github/pull_request_template.md), [`development_workflow.md`](development_workflow.md), [`orchestrator_mvp.md`](orchestrator_mvp.md) | 사람이 Issue 연결과 결과 기재 |
 | PR 검증 정보 | 🟡 부분 구현 / 수동 단계 존재 | PR 템플릿이 검사·보호 결과를 요구하고 CI 두 작업이 정의됨; 기록·실행 결과 확인은 필요 | [PR 템플릿](../../.github/pull_request_template.md), [CI](../../.github/workflows/harness.yml) | 실제 PR마다 FAIL/SKIP/NOT RUN 정확히 적기 |
-| Merge 전 검증 | 🟡 부분 구현 / 수동 단계 존재 | CI 검사 정의와 CODEOWNERS가 있으나 브랜치 규칙의 강제 적용은 확인되지 않음 | [CI](../../.github/workflows/harness.yml), [적용 한계](enforcement.md), [CODEOWNERS](../../.github/CODEOWNERS) | 저장소 소유자가 필수 검사·검토 규칙 확인/설정 |
+| Merge 전 검증 | 🟡 부분 구현 / 수동 단계 존재 | CI 검사 정의와 CODEOWNERS가 있으나 2026-10-01 main 보호 없음·rulesets 없음 확인 | [CI](../../.github/workflows/harness.yml), [적용 한계](enforcement.md), [CODEOWNERS](../../.github/CODEOWNERS) | 저장소 소유자가 필수 검사·검토 규칙 확인/설정 |
 | GitHub Project 연동 | 🟡 부분 구현 / 수동 단계 존재 | [Master Dashboard](https://github.com/users/yungGom/projects/1), 필드·저장 화면·Issue 연결은 실제 구성됨. 코드에서 자동 갱신은 없음 | [Project](https://github.com/users/yungGom/projects/1), [Backfill 기록](MASTER_DASHBOARD_BACKFILL.md) | 자동 전환 전 Issue 근거·권한·오류 처리 설계 |
 | Master Request Registry | 🟡 부분 구현 / 수동 단계 존재 | Issue 14건을 Project에 연결하고 중복 없는 Request ID를 부여. 새 Issue 등록은 수동 | [Backfill 기록](MASTER_DASHBOARD_BACKFILL.md), [Project](https://github.com/users/yungGom/projects/1) | 남은 과거 작업을 근거별 조사하고 새 요청 등록 절차 운영 |
 | Owner Inbox | 🟡 부분 구현 / 수동 단계 존재 | Owner Action·Done 제외 필터의 저장 화면을 구성. 항목 값은 사람이 갱신 | [Project Inbox](https://github.com/users/yungGom/projects/1), [Backfill 기록](MASTER_DASHBOARD_BACKFILL.md) | 화면 표시와 담당자 행동을 운영 중 검증·갱신 |
@@ -44,3 +44,19 @@
 [Master Dashboard](https://github.com/users/yungGom/projects/1)에 요청한 9개 업무 필드, 제품별·상태별 저장 화면과 상태 보드를 구성했습니다. 11개 Status에는 별도 `Blocked`가 포함됩니다. [Backfill 기록](MASTER_DASHBOARD_BACKFILL.md)은 14개 Issue의 근거와 수동/자동 동기화 경계를 설명합니다. **화면은 실제로 있지만 자동 라우팅·상태 갱신은 없습니다.** `PR` 상태는 최종 수용 뒤 병합을 준비하는 단계로 쓰되, 검증 결과를 전달할 초안 PR은 그 전에 열릴 수 있습니다.
 
 상태가 바뀌는 Harness 변경에서는 근거와 다음 단계를 다시 확인합니다. 구조도 함께 바뀐다면 [ARCHITECTURE.md](ARCHITECTURE.md)도 갱신합니다.
+
+## 수동 운영 준비
+
+[OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md)는 등록·번호·담당자 행동·완료·막힘의 수동 운영 책임을 설명합니다. #23/HARNESS-004는 정식 운영 마무리 요청입니다. 승인 전 조사 시점에는 전체 실패가 남아 있었습니다. 아래 최신 승인 구현과 검증보고서는 기본 검사 통과를 확인했지만 실제 자료 호환성·업무 수용·기본 브랜치 반영은 완료로 선언하지 않습니다. [현재 병합 경로와 결정안](HARNESS_V1_CLOSEOUT.md)을 함께 확인합니다.
+
+## Issue #23 승인 구현 — 2026-10-01
+
+자료가 없는 새 환경의 반복 검사와 실제 자료 확인을 분리했습니다. [`test_all.py`](../../scripts/test_all.py)는 공개·합성 Technical Gate와 실제 자료별 BLOCKED/NOT RUN을 각각 보고합니다. 실제 자료 확인·업무 수용·기본 브랜치 배포는 여전히 수동이며 완료로 표시하지 않습니다. 새 runner는 자료 상태만 확인하고 실제 자료 검사를 자동 실행하지 않습니다. 기존 [`test_auditdesk.py`](../../scripts/test_auditdesk.py)는 엄격한 전체 검사로 유지됩니다.
+
+- 명시적 자료 검사 목록: [`auditdesk_compatibility.json`](../../scripts/auditdesk_compatibility.json), 80 selectors. 기존 자료 없는 empty/parameterized 사례는 81건이며 새 테스트는 기본 Technical scope입니다.
+- 자료가 필요 없는 기존 계산 검사 4개는 그대로 실행합니다. 기대값을 바꾸거나 검사를 새 합성 성공으로 대체하지 않습니다.
+- 새 시간 제한·실행하지 못한 검사·결과 근거 검사: [`harness_process.py`](../../scripts/harness_process.py), [`harness_evidence.py`](../../scripts/harness_evidence.py).
+- 검사 범위 목록의 변경에는 새 Owner Decision이 필요합니다. 보호 checker 자동 등록은 보호 정책의 정확한 변경 승인 후 별도로 처리합니다.
+- PR별 실제 검사 결과와 병합 가능 상태는 [Issue #23](https://github.com/yungGom/Auditing_Package/issues/23) 최신 검증보고서를 따릅니다. 위 초기 red 기록은 승인 구현 전 조사 이력입니다.
+
+최신 승인 구현과 실제 검사 결과는 [Issue #23 검증보고서](ISSUE_23_VERIFICATION.md)를 함께 읽습니다. 기본 검사 통과와 실제 자료 81건 미확인, 선행 PR의 미반영 상태를 구분합니다.
