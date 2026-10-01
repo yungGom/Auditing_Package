@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import json
 
 TASK_PATH = re.compile(r"(?:auditdesk/(?:dsd_workbench/dsd_tool|dart_explorer|backend)/tests|scripts/tests)/test_[A-Za-z0-9_]+\.py$")
 FAILURE = re.compile(r"(?m)^(?:FAILED|ERROR)\s+(\S+)")
@@ -60,6 +61,26 @@ def declared_node(node: str, known: set[str]) -> bool:
 
 def summarize(script: str, result) -> dict:
     output = result.stdout + result.stderr
+    marker = "HARNESS_REPORT_JSON:"
+    if marker in output:
+        try:
+            report = json.loads(output.rsplit(marker, 1)[1].splitlines()[0])
+            checks = report["technical_checks"]
+            counts = checks["auditdesk_python"].get("counts", {})
+            component = lambda key: 0 if checks[key]["status"] == "PASS" else 1
+            components = {"auditdesk_pytest": component("auditdesk_python"),
+                          "webui_build": component("webui_build"),
+                          "auditdesk": max(component("auditdesk_python"), component("webui_build")),
+                          "dsd_footing": component("dsd_footing")}
+            return {"step": script, "status": "PASS" if result.returncode == 0 and report["technical_gate"] == "PASS" else "FAIL",
+                    "exit_code": result.returncode, "passed": counts.get("PASS", 0),
+                    "failed": counts.get("FAIL", 0), "skipped": counts.get("SKIP", 0), "errors": 0,
+                    "failures": [n for n,r in checks["auditdesk_python"].get("checks", {}).items() if r["status"] == "FAIL"],
+                    "skip_sites": [n for n,r in checks["auditdesk_python"].get("checks", {}).items() if r["status"] == "SKIP"],
+                    "components": components, "real_material_compatibility": report["real_material_compatibility"],
+                    "human_business_acceptance": "PENDING"}
+        except (ValueError, KeyError, TypeError):
+            return {"step":script,"status":"FAIL","exit_code":result.returncode,"passed":0,"failed":0,"skipped":0,"errors":1,"failures":[],"skip_sites":[],"components":{}}
     counts = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
     for number, kind in SUMMARY.findall(output):
         key = "errors" if kind in {"error", "errors"} else kind
@@ -96,6 +117,16 @@ def compare(before: list[dict], after: list[dict], declared: set[str]) -> tuple[
                 unclassified.append(f"{name}: baseline {component} result unavailable")
             elif component not in current["components"]:
                 regressions.append(f"{name}: {component} result unavailable after implementation")
+        compatibility = current.get("real_material_compatibility")
+        if compatibility and compatibility["status"] != "PASS":
+            gaps.append({"script": name, "status": compatibility["status"],
+                         "real_material_compatibility": compatibility})
+        old_compat = prior.get("real_material_compatibility", {}).get("checks", {})
+        for node, row in (compatibility or {}).get("checks", {}).items():
+            if row["status"] == "FAIL" and old_compat.get(node, {}).get("status") != "FAIL":
+                regressions.append(f"{name}: new compatibility failure {node}")
+            if old_compat.get(node, {}).get("status") == "PASS" and row["status"] != "PASS":
+                regressions.append(f"{name}: compatibility PASS lost {node}")
         old_failed = set(prior["failures"])
         new_failed = set(current["failures"])
         new_ids = new_failed - old_failed

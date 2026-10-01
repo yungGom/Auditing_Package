@@ -66,3 +66,9 @@ Owner Action의 None은 업무 승인이 끝났다는 뜻이 아니라 **지금 
 Project는 비공개이며 권한 있는 계정이 볼 수 있습니다. 모든 상태 이동·등록·완료는 수동입니다. 자동화 추가는 이번 범위가 아닙니다. 1~2주 후 수동 운영 부담을 보고 등록·상태 이동·완료·Inbox 알림·Agents API를 검토할 수 있으며 우선순위는 아직 정하지 않습니다.
 
 [병합 마무리 계획](HARNESS_V1_CLOSEOUT.md) · [개발 절차](development_workflow.md) · [현황](HARNESS_STATUS.md)
+
+### 승인된 검사 분리 운영
+
+[Issue #23 승인](https://github.com/yungGom/Auditing_Package/issues/23#issuecomment-5923919699) 이후 기본 `python scripts/test_all.py --report <결과.json>`는 공개·합성 Technical Gate입니다. 실제 자료 결과는 별도 `real_material_compatibility`에서 PASS/FAIL/SKIP/NOT RUN/BLOCKED를 확인합니다. exit 0만 보고 실제 호환성이나 업무 수용을 완료로 갱신하지 않습니다. 자료 의존 변경은 승인된 공개 자료로 별도 호환성 검사·필요한 화면 UAT를 실행한 후 Owner가 결정합니다. 고객·비공개 자료는 repository/CI 반입 금지입니다.
+
+검사 결과 파일에는 검사 ID·상태·집계만 기록합니다. Technical Gate에서 자료 부족 외 새 실패·skip·실행 불가가 있으면 차단합니다. 실제 자료가 없으면 BLOCKED, 존재하더라도 미실행이면 NOT RUN입니다. 새 자료의 공개 출처·재배포 근거는 별도 승인합니다. 기존 전체 검사 명령은 유지합니다.
