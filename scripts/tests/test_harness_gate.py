@@ -149,6 +149,16 @@ class MorePartitionTests(unittest.TestCase):
         items=[self.item(missing=False)];self.collect(p,items)
         self.assertEqual(items,[]);self.assertEqual(p.result(5)['status'],'NOT RUN')
 
+    def test_runtime_fixture_missing_prerequisite_is_blocked_without_execution(self):
+        p=partition.Partition('technical',{'checks':[{'selector':NODE,'material':'public cache','required_paths':['cache/public.dsd']}]})
+        with patch.object(Path,'exists',return_value=False):
+            self.collect(p,[self.item(missing=False)])
+        self.assertEqual(p.compatibility[NODE]['status'],partition.BLOCKED)
+
+    def test_material_prerequisite_cannot_escape_repository(self):
+        with self.assertRaises(ValueError):
+            partition.Partition('technical',{'checks':[{'selector':NODE,'material':'cache','required_paths':['../outside.dsd']}]})
+
     def test_pure_numeric_test_kept_without_inherited_material_mark(self):
         p=partition.Partition('technical',{'checks':[], 'technical_marker_overrides':['test_pure']})
         inherited=SimpleNamespace(name='skipif',args=(True,))

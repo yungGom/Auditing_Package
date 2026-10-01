@@ -51,7 +51,13 @@
     },
     {
       "selector": "dsd_workbench/dsd_tool/tests/test_guide_check.py::test_scaffold_guide_check_attached",
-      "material": "실제 수신 자료/편집기 산출물 필요"
+      "material": "실제 수신 자료/편집기 산출물 필요",
+      "required_paths": [
+        "dart_explorer/cache/xbrl/00136925/20260323000596_11011",
+        "dart_explorer/cache/document/00136925/20250814001572.dsd",
+        "dart_explorer/cache/document/00136925/20260323000596.dsd",
+        "dart_explorer/cache/xbrl/00136925/20260323000596_11011/succession_assets.json"
+      ]
     },
     {
       "selector": "dsd_workbench/dsd_tool/tests/test_hanbit.py::test_build_report",

@@ -21,6 +21,10 @@ class Partition:
         self.material = {r['selector']: r['material'] for r in manifest['checks']}
         if len(self.material) != len(manifest['checks']):
             raise ValueError('duplicate compatibility selector')
+        self.required_paths = {r['selector']: r.get('required_paths', []) for r in manifest['checks']}
+        if any(Path(path).is_absolute() or '..' in Path(path).parts
+               for paths in self.required_paths.values() for path in paths):
+            raise ValueError('material prerequisites must stay inside the repository')
         self.overrides = set(manifest.get("technical_marker_overrides", []))
         self.safe_ids = {}
         self.case_counts = {}
@@ -69,10 +73,15 @@ class Partition:
             # Old tests may refer to private workstation paths. Do not execute those from this Harness.
             outside = any(isinstance(v, str) and Path(v).is_absolute() and not Path(v).resolve().is_relative_to(PROJECT.resolve())
                           for k,v in vars(item.module).items() if k.startswith('_') and k not in {'__file__','__cached__'})
-            unavailable = unavailable or outside
+            paths = [PROJECT / path for path in self.required_paths[base]]
+            escaped = any(not path.resolve().is_relative_to(PROJECT.resolve()) for path in paths)
+            missing = escaped or any(not path.exists() for path in paths)
+            unavailable = unavailable or outside or missing
             row = {'status': BLOCKED if unavailable else 'NOT RUN', 'material': self.material[base]}
-            if outside:
+            if outside or escaped:
                 row['reason'] = 'OUTSIDE_REPOSITORY_MATERIAL_NOT_AUTHORIZED'
+            elif missing:
+                row['reason'] = 'MISSING_REQUIRED_MATERIAL'
             self.compatibility[safe] = row
             # Assessment only: no boolean flag can authorize arbitrary local material.
             removed.append(item)
