@@ -79,8 +79,8 @@ Auditing_Package의 개발 요청은 **GitHub Issue를 기준 기록**으로 삼
 Project 화면과 필드는 설정됐지만 **상태 전환 자동화는 없습니다.** 기본 하위 Issue 자동 등록도 껐으며 활성 Project workflow는 없습니다. Issue 승인·검사·검토 증거를 확인한 사람이 Project 요약을 갱신해야 합니다. 현황판을 만들었다는 사실만으로 제품 개발이나 전체 검사가 완료된 것은 아닙니다. Project는 비공개이며 권한 있는 계정으로 접근합니다.
 
 
-## 2026-10-01 통합 재검증 현황
+## 2026-10-02 통합 재검증 현황
 
 위14건 표는 최초 복원 이력입니다. 현재 Project API는15개 실제 Issue 항목과15개 고유 Request ID를 확인했습니다. 추가 항목은 [Issue #23](https://github.com/yungGom/Auditing_Package/issues/23), HARNESS-004(운영 마무리)입니다. 제품별 수는 DSD_FOOTING2·AuditDesk4·XBRL3·Harness4·AuditLink1·Audit Toolbox1입니다.9개 업무 필드·12개 저장 화면(상태 보드 포함)을 재확인했으며 Inbox 필터는 `-owner-action:None -status:Done`입니다. 상태 갱신은 계속 수동입니다.
 
-PR #4·#25·#6은 승인 후 main에 병합됐습니다. #15의 공통 검사 구현은 반영됐지만 기본 브랜치의 강제 검사 설정은 별도 확인·결정 대상입니다. #16의 도구 구현도 반영됐지만 실제 자료 호환성 완료를 주장하지 않습니다. 최신 main 보호 설정은404(Branch not protected), rulesets빈목록으로 확인했으며 변경하지 않았습니다. #14의 현황판 분류·상태 수용과 PR #20 병합은 아직 대기입니다. 기존POLICY의 현황판/제목 규칙 추가분은 main 대비 보호 검사 대상으로 남아 별도 Owner 판단이 필요합니다. 새 자동화·제품 변경·기존 기준 완화는 하지 않습니다.
+PR #4·#25·#6은 승인 후 main에 병합됐습니다. #15의 공통 검사 구현은 반영됐지만 기본 브랜치의 강제 검사 설정은 별도 확인·결정 대상입니다. #16의 도구 구현도 반영됐지만 실제 자료 호환성 완료를 주장하지 않습니다. 최신 main 보호 설정은404(Branch not protected), rulesets빈목록으로 확인했으며 변경하지 않았습니다. #14의 현황판 분류·상태 수용과 PR #20 병합은 아직 대기입니다. POLICY의 현황판·제목 규칙은 [Owner 승인](https://github.com/yungGom/Auditing_Package/pull/20#issuecomment-5927630921)을 확인하고 정책 전용 [PR #26](https://github.com/yungGom/Auditing_Package/pull/26)으로 main `ba6bed6`에 정식 반영했습니다. 승인 전 보호 검사 FAIL 이력은 유지합니다. PR #20의 현재 main 대비 정책 차이는 없으며 최종 검증·독립 검토·Owner Review를 별도로 수행합니다. 새 자동화·제품 변경·기존 기준 완화는 하지 않습니다.

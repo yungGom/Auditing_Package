@@ -96,12 +96,12 @@ Harness 단계, 승인 경계, 담당 역할, 검사 또는 보고 경로를 바
 
 ## H. 전체 개발 요청 현황판 — 실제 생성, 수동 갱신
 
-실제 [Auditing_Package Master Dashboard](https://github.com/users/yungGom/projects/1)를 만들고 14개 Issue를 연결했습니다. DSD_FOOTING, AuditDesk, XBRL, Harness, AuditLink, Audit Toolbox 요청을 제품별 저장 화면에서 볼 수 있습니다. Master Dashboard에는 짧은 현재 상태·다음 행동·업무 담당자 확인사항만 표시합니다. 세부 결정·검사·검토 이력은 Issue에 남깁니다. [Backfill 기록과 설정](MASTER_DASHBOARD_BACKFILL.md)에 ID·상태 근거와 수동 갱신 경계를 적었습니다.
+실제 [Auditing_Package Master Dashboard](https://github.com/users/yungGom/projects/1)에 현재 15개 Issue를 연결했습니다. 최초 복원은 14개이며 이후 운영 마무리 요청을 추가했습니다. DSD_FOOTING, AuditDesk, XBRL, Harness, AuditLink, Audit Toolbox 요청을 제품별 저장 화면에서 볼 수 있습니다. Master Dashboard에는 짧은 현재 상태·다음 행동·업무 담당자 확인사항만 표시합니다. 세부 결정·검사·검토 이력은 Issue에 남깁니다. [Backfill 기록과 설정](MASTER_DASHBOARD_BACKFILL.md)에 ID·상태 근거와 수동 갱신 경계를 적었습니다.
 
 ```mermaid
 flowchart TD
     O["업무 담당자"] --> M["GitHub Master Dashboard"]
-    M --> R["전체 요청 현황: Issue 14건 연결"]
+    M --> R["전체 요청 현황: Issue 15건 연결"]
     R --> I1["DSD_FOOTING Issue"]
     R --> I2["AuditDesk·XBRL Issue"]
     R --> I3["Harness·공통 Issue"]
