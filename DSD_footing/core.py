@@ -53,13 +53,18 @@ NOTE_HDR = re.compile(r"^(주\s*석|비\s*고|참\s*조|Note|Ref)$", re.I)
 
 def is_note_col(G, K, V, hdr, nrow, j):
     """주석번호·연번 열 판정 → 금액열에서 배제"""
+    hs = [norm(G[i][j]).replace(" ", "") for i in range(hdr)]
+    # '10% 상승시'는 금액을 표시하는 시나리오 열이지 비율 열이 아니다.
+    scenario = any(re.search(r"%.*(?:상승|하락|증가|감소)", h) for h in hs)
     for i in range(hdr):
         if NOTE_HDR.match(norm(G[i][j]).replace(" ", "")): return True
-    cells = [(G[i][j], V[i][j]) for i in range(hdr, nrow) if K[i][j] == "NUM"]
-    if not cells: return False
-    nocomma = sum(1 for t, v in cells if "," not in t)
-    small   = all(abs(v) < 100 for t, v in cells)
-    return (nocomma / len(cells) >= 0.8) and small
+        h = norm(G[i][j]).replace(" ", "")
+        if h in ("연번", "번호", "순번"):
+            return True
+        if not scenario and (h == "%" or "(%)" in h or re.search(r"(?:율|률)$", h)):
+            return True
+    # 작은 표시 금액도 금액이다. 값 크기만으로 주석열을 추정하지 않는다.
+    return False
 
 def grid_info(tb):
     """헤더행 수, 열별 숫자셀 수"""
