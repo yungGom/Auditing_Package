@@ -12,10 +12,12 @@
 
 ## Development Harness
 
-개발 요청이 어떤 순서로 처리되고 어디까지 구현됐는지 확인할 수 있습니다.
+개발 요청이 어떤 순서로 처리되고 어디까지 구현됐는지 확인할 수 있습니다. 요청의 상세 기록은 각 GitHub Issue에 남습니다.
 
+- [전체 개발 요청 Master Dashboard](https://github.com/users/yungGom/projects/1)
 - [Harness 구조와 업무 흐름](docs/harness/ARCHITECTURE.md)
 - [현재 구현 상태와 남은 수동 단계](docs/harness/HARNESS_STATUS.md)
+- [전체 개발 요청 복원 기록과 현황판 운영 기준](docs/harness/MASTER_DASHBOARD_BACKFILL.md)
 - [개발 절차](docs/harness/development_workflow.md)
 - [공통 정책](governance/POLICY.md) · [Agent 안내](AGENTS.md)
 

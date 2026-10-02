@@ -50,7 +50,7 @@ Harness는 요청, 지켜야 할 기준, 검사 결과와 사람의 결정을 �
 
 ## D. Information Flow
 
-업무 요구사항은 사람이 [Issue 템플릿](../../.github/ISSUE_TEMPLATE/development_task.md)의 쉬운 요약과 **Developer Details**에 기록합니다. 실행 도구는 열린 Issue의 승인·검사 계약을 읽고 Implementer에 전달합니다. Implementer 변경은 Git diff로 남습니다. 보호 검사와 제품별 검사가 증거를 만들고, Reviewer는 Issue, diff와 공식 검사 결과를 함께 봅니다. 보고서는 실패·건너뜀·기존 공백·새 문제와 검토 의견을 구분합니다. [PR 템플릿](../../.github/pull_request_template.md)은 결과를 사람에게 인계합니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)는 실제 운영되는 수동 현황판입니다. GitHub Project로의 상태 전파는 자동화되지 않았습니다. 공통 정책과 반복 검사 절차는 PR #4로 main에 반영됐으며, 이 문서와 한 건 실행 도구는 PR #6의 승인 대기 대상입니다. 공개·합성 검사와 실제 자료 확인은 분리하며, 자료 없음은 통과로 취급하지 않습니다.
+업무 요구사항은 사람이 [Issue 템플릿](../../.github/ISSUE_TEMPLATE/development_task.md)의 쉬운 요약과 **Developer Details**에 기록합니다. Issue가 작업·결정·상세 증거의 기준 기록이며, 실행 세션은 임시 작업 공간입니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)는 각 Issue의 상태·다음 행동·담당자 확인사항을 짧게 보여 줍니다. 실행 도구는 열린 Issue의 승인·검사 계약을 읽고 Implementer에 전달합니다. Implementer 변경은 Git diff로 남습니다. 보호 검사와 제품별 검사가 증거를 만들고, Reviewer는 Issue, diff와 공식 검사 결과를 함께 봅니다. 보고서는 실패·건너뜀·기존 공백·새 문제와 검토 의견을 구분합니다. [PR 템플릿](../../.github/pull_request_template.md)은 결과를 사람에게 인계합니다. GitHub Project로의 상태 전파는 자동화되지 않아 사람이 갱신합니다. 공통 정책과 반복 검사 절차, 한 건 실행 도구는 PR #4·#25·#6으로 main에 반영됐습니다. 공개·합성 검사와 실제 자료 확인은 분리하며 자료 없음은 통과로 취급하지 않습니다. 이 현황판 문서 변경은 PR #20에서 별도 검토 대기입니다.
 
 ## E. 업무 담당자 영역과 개발자 영역
 
@@ -68,6 +68,7 @@ Auditing_Package/
 ├── docs/harness/
 │   ├── ARCHITECTURE.md
 │   ├── HARNESS_STATUS.md
+│   ├── MASTER_DASHBOARD_BACKFILL.md
 │   ├── development_workflow.md
 │   ├── orchestrator_mvp.md
 │   ├── report_template.md
@@ -92,3 +93,28 @@ Auditing_Package/
 ## G. 구조 변경 시 문서 동기화
 
 Harness 단계, 승인 경계, 담당 역할, 검사 또는 보고 경로를 바꾸는 Pull Request에서는 이 문서의 그림·표·설명을 함께 검토합니다. 그래야 코드가 바뀌었는데 GitHub 구조도는 예전 동작을 설명하는 일을 막을 수 있습니다. 구현 상태가 바뀌면 [HARNESS_STATUS.md](HARNESS_STATUS.md)의 근거와 다음 단계도 갱신합니다. [PR 템플릿](../../.github/pull_request_template.md)에 확인 항목이 있습니다.
+
+## H. 전체 개발 요청 현황판 — 실제 생성, 수동 갱신
+
+실제 [Auditing_Package Master Dashboard](https://github.com/users/yungGom/projects/1)에 현재 15개 Issue를 연결했습니다. 최초 복원은 14개이며 이후 운영 마무리 요청을 추가했습니다. DSD_FOOTING, AuditDesk, XBRL, Harness, AuditLink, Audit Toolbox 요청을 제품별 저장 화면에서 볼 수 있습니다. Master Dashboard에는 짧은 현재 상태·다음 행동·업무 담당자 확인사항만 표시합니다. 세부 결정·검사·검토 이력은 Issue에 남깁니다. [Backfill 기록과 설정](MASTER_DASHBOARD_BACKFILL.md)에 ID·상태 근거와 수동 갱신 경계를 적었습니다.
+
+```mermaid
+flowchart TD
+    O["업무 담당자"] --> M["GitHub Master Dashboard"]
+    M --> R["전체 요청 현황: Issue 15건 연결"]
+    R --> I1["DSD_FOOTING Issue"]
+    R --> I2["AuditDesk·XBRL Issue"]
+    R --> I3["Harness·공통 Issue"]
+    I1 --> W["한 건의 Issue 실행"]
+    I2 --> W
+    I3 --> W
+    W --> E["Implementer"]
+    W --> V["자동 검사와 Reviewer"]
+    E --> V
+    V --> P["검증 결과는 Issue에 기록"]
+    P --> U["Project 요약: 사람의 수동 갱신"]
+    U --> B["업무 담당자 확인 목록"]
+    B --> O
+```
+
+Project·필드·저장 화면·Owner Inbox는 실제로 있습니다. 새 Issue 자동 등록, 검사 결과에 따른 상태 이동, 병합 후 Done 자동 전환은 **구현되지 않았습니다**. 도구가 검사를 실행하더라도 Project에는 자동 반영되지 않으며, 사람이 Issue의 근거를 확인해 갱신해야 합니다.

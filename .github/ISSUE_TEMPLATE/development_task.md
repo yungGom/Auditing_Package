@@ -44,6 +44,8 @@ assignees: []
 
 아래는 개발 계약과 검증 기록입니다. 기존 제목을 유지해야 Harness가 필요한 항목을 읽을 수 있습니다. 위 한국어 요약과 내용이 일치해야 합니다. Branch, PR, push, fixture, regression, baseline, snapshot, atomic publish, golden, orchestrator, Technical PASS 같은 표현은 원칙적으로 이 아래에만 적으세요.
 
+이 Issue가 작업의 기준 기록입니다. 실행 세션은 임시 작업 공간입니다. [Master Dashboard](https://github.com/users/yungGom/projects/1)에 이 Issue를 연결하고 현재 상태와 다음 행동만 짧게 적으세요. 결정·검증의 상세 근거는 이 Issue에 남기세요. Project 갱신은 현재 수동입니다.
+
 ## 이번 Issue에서 알아두면 좋은 용어
 
 <!-- 이 Issue의 기술 상세에서 실제로 사용한 용어와 쉬운 뜻만 적으세요. 용어가 없으면 이 섹션 전체를 삭제하세요. -->
@@ -54,6 +56,8 @@ assignees: []
 
 Project/component:
 Problem or desired behavior:
+Request ID (기존 Project ID 중복 확인 후 부여; 한 번 부여하면 변경·재사용 금지):
+Project item URL (실제로 연결된 경우만):
 
 ## Business rule and owner
 
@@ -83,6 +87,20 @@ Out of scope:
 
 Automated commands and expected evidence:
 Manual checks:
+
+## Progress
+
+현재 단계와 쉬운 한국어 요약:
+다음 행동과 담당자:
+Human Owner가 지금 해야 할 일 (없으면 `none`):
+최근 근거와 날짜 (댓글·검사·PR 링크):
+
+## Verification Report
+
+작업별 검사와 저장소 전체 검사 (PASS/FAIL/SKIP/NOT RUN을 구분):
+보호 대상 검사:
+독립 검토와 차단 의견:
+기존 공백 / 새 문제 / 수동 확인:
 
 ## Human decision required
 
