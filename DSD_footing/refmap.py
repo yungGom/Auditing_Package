@@ -6,7 +6,8 @@ C1~C6 본표↔주석 레퍼런스 대사 (오프라인)
 import re, collections
 import pdfplumber
 from core import grid_info, norm, parse, UNIT, UNIT_MULT
-from statements import read_rows, stmt_type, key
+from statements import (read_rows, stmt_type, key, SIDE_CUR, SIDE_PRV,
+                        SPAN_3M, SPAN_CUM, _fill_merged)
 from notes import NOTE_HEAD, AMT
 
 STMT_TAG = {"BS":"BS", "IS":"IS", "CI":"CI", "CF":"CF", "SCE":"SCE"}
@@ -79,6 +80,30 @@ def note_ranges(pdf):
         rng[n] = (p, end)
     return rng
 
+def column_periods(data):
+    """열의 명시 당/전·3개월/누적 표지. 위치만으로 기간을 추정하지 않는다."""
+    G, K, V, hdr, ncol, nrow, cols = grid_info(data)
+    if not cols: return {}
+    rows = [_fill_merged(G[i], min(cols), ncol) for i in range(hdr)]
+    periods = {}
+    for j in cols:
+        text = " ".join(row[j] for row in rows)
+        cur, prv = bool(SIDE_CUR.search(text)), bool(SIDE_PRV.search(text))
+        if cur == prv: continue
+        three, cumulative = bool(SPAN_3M.search(text)), bool(SPAN_CUM.search(text))
+        if three and cumulative: continue
+        span = "3M" if three else ("누적" if cumulative else None)
+        half, quarter = "반기" in text, "분기" in text
+        if half and quarter: continue
+        cadence = "반기" if half else ("분기" if quarter else None)
+        dates = re.findall(r"(?:19|20)\d{2}(?:\s*[./년-]\s*\d{1,2}(?:\s*[./월-]\s*\d{1,2}\s*일?)?\s*월?)?", text)
+        dates = tuple("-".join(re.findall(r"\d+", d)) for d in dates)
+        periods[j] = ("당" if cur else "전", span, cadence, dates)
+    return periods
+
+def same_period(m, n):
+    return m.get("period") is not None and m["period"] == n.get("period")
+
 def collect_main(pdf, units, min_won):
     """본표 항목 → ([dict(tag,label,val,mult,refs,...)], 단위 제외 목록)"""
     out = []; excl = []
@@ -94,6 +119,7 @@ def collect_main(pdf, units, min_won):
             njs = [j for j in range(min(3,ncol))
                    if any(re.fullmatch(r"주\s*석", norm(G[i][j])) for i in range(max(hdr,1)))]
             rows, nper = read_rows(data)
+            periods = column_periods(data)
             for d,k,raw,vals,ip,it,ri,cof in rows:
                 refs = set()
                 for j in njs:
@@ -102,7 +128,7 @@ def collect_main(pdf, units, min_won):
                 for p_, v in vals.items():
                     rec = dict(tag=STMT_TAG[st], label=raw[:24], val=v, mult=mult,
                                refs=refs, page=pi, table=ti, row=ri, col=cof.get(p_),
-                               period=p_, ncol=(njs[0] if njs else None))
+                               period=periods.get(cof.get(p_)), ncol=(njs[0] if njs else None))
                     if mult is None:
                         if refs: excl.append(rec)       # 복합·판독 불가 단위 → 대사 제외
                         continue
@@ -127,13 +153,15 @@ def collect_notes(pdf, rng, units, min_won):
             mult = units.get((pi, ti))
             if mult is None:
                 excl_tabs.add((pi, ti)); continue              # 복합·판독 불가 단위
+            periods = column_periods(data)
             for i in range(hdr, nrow):
                 for j in numcols:
                     if K[i][j] != "NUM": continue
                     v = V[i][j]
                     if abs(v * mult) < min_won: continue
                     out.append(dict(notes=ns, page=pi, table=ti, row=i, col=j,
-                                    val=v, mult=mult, label=(G[i][0] or "")[:24]))
+                                    val=v, mult=mult, label=(G[i][0] or "")[:24],
+                                    period=periods.get(j)))
     return out, excl_tabs
 
 def _pair_tol(ma, mb):
@@ -154,6 +182,7 @@ def build(pdf_path, tol=0.0, min_won=MIN_WON):
     for n in nts: bywon[round(n["val"] * n["mult"])].append(n)
 
     def match(m, n):
+        if not same_period(m, n): return False
         a, b = m["val"] * m["mult"], n["val"] * n["mult"]
         return abs(a - b) <= _pair_tol(m["mult"], n["mult"]) + 1e-6
 
@@ -173,13 +202,13 @@ def build(pdf_path, tol=0.0, min_won=MIN_WON):
             mwon = m["val"] * m["mult"]
             near = [n for n in {id(x): x for ref in m["refs"]
                                 for x in bynote.get(ref, [])}.values()
-                    if tol > 0 and abs(n["val"]*n["mult"] - mwon) <= tol]
+                    if same_period(m, n) and tol > 0 and abs(n["val"]*n["mult"] - mwon) <= tol]
             unmatched.append((m, near))
     # 주석간 레퍼: 같은 원 환산 금액이 다른 주석에도 등장하면 태그 누적
     for m, cs in links:
         for c in cs:
             others = {n for x in bywon.get(round(c["val"]*c["mult"]), []) for n in x["notes"]
-                      if n not in (c["notes"] & m["refs"])}
+                      if same_period(c, x) and n not in (c["notes"] & m["refs"])}
             c["also"] = sorted(others)[:2]
     return rng, mains, nts, links, unmatched, mexcl, nexcl
 
