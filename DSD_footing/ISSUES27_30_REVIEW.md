@@ -22,7 +22,7 @@ Baseline: remote main `6373a333414f51015f9d1068e32ec2ef7702cbe4`. Branch `codex/
 
 | Issue | File / function | Before | After |
 |---|---|---|---|
-|#27|core.is_note_col/grid_info|Comma-free values below100 treated as note numbers even under amount header|Explicit note/reference/sequence/percentage headers excluded; small values alone do not exclude an amount column|
+|#27|core.is_note_col/grid_info|Comma-free values below100 treated as note numbers even under amount header|Explicit note/reference/sequence and actual rate headers excluded; percentage scenario amount columns retained; small values alone do not exclude an amount column|
 |#28|tieout.collect/add; final B workbook sheet|Raw amount comparisons ignored different declared units|Declared won/thousand/million/hundred-million converted to won before B1–B10 arithmetic; unknown/unsupported unit remains None/unverified. Original signs and exact comparison threshold retained. Workbook labels values as won and includes evidence|
 |#29|refmap.column_periods/same_period/collect/build|Note matches based on unit-adjusted amount and reference, no period guard|Require matching explicit current/prior, span, half/quarter and date tokens; conflicting span/cadence unknown. Near-difference and secondary-note links also period guarded. Missing identity remains unmatched, not zero|
 |#30|final summary/console|Zero denominator raised after outputs created|Safe ratio, visible limited-analysis warning including --quiet, workbook analysis-status row. Zero checks never described as arithmetic verification complete|
@@ -38,7 +38,7 @@ All commands use bundled Python `C:/Users/moonyong/.cache/codex-runtimes/codex-p
 - `python -B scripts/check_protected.py --base origin/main`: **PASS**, `../protected27-30-v3.log`. No baseline waiver or checker allowlist widening.
 - `python -B DSD_footing/intake_check.py`: **PASS**, source signatures preserved.
 - `git diff --check`: **PASS**.
-- `python -B scripts/test_dsd_footing.py`: final run recorded in `../gates27-30-v3.log` and exit file. Pending final full output at this checkpoint; an earlier partial run was interrupted to resolve independent findings. That partial run is not final verification.
+- `python -B scripts/test_dsd_footing.py`: **FAIL**, exit1, **0/4 registered samples PASS, 4/4 FAIL**. All four executed without skipping. Final evidence `../gates27-30-v3.log` / `../gates27-30-v3.exit`. Earlier partial runs were interrupted to resolve findings and are not final verification.
 - `scripts/test_all.py`: **NOT RUN**, no shared/Harness/AuditDesk change, project-local gate is required and executed. No repository-wide Technical PASS claimed.
 - Render golden, GUI/manual accounting UAT, Linux execution, actual-material compatibility: **NOT RUN**. No private client data used.
 
@@ -57,6 +57,33 @@ These are local branch fixes, not current-main completion. Child Issues remain o
 No protected edit proposed/applied merely to pass tests. Any necessary GATES update is a separate exact-diff Owner decision, with per-sample before/after evidence. Current required-check protection cannot be bypassed with an approval comment; no settings/checker/admin bypass change is authorized here.
 Dashboard fields and child unique Request IDs remain manual registration work; no duplicate parent ID assigned or automatic Done claimed.
 
+### Final registered gate differences (unchanged protected GATES.json)
+
+| Public sample | Metric | Before baseline | Current branch |
+|---|---|---:|---:|
+|Samsung|C_ok|51|32|
+|Samsung|C_unmatched|56|75|
+|Humax|A_total|567|571|
+|Humax|A_OK|514|513|
+|Humax|A_SKIP|48|53|
+|Humax|C_ok|67|61|
+|Humax|C_unmatched|15|21|
+|LGES|A_total|395|397|
+|LGES|A_OK|379|381|
+|LGES|C_ok|82|79|
+|LGES|C_unmatched|33|36|
+|Chosun|A_total|380|382|
+|Chosun|A_OK|347|345|
+|Chosun|A_SKIP|29|33|
+|Chosun|C_ok|35|19|
+|Chosun|C_unmatched|45|61|
+
+All other registered metrics unchanged. These are measured results, **not approved replacement expectations**. Period guard reduces permissive C links; amount-column discovery changes A coverage/structural decisions. Per-row accounting correctness of every changed public check/link is **NOT VERIFIED**. In particular additional SKIP and displaced OK results require review, not automatic acceptance. No claim all deltas are desirable or all four issues meet full regression acceptance.
+
+Local readiness: focused behavior fixes and independent code review complete; required regression remains FAIL. Overall Technical PASS unavailable. Owner Review must decide further changed-result investigation before considering a separately approved baseline proposal. This patch does not update any baseline or change required checks.
+
+Remote publication: local implementation commit preserved. Attempted `git push -u origin codex/dsd-issues27-30` rejected by automatic approval review because local modification/review authorization did not explicitly cover remote product-code publication to `https://github.com/yungGom/Auditing_Package`. No alternative connector/code-publication workaround used. Branch publication/draft PR remain **NOT DONE** pending explicit Owner authorization; merge/deployment remain prohibited. Issue progress records can be updated without publishing product source.
+
 ### Code-free acceptance examples
 
 1. Use a synthetic PDF with an amount table10+20 and total40, different unit BS/CF, or swapped current/prior note amounts.
@@ -66,5 +93,3 @@ Dashboard fields and child unique Request IDs remain manual registration work; n
 Rollback: switch back to the unchanged main baseline (`git switch --detach 6373a333414f51015f9d1068e32ec2ef7702cbe4`) after committed review work is preserved; no destructive reset required.
 
 Third resolved regression: intermediate #27 percentage-header guard also excluded monetary scenario columns (10% 상승시/하락시, 할인율 0.25%증가/감소). Public Humax A_OK514→509/A_SKIP48→53 exposed it. Revised guard keeps scenario amount columns while excluding actual rate headers; four scenario subcases and no-percent interest-rate control added. Intermediate gate logs are interrupted checkpoints, not final evidence.
-
-
