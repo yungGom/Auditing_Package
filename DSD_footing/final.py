@@ -264,7 +264,8 @@ sheet("C_본표주석레퍼",["구분","페이지","항목","금액","대상","�
         " ".join(sorted({f"FN{n}" for c_ in cs for n in (c_["notes"] & m["refs"])})),
         f"주석 p{sorted({c_['page'] for c_ in cs})}"] for m,cs in RLINKS]
     + [["미성립",m["page"],m["label"],m["val"],
-        " ".join(f"FN{n}" for n in sorted(m["refs"])),"주석에서 동일 금액 미발견"] for m,_ in RUN]
+        " ".join(f"FN{n}" for n in sorted(m["refs"])),m.get('review_reason','검토 필요: 연결 미확인') +
+        ('; 후보 ' + ', '.join(f"p{n['page']} 표{n['table']} 행{n['row']+1} 열{n['col']+1}" for n in m.get('review_candidates',[])) if m.get('review_candidates') else '')] for m,_ in RUN]
     + [["단위제외",m["page"],m["label"],m["val"],
         " ".join(f"FN{n}" for n in sorted(m["refs"])),"복합·판독 불가 단위 — 대사 미수행(?)"] for m in REXCL],
       [10,8,28,18,16,30])

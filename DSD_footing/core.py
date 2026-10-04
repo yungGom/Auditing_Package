@@ -51,6 +51,11 @@ def find_unit(page_text):
 # ── 표 구조 분석 ───────────────────────────────────────────
 NOTE_HDR = re.compile(r"^(주\s*석|비\s*고|참\s*조|Note|Ref)$", re.I)
 
+def is_ratio_col(G, hdr, j):
+    hs = [norm(G[i][j]).replace(" ", "") for i in range(hdr)]
+    if any(re.search(r"%.*(?:상승|하락|증가|감소)", h) for h in hs): return False
+    return any(h == "%" or "(%)" in h or re.search(r"(?:율|률)$", h) for h in hs)
+
 def is_note_col(G, K, V, hdr, nrow, j):
     """주석번호·연번 열 판정 → 금액열에서 배제"""
     hs = [norm(G[i][j]).replace(" ", "") for i in range(hdr)]
@@ -118,7 +123,7 @@ def mixed_currency(unit_text):
     return len(set(CUR_TOK.findall(norm(unit_text or "")))) >= 2
 
 # ── 검증 ───────────────────────────────────────────────────
-def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
+def _check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
     """A1 세로합 · A2 가로합 · A3 계층합 수행 → 결과 리스트
 
     x0s    : 행별 첫 열 라벨의 x0 좌표 (들여쓰기 하위항목 판정용, 없으면 None)
@@ -384,6 +389,38 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
                         acc.append(V[i][a])
                 if pend is not None: emit(pend, acc)
     return res
+
+def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
+    """Currency checks plus isolated A1 ratios; percentages never become money."""
+    result = _check_table(tb, tol, x0s, sublog, ctx, excl_a2)
+    G, K, V, hdr, nc, nr, cols = grid_info(tb)
+    source_labels=[next((G[i][c] for c in range(nc) if K[i][c]=='TEXT'), '') for i in range(nr)]
+    source_excluded = (_excl_table(G,hdr,nc,nr,source_labels) or _restate_table(G,hdr,nc)
+                       or any('비율' in s for s in source_labels[hdr:])
+                       or (excl_a2 and any(G[i][c].replace(' ','')=='통화' for i in range(hdr) for c in range(nc)))
+                       or (any('상승' in s for row in G[hdr:] for s in row) and any('하락' in s for row in G[hdr:] for s in row)))
+    for j in range(nc):
+        if not is_ratio_col(G, hdr, j): continue
+        projected = []
+        for i in range(nr):
+            label = next((G[i][c] for c in range(j) if K[i][c] == "TEXT"), "")
+            projected.append([label, "표시수치" if i < hdr else G[i][j]])
+        # A shareholder distribution has a common denominator; ownership rates
+        # of independent subsidiaries do not. Unknown denominators stay reviewable.
+        additive = any(re.search(r"구성비|비중|점유율", G[i][j]) for i in range(hdr)) or (
+            any('지분율' in G[i][j] for i in range(hdr)) and
+            any('주주' in G[i][c] for i in range(hdr) for c in range(j)))
+        if any(re.search(r'종속기업|관계기업|기업명|회사명',G[i][c]) for i in range(hdr) for c in range(j)):
+            additive = False
+        for r in _check_table(projected, tol, x0s=x0s, ctx=ctx):
+            if r['kind'] != 'A1': continue
+            r['col'] = j
+            r['unit_role'] = 'ratio'
+            if not additive or source_excluded:
+                r['n'] = 0
+                r['reason'] = '비율의 가산 관계 확인 필요'
+            result.append(r)
+    return result
 
 def verdict(r, tol=0.0, round_steps=0):
     """A7 단수차이 분류 포함.
