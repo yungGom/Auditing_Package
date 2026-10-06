@@ -39,7 +39,8 @@ def _session(sid):
     with jobs.connect() as con:
         row = con.execute(
             "SELECT id, dsd_path, created, meta, state, xlsx_path, diff, "
-            "diff_options, repack, foot, recon FROM sessions WHERE id=?",
+            "diff_options, repack, foot, recon, xbrl_revision, "
+            "xbrl_result, xbrl_request FROM sessions WHERE id=?",
             (sid,)).fetchone()
     if row is None:
         raise HTTPException(404, "세션 없음")
@@ -51,6 +52,17 @@ def _session(sid):
         meta["editver_known"] = bool(is_known(meta["editver"]))
     # UI-7: 구버전 상태값을 읽기 시점에 화면 용어로 정규화
     state = "반영완료" if row[4] == "repack" + "완료" else row[4]
+    try:
+        xbrl = json.loads(row[12]) if row[12] else None
+    except (TypeError, ValueError):
+        xbrl = None
+    if not (isinstance(xbrl, dict) and row[11] and row[13]
+            and xbrl.get("session_id") == sid
+            and xbrl.get("revision") == row[11]
+            and xbrl.get("request_id") == row[13]
+            and xbrl.get("xlsx_path") == row[5]
+            and xbrl.get("dsd_path") == row[1]):
+        xbrl = None
     return {"session_id": row[0], "dsd_path": row[1], "created": row[2],
             "meta": meta, "state": state,
             "xlsx_path": row[5],
@@ -58,7 +70,8 @@ def _session(sid):
             "diff_options": json.loads(row[7]) if row[7] else None,
             "repack": json.loads(row[8]) if row[8] else None,
             "foot": json.loads(row[9]) if row[9] else None,
-            "recon": json.loads(row[10]) if row[10] else None}
+            "recon": json.loads(row[10]) if row[10] else None,
+            "xbrl_revision": row[11], "xbrl_result": xbrl}
 
 
 def _update(sid, **cols):
@@ -181,9 +194,14 @@ def get_session(sid: str):
 def extract_session(sid: str):
     s = _session(sid)
     dsd = s["dsd_path"]
+    revision = uuid.uuid4().hex
     os.makedirs(_WORKDIR, exist_ok=True)
-    out = os.path.join(_WORKDIR, f"{sid}_{os.path.splitext(
+    out = os.path.join(_WORKDIR, f"{sid}_{revision}_{os.path.splitext(
         os.path.basename(dsd))[0]}.xlsx")
+    with jobs.connect() as con:
+        con.execute("UPDATE sessions SET xbrl_revision=?, xbrl_request=NULL, "
+                    "xbrl_result=NULL, xlsx_path=NULL WHERE id=?",
+                    (revision, sid))
 
     def _run(progress):
         progress("DSD → Excel 추출 중…")
@@ -195,8 +213,11 @@ def extract_session(sid: str):
                     fs_sheets=info["fs_sheets"],
                     viewonly=info["viewonly"],   # UI-9: 수신물 판정(B-5 자산)
                     deduped_notes=info["deduped_notes"])
-        _update(sid, xlsx_path=info["out_path"], state="추출됨",
-                meta=json.dumps(meta, ensure_ascii=False))
+        with jobs.connect() as con:
+            con.execute("UPDATE sessions SET xlsx_path=?, state='추출됨', "
+                        "meta=? WHERE id=? AND xbrl_revision=?",
+                        (info["out_path"], json.dumps(meta, ensure_ascii=False),
+                         sid, revision))
         return {"xlsx_path": info["out_path"], "meta": meta}
 
     return {"job_id": jobs.submit("extract", _run)}

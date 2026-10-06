@@ -378,13 +378,25 @@ def xbrl_recon_route(body: dict):
         raise HTTPException(400, f"XBRL 패키지 폴더 없음: {package}")
     with jobs.connect() as con:
         row = con.execute(
-            "SELECT dsd_path, xlsx_path, meta FROM sessions WHERE id=?",
+            "SELECT dsd_path, xlsx_path, meta, xbrl_revision "
+            "FROM sessions WHERE id=?",
             (session_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "세션 없음")
     dsd_path, xlsx_path, meta = row[0], row[1], json.loads(row[2] or "{}")
     if not xlsx_path or not os.path.exists(xlsx_path):
         raise HTTPException(409, "extract 미실행 — 먼저 추출하세요")
+    revision = row[3]
+    if not revision:
+        raise HTTPException(409, "추출 버전 불명 — 다시 추출하세요")
+    request = uuid.uuid4().hex
+    with jobs.connect() as con:
+        updated = con.execute(
+            "UPDATE sessions SET xbrl_request=?, xbrl_result=NULL "
+            "WHERE id=? AND xbrl_revision=? AND xlsx_path=?",
+            (request, session_id, revision, xlsx_path)).rowcount
+    if not updated:
+        raise HTTPException(409, "추출 버전 변경 — 다시 실행하세요")
     # OpenDART 래핑 수신물 경고 (meta.xml 없음 → editver 미검출)
     warning = None
     if not meta.get("editver"):
@@ -428,10 +440,18 @@ def xbrl_recon_route(body: dict):
             body_elements=body_elements, tolerance=tolerance,
             out_path=out, source_warning=warning,
             progress=lambda m: progress(m), target=target)
-        res["package"] = package
+        res.update(package=package, session_id=session_id,
+                   revision=revision, xlsx_path=xlsx_path,
+                   dsd_path=dsd_path, request_id=request)
         with jobs.connect() as con:
-            con.execute("UPDATE sessions SET recon=recon WHERE id=?",
-                        (session_id,))
+            accepted = con.execute(
+                "UPDATE sessions SET xbrl_result=? WHERE id=? "
+                "AND xbrl_revision=? AND xbrl_request=? AND xlsx_path=?",
+                (json.dumps(res, ensure_ascii=False, default=str),
+                 session_id, revision, request, xlsx_path)).rowcount
+        if not accepted:
+            # The job remains historical, but its output is not a current result.
+            res["stale"] = True
         return res
 
     return {"job_id": jobs.submit("xbrl-recon", _run)}

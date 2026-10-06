@@ -44,6 +44,11 @@ def connect():
                         "INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+    for col in ("xbrl_revision", "xbrl_request", "xbrl_result"):
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
     return con
 
 
