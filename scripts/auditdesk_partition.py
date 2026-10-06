@@ -121,7 +121,7 @@ def main():
     args = parser.parse_args()
     plugin = Partition(args.mode, json.loads(MANIFEST.read_text(encoding='utf-8-sig')))
     with tempfile.TemporaryDirectory(prefix='harness_auditdesk_') as tmp:
-        code = pytest.main(['dsd_workbench/dsd_tool/tests','dart_explorer/tests','-q','-ra',f'--basetemp={Path(tmp)/"pytest"}'], plugins=[plugin])
+        code = pytest.main(['dsd_workbench/dsd_tool/tests','dart_explorer/tests','tests','-q','-ra',f'--basetemp={Path(tmp)/"pytest"}'], plugins=[plugin])
     result = plugin.result(code)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
