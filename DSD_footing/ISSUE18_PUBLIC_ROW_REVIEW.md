@@ -278,4 +278,3 @@ Tracked ledgers: [Lost main records](reviews/issue18-20261006/lost-main-ledger.c
 |[휴맥스홀딩스]연결감사보고서(2025.03.19).pdf|`b27fc753cbc3bbe221a5b5cdfb1d82126fe8130804aed0379ea4c5f5aeace792`|
 |[LG에너지솔루션]반기검토보고서(2025.08.14).pdf|`a2efb0fb669fa9601b9a2886f99b6837fce27b2545e89000bc90a941960e8975`|
 |[조선내화]연결감사보고서(2026.03.19).pdf|`8c2b59e4830901ed9455ce6ebe35f2269cbe93937004418c2df2daba1c45a41d`|
-
