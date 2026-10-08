@@ -55,3 +55,5 @@ A two-page synthetic forward link reproduces the loss. A shared-content-stream f
 Independent reviewer reproduced the actual Humax defect, confirmed the forward-link root cause, reran52PASS and verified a control mark exists only on actual p167 while adjacent p166/p168 contents remain byte-identical. No remaining blocking finding in this changed scope. All four final diagnostic PDFs also preserve every expected overlay's text/question marks; selected affected pages were re-rendered after the fix. This does not claim dedicated PDF C-unmatched question marks, which remain an existing export limitation.
 
 Independent review evidence is recorded separately. Stop at Owner Review; no protected baseline update, automatic mapping expansion, merge, deploy or Issue closure.
+
+Subsequent Windows CLI/launcher verification and failure-delivery fix are recorded in [ENTRYPOINT_OWNER_REVIEW.md](ENTRYPOINT_OWNER_REVIEW.md). The 52-method result above is this output checkpoint; the later report records 55 methods and its own fresh required gate run. Accounting decisions and the remaining review cells are unchanged.
