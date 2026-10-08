@@ -1,0 +1,286 @@
+{
+  "cases": {
+    "control": {
+      "current_applicable": true,
+      "diagnostics": [],
+      "concepts": 2,
+      "roles": 1,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "duplicate_concept_source_id": {
+      "current_applicable": false,
+      "diagnostics": [
+        "DUPLICATE_SOURCE_ID",
+        "DUPLICATE_SOURCE_ID"
+      ],
+      "concepts": 2,
+      "roles": 1,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "duplicate_role_source_id": {
+      "current_applicable": false,
+      "diagnostics": [
+        "DUPLICATE_SOURCE_ID",
+        "DUPLICATE_SOURCE_ID"
+      ],
+      "concepts": 2,
+      "roles": 2,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "duplicate_role_uri": {
+      "current_applicable": false,
+      "diagnostics": [
+        "AMBIGUOUS_ROLE"
+      ],
+      "concepts": 2,
+      "roles": 2,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "missing_second_presentation_header": {
+      "current_applicable": false,
+      "diagnostics": [
+        "REJECTED_PRESENTATION_ROW",
+        "REJECTED_PRESENTATION_ROW",
+        "MISSING_PRESENTATION_HEADER"
+      ],
+      "concepts": 2,
+      "roles": 1,
+      "occurrences": 2,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "repeated_same_qname_role_path": {
+      "current_applicable": true,
+      "diagnostics": [],
+      "concepts": 2,
+      "roles": 1,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "blank_arcrole": {
+      "current_applicable": true,
+      "diagnostics": [],
+      "concepts": 2,
+      "roles": 1,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "blank_order": {
+      "current_applicable": true,
+      "diagnostics": [],
+      "concepts": 2,
+      "roles": 1,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "same_local_name_distinct_namespaces": {
+      "current_applicable": true,
+      "diagnostics": [],
+      "concepts": 3,
+      "roles": 1,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    },
+    "current_extension_source_role": {
+      "current_applicable": false,
+      "diagnostics": [
+        "NON_CURRENT_SOURCE"
+      ],
+      "concepts": 2,
+      "roles": 1,
+      "occurrences": 4,
+      "references": 1,
+      "occurrence_ids_unique": true,
+      "labels": [
+        [
+          "ko",
+          "label",
+          "현금"
+        ],
+        [
+          "ko",
+          "verboseLabel",
+          "현금 설명"
+        ],
+        [
+          "en",
+          "label",
+          "Cash"
+        ]
+      ]
+    }
+  },
+  "test_results": {
+    "run": 8,
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "failing_tests": []
+  }
+}
