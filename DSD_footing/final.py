@@ -2,7 +2,7 @@
 """DSD 풋팅 엔진 — 통합 실행 (A1·A2·A3·A5·A7·B·C7·F1). 완전 오프라인."""
 import argparse, datetime, io, os, subprocess, sys, collections
 import pdfplumber
-from pypdf import PdfReader, PdfWriter
+from pdf_output import write_tickmark_pdf
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import Color
 from core import check_table, verdict, find_unit, grid_info, mixed_currency
@@ -228,11 +228,7 @@ with pdfplumber.open(PDF) as pdf:
 B,cons = tieout.run(PDF)
 decl,refs,miss,unref,gap = notes.run(PDF)
 
-src=PdfReader(PDF); w=PdfWriter()
-for i,pg in enumerate(src.pages,1):
-    if i in overlays: pg.merge_page(PdfReader(io.BytesIO(overlays[i])).pages[0])
-    w.add_page(pg)
-with open(OUT_PDF,"wb") as f: w.write(f)
+write_tickmark_pdf(PDF, overlays, OUT_PDF)
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -253,8 +249,8 @@ for row in ws.iter_rows(min_row=2):
     for cc in row[5:8]: cc.number_format="#,##0"
     if row[9].value=="차이": row[9].fill=PatternFill("solid",fgColor="FFC7CE")
     elif row[9].value=="미검증": row[9].fill=PatternFill("solid",fgColor="FFEB9C")
-wsb=sheet("B_본표간연계",["번호","검증항목","값1","값2","판정"],
-          [[a,b,c_,d_,e] for a,b,c_,d_,e,_ in B],[8,52,18,18,10])
+wsb=sheet("B_본표간연계",["번호","검증항목","값1(원)","값2(원)","판정","근거"],
+          [[a,b,c_,d_,e,f] for a,b,c_,d_,e,f in B],[8,52,18,18,10,40])
 for row in wsb.iter_rows(min_row=2):
     for cc in row[2:4]: cc.number_format="#,##0"
     if row[4].value=="차이": row[4].fill=PatternFill("solid",fgColor="FFC7CE")
@@ -264,7 +260,8 @@ sheet("C_본표주석레퍼",["구분","페이지","항목","금액","대상","�
         " ".join(sorted({f"FN{n}" for c_ in cs for n in (c_["notes"] & m["refs"])})),
         f"주석 p{sorted({c_['page'] for c_ in cs})}"] for m,cs in RLINKS]
     + [["미성립",m["page"],m["label"],m["val"],
-        " ".join(f"FN{n}" for n in sorted(m["refs"])),"주석에서 동일 금액 미발견"] for m,_ in RUN]
+        " ".join(f"FN{n}" for n in sorted(m["refs"])),m.get('review_reason','검토 필요: 연결 미확인') +
+        ('; 후보 ' + ', '.join(f"p{n['page']} 표{n['table']} 행{n['row']+1} 열{n['col']+1}" for n in m.get('review_candidates',[])) if m.get('review_candidates') else '')] for m,_ in RUN]
     + [["단위제외",m["page"],m["label"],m["val"],
         " ".join(f"FN{n}" for n in sorted(m["refs"])),"복합·판독 불가 단위 — 대사 미수행(?)"] for m in REXCL],
       [10,8,28,18,16,30])
@@ -298,6 +295,7 @@ sheet("C7_주석참조",["구분","내용"],
 tot=sum(stat.values())
 sheet("요약",["항목","값"],
       [["A 산술검증 총건수",tot],["  OK",stat['OK']],["  단수차이(ROUND)",stat['ROUND']],
+       ["분석 상태","제한된 분석: 산술검사 0건" if tot == 0 else "산술검사 수행"],
        ["  차이(DIFF)",stat['DIFF']],["  미검증(SKIP)",stat['SKIP']],
        ["  OK 비율",f"{stat['OK']/tot*100:.1f}%" if tot else "-"],
        ["B 연계검증 총건수",len(B)],["  OK",sum(1 for r in B if r[4]=='OK')],
@@ -309,8 +307,11 @@ sheet("요약",["항목","값"],
        ["도구 버전(커밋)",VER],["실행 일시",RUN_TS],
        ["범위","표시 수치 상호 정합성 한정. 원장·조서 대사는 별도 절차."]],[30,60])
 wb.save(OUT_XLSX)
+if tot == 0:
+    print("[안내] 제한된 분석: 산술검사 0건 — 산술 검증 완료를 의미하지 않습니다.")
 if not QUIET:
-    print(f"A 산술 {tot}건 → OK {stat['OK']} ({stat['OK']/tot*100:.1f}%) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']} / SIGN {stat['SIGN']}")
+    ratio = f"{stat['OK']/tot*100:.1f}%" if tot else "-"
+    print(f"A 산술 {tot}건 → OK {stat['OK']} ({ratio}) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']} / SIGN {stat['SIGN']}")
     print(f"B 연계 {len(B)}건 → OK {sum(1 for r in B if r[4]=='OK')} / 차이 {sum(1 for r in B if r[4]=='차이')} / 미검증 {sum(1 for r in B if r[4]=='미검증')}")
     print(f"C 레퍼 → 성립 {len(RLINKS)} / 미성립 {len(RUN)} / 차이 {len(RDIFF)}" +
           (f" · 단위제외 {len(REXCL)}건" if REXCL else ""))
