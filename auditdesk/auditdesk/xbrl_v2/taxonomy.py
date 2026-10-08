@@ -12,7 +12,7 @@ from zipfile import ZipFile
 from openpyxl import load_workbook
 from .model import ExpandedQName, stable_id
 
-PARSER_VERSION = 'dart-workbook-preview/2'
+PARSER_VERSION = 'dart-workbook-preview/3'
 
 @dataclass(frozen=True)
 class TaxonomyMetadata:
@@ -237,15 +237,27 @@ def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
         return q
     rows=sheets.get('Presentation Link',[]); role=''; h=None; stack=[]; section=0
     section_start=0; section_header=False
+    def presentation_metadata(row, marker):
+        # Explicit layouts observed in official DART and the existing preview.
+        # Extra populated cells are ambiguous, never guessed or discarded.
+        for marker_col, value_col in ((0,1), (1,3)):
+            if len(row)>marker_col and row[marker_col]==marker:
+                if len(row)<=value_col or any(value for col,value in enumerate(row) if col not in {marker_col,value_col}):
+                    return True, None
+                return True, row[value_col]
+        return False, None
     def close_presentation_section():
         if section_start and not section_header:
             error('MISSING_PRESENTATION_HEADER', 'Presentation section has no unambiguous header', loc('Presentation Link',section_start))
     if not rows: error('MISSING_PRESENTATION','Presentation Link sheet required for occurrence preview')
     for index,row in enumerate(rows,1):
-        if len(row)>1 and row[1]=='LinkRole':
+        is_role, role_value=presentation_metadata(row,'LinkRole')
+        if is_role:
             close_presentation_section()
-            role=row[3] if len(row)>3 else ''; section+=1; h=None; stack=[]
+            role=role_value or ''; section+=1; h=None; stack=[]
             section_start=index; section_header=False
+            if role_value is None:
+                error('MALFORMED_PRESENTATION_METADATA', 'Role metadata has ambiguous populated cells', loc('Presentation Link',index))
             if role not in role_keys: error('UNRESOLVED_ROLE','Presentation Role not declared',loc('Presentation Link',index))
             continue
         if 'prefix' in row and 'name' in row:
@@ -259,8 +271,8 @@ def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
         if h is None:
             # Only the documented Definition metadata layout may precede a
             # section header; every other nonempty row gets a rejection locator.
-            if (section_start and len(row)>1 and row[1]=='Definition'
-                    and all(not value for col,value in enumerate(row) if col not in {1,3})):
+            is_definition, definition_value=presentation_metadata(row,'Definition')
+            if section_start and is_definition and definition_value is not None:
                 continue
             error('REJECTED_PRESENTATION_ROW', 'Nonempty row cannot be interpreted without a presentation header', loc('Presentation Link',index))
             continue
