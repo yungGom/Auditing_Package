@@ -409,7 +409,7 @@ def check_table(tb, tol=0.0, x0s=None, sublog=None, ctx=None, excl_a2=False):
         # of independent subsidiaries do not. Unknown denominators stay reviewable.
         additive = any(re.search(r"구성비|비중|점유율", G[i][j]) for i in range(hdr)) or (
             any('지분율' in G[i][j] for i in range(hdr)) and
-            any('주주' in G[i][c] for i in range(hdr) for c in range(j)))
+            any('주주' in G[i][c].replace(' ', '') for i in range(hdr) for c in range(j)))
         if any(re.search(r'종속기업|관계기업|기업명|회사명',G[i][c]) for i in range(hdr) for c in range(j)):
             additive = False
         for r in _check_table(projected, tol, x0s=x0s, ctx=ctx):

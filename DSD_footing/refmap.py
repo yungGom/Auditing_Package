@@ -3,7 +3,8 @@
 C1~C6 본표↔주석 레퍼런스 대사 (오프라인)
 본표 행의 주석번호를 이용해 탐색 범위를 해당 주석으로 한정 → 우연일치 최소화
 """
-import re, collections
+import re, collections, calendar
+from datetime import date
 import pdfplumber
 from core import grid_info, norm, parse, UNIT, UNIT_MULT, is_ratio_col
 from statements import (read_rows, stmt_type, key, SIDE_CUR, SIDE_PRV,
@@ -84,6 +85,7 @@ PERIOD_SIDE = re.compile(r"(?<![가-힣])(당|전)\s*(반기|분기|기|회계�
 
 def _period(text):
     text = norm(text)
+    if DATE_TEXT.search(text) and not _dates(text): return None
     sides = {m.group(1) or m.group(4) for m in PERIOD_SIDE.finditer(text)}
     if len(sides) != 1: return None
     three, cumulative = bool(SPAN_3M.search(text)), bool(SPAN_CUM.search(text))
@@ -101,9 +103,10 @@ def _header_texts(data):
     rows = [_fill_merged(G[i], 0, nc) for i in range(hdr)]
     return {j: " ".join(row[j] for row in rows) for j in range(nc)}
 
-def column_periods(data, scope=""):
+def column_periods(data, scope="", columns=None):
     """열의 명시 당/전·3개월/누적 표지. 위치만으로 기간을 추정하지 않는다."""
     G, K, V, hdr, ncol, nrow, cols = grid_info(data)
+    if columns is not None: cols=columns
     if not cols: return {}
     texts = _header_texts(data)
     periods = {}
@@ -123,22 +126,30 @@ def same_period(m, n):
         if m.get('role') is None or m['role'] != n.get('role'): return False
         # Equal flows can be different financial meanings. Without an established
         # same item label, retain the proposed relation for human review.
-        if m['role'][0]=='거래액' and key(m.get('label','')) != key(n.get('label','')): return False
+        if m['role'][0]=='거래액':
+            mi = m.get('item_identity', _item_key(m.get('full_label', m.get('label',''))))
+            ni = n.get('item_identity', _item_key(n.get('full_label', n.get('label',''))))
+            if not mi or mi != ni: return False
     return True
 
 def _role(label, header, scope, tag=None):
     text = norm(label).replace(' ', '')
+    header = norm(header).replace(' ', '')
+    scope = norm(scope).replace(' ', '')
+    # Explicit movement column belongs to this cell, including borrowing accounts.
+    if '재무현금흐름' in header: return ('거래액', None)
     # Cell role precedes table role: a rollforward contains both endpoints and flows.
     if re.search(r'기말|기초|당기말|전기말|반기말|분기말', text):
         return ('잔액', '초' if '기초' in text else '말')
     if tag == 'BS': return ('잔액', '말')
     # Measurement categories and accrued/prepaid accounts contain words also
     # used for flows. Their bounded account names are not disposal gains.
-    if re.fullmatch(r'.*(?:공정가치(?:측정)?금융자산)|(?:미수수익|선급비용|평가충당금)', text):
+    if re.fullmatch(r'.*(?:공정가치(?:측정)?금융(?:자산|부채)|상각후원가(?:측정)?금융자산)|(?:수익증권|미수수익|선급비용|평가충당금)', text):
         if tag in ('CF','IS','CI'): return ('거래액', None)
         if re.search(r'(?:당|전)(?:기|반기|분기)?말', header + scope): return ('잔액','말')
         return None
-    if re.search(r'손익|수익|비용|처분이익|처분손실|재측정',text): return ('거래액',None)
+    if re.fullmatch(r'매출|매출액|매출원가|매출총이익',text): return ('거래액',None)
+    if re.search(r'손익|수익|비용|처분이익|처분손실|재측정|판매비와관리비|영업손실|현금흐름|창출된현금|운전자본|자산부채의변동|순손실|중단영업.*손실|^조정$',text): return ('거래액',None)
     if re.match(r'^(취득|처분|상각|감가상각|평가|증가|감소|배당|조정)', text): return ('거래액', None)
     if tag in ('CF','IS','CI'): return ('거래액', None)
     if tag == 'SCE': return None  # SCE movement/balance relations need Owner review.
@@ -147,6 +158,64 @@ def _role(label, header, scope, tag=None):
     if re.search(r'중.*변동|중.*내역', scope): return ('거래액', None)
     if re.search(r'자산|부채|채권|채무|차입금|금융상품|예금|장부금액', text): return ('잔액','말')
     return None
+
+
+def _item_key(label):
+    """Syntactic account identity; never strips valuation/disposal/OCI meaning."""
+    text = key(label).rstrip(':：').replace('ㆍ','').replace('ᆞ','').replace('·','')
+    text = text.replace('계속영업과관련된','계속영업').replace('법인세비용차감전','법인세차감전')
+    text = re.sub(r'(?:합계|총계|계)$', '', text) if not re.fullmatch(r'합계|총계|소계|계', text) else ''
+    return {'매출액': '매출', '금융원가': '금융비용',
+            '중단영업으로부터의손실': '중단영업손실',
+            '영업으로부터창출된현금흐름': '영업으로부터창출된현금'}.get(text, text) or None
+
+
+def _title_item(title):
+    """Identify a single explicitly named total; mixed titles remain ambiguous."""
+    text = norm(title).replace(' ', '')
+    names = re.findall(r'판매비와관리비|기타영업외수익|기타영업외비용|기타수익|기타비용|금융수익|금융비용|매출원가|매출액|영업수익|영업으로부터창출된현금(?:흐름)?|영업활동으로인한자산부채의변동|순운전자본의변동|운전자본의변동|수익[ㆍᆞ·]?비용의조정|조정(?:내역)?', text)
+    cash_adjustment = bool(re.search(r'영업활동|현금흐름',text) or re.fullmatch(r'(?:\(\d+\)|[가-하]\.)?조정(?:내역)?',text))
+    names = [x for x in names if not x.startswith('조정') or cash_adjustment]
+    items = {_item_key(x.replace('조정내역', '조정')) for x in names}
+    return next(iter(items)) if len(items) == 1 else None
+
+
+def _row_items(data, title, inherited_group=None, tag=None):
+    G,K,V,hdr,nc,nr,cols = grid_info(data)
+    outer = _title_item(title)
+    active = inherited_group or outer
+    groups = []; closed = set(); out = {}
+    continuing_end = next((i for i in range(nr) if key(G[i][0]) in ('계속영업손실','계속영업이익')), None)
+    discontinued = any(key(G[i][0]) in ('중단영업손실','중단영업이익') for i in range(nr))
+    for i in range(hdr):
+        if _title_item(G[i][0]):
+            active = _item_key(G[i][0])
+            if active=='조정' and outer and outer.endswith('조정'): active=outer
+            groups.append(active)
+    for i in range(hdr,nr):
+        label = G[i][0]
+        k = key(label).rstrip(':：')
+        numeric = any(K[i][j] == 'NUM' for j in cols)
+        if not numeric and label:
+            active = _item_key(label)
+            if active=='조정' and outer and outer.endswith('조정'): active=outer
+            groups.append(active)
+        if re.fullmatch(r'합계|총계|계|소계', k):
+            item = active
+            # Only already closed subgroups can feed a following grand total.
+            # Last-row position alone never proves an enclosing total.
+            if k != '소계' and i == nr-1 and outer and len(set(groups)) > 1 and set(groups) <= closed:
+                item = outer
+            closed.add(active)
+        else:
+            item = _item_key(label)
+            if numeric and re.search(r'총지출액$|총액$',k): closed.add(active)
+            # The statement explicitly closes continuing operations before a
+            # separately presented discontinued result; bind preceding tax lines.
+            if tag in ('IS','CI') and continuing_end is not None and discontinued and i < continuing_end and item in ('법인세비용','법인세차감전순손실','법인세차감전순이익'):
+                item='계속영업'+item
+        out[i] = item
+    return out, active
 
 def _source_lines(page, low, high, left=None, right=None):
     lines = collections.defaultdict(list)
@@ -159,23 +228,67 @@ def _source_lines(page, low, high, left=None, right=None):
 DATE_TEXT = re.compile(r'(?:19|20)\d{2}\s*[./년-]\s*\d{1,2}\s*[./월-]\s*\d{1,2}\s*일?')
 
 def _dates(text):
-    return tuple('-'.join(str(int(n)) for n in re.findall(r'\d+',d)) for d in DATE_TEXT.findall(text))
+    dates = tuple('-'.join(str(int(n)) for n in re.findall(r'\d+',d)) for d in DATE_TEXT.findall(text))
+    try:
+        for d in dates: date(*map(int,d.split('-')))
+    except ValueError: return ()
+    return dates
 
-def _report_anchors(pdf):
-    numbered={}; sides={}
-    for page in pdf.pages:
+def _duration_kind(line, dates):
+    """Quarter ordinal is not a duration. Validate the printed calendar range."""
+    if len(dates)!=2: return None
+    try:
+        start,end=(date(*map(int,d.split('-'))) for d in dates)
+    except ValueError: return None
+    if end < start: return None
+    months=(end.year-start.year)*12+end.month-start.month+1
+    complete=start.day==1 and end.day==calendar.monthrange(end.year,end.month)[1]
+    if not complete: return None
+    if '반기' in line and start.month==1 and months==6: return '누적'
+    if '분기' in line:
+        if months==3 and start.month in (1,4,7,10): return '3M'
+        if start.month==1 and months in (6,9,12): return '누적'
+        return None
+    return 'annual' if start.month==1 and months==12 else None
+
+
+def _report_anchors(pdf, with_sources=False):
+    numbered=collections.defaultdict(set); sides=collections.defaultdict(set)
+    sources=collections.defaultdict(list)
+    for pi,page in enumerate(pdf.pages,1):
         txt=page.extract_text() if hasattr(page,'extract_text') else ''
         if not stmt_type(txt or ''): continue
-        for line in (txt or '').splitlines():
-            m=re.search(r'제\s*(\d+)\s*기',line)
+        for li,line in enumerate((txt or '').splitlines(),1):
+            m=re.search(r'제\s*(\d+)\s*(?:\(\s*(당|전)\s*\))?\s*기',line)
             ds=_dates(line)
-            if m and ds: numbered.setdefault(m.group(1),set()).update(ds)
+            if m and ds:
+                kind = 'instant' if len(ds)==1 else _duration_kind(line,ds)
+                if kind is None: continue
+                if kind=='annual': kind=None
+                numbered[(m.group(1),kind)].add(ds)
+                sources[(m.group(1),kind)].append(dict(page=pi,line=li,text=line,dates=ds))
+                if m.group(2): sides[m.group(2)].add(m.group(1))
         for tb in page.find_tables():
             for text in _header_texts(tb.extract()).values():
                 m=re.search(r'제\s*(\d+)\s*\(\s*(당|전)\s*\)',text)
                 if m: sides.setdefault(m.group(2),set()).add(m.group(1))
-    return {side:tuple(sorted(numbered[next(iter(ns))],key=lambda d:tuple(map(int,d.split('-')))))
-            for side,ns in sides.items() if len(ns)==1 and next(iter(ns)) in numbered}
+    anchors = {(side,kind):next(iter(values))
+            for side,ns in sides.items() if len(ns)==1
+            for (number,kind),values in numbered.items()
+            if number==next(iter(ns)) and len(values)==1}
+    evidence = {(side,kind):sources[(next(iter(sides[side])),kind)] for side,kind in anchors}
+    return (anchors,evidence) if with_sources else anchors
+
+
+def _anchor_dates(anchors, period, role):
+    if not period: return ()
+    side,span,cadence,_ = period
+    if role and role[0]=='잔액':
+        if role[1]=='말': return anchors.get((side,'instant'), ())
+        span = span or ('누적' if cadence=='반기' else ('3M' if cadence=='분기' else None))
+        return anchors.get((side,span), ())[:1]
+    span = span or ('누적' if cadence=='반기' else ('3M' if cadence=='분기' else None))
+    return anchors.get((side,span), ())
 
 def _grid_layout(tb, nc):
     if not hasattr(tb,'rows'): return None
@@ -189,22 +302,26 @@ def _grid_layout(tb, nc):
 
 def period_contexts(pdf, units):
     """Geometry-bound table scopes and strict adjacent-page header continuation."""
-    out = {}; previous = None; section=None
-    anchors=_report_anchors(pdf)
+    out = {}; previous = None; section=None; title=''
+    anchors,anchor_sources=_report_anchors(pdf,with_sources=True)
     for pi,page in enumerate(pdf.pages,1):
-        scope = ''; owner = None; bottom = 0; date_scope=(); last_box=None
+        scope = ''; owner = None; bottom = 0; date_scope=(); last_box=None; title=''; invalid_date=False
         tables = page.find_tables()
         if not tables: previous = None; continue
         for ti,tb in enumerate(tables,1):
             reset = False
             if last_box and (abs(last_box[0]-tb.bbox[0])>=1 or abs(last_box[2]-tb.bbox[2])>=1 or tb.bbox[1]<bottom):
-                scope=''; owner=None; date_scope=(); bottom=0; reset=True
+                scope=''; owner=None; date_scope=(); bottom=0; title=''; invalid_date=False; reset=True
             for y,line in _source_lines(page,bottom,tb.bbox[1],tb.bbox[0],tb.bbox[2]):
-                if NOTE_HEAD.match(line.strip()) or re.match(r'^[가-하]\.\s',line):
-                    scope = ''; owner = None; date_scope=(); reset = True
+                if NOTE_HEAD.match(line.strip()) or re.match(r'^[가-하]\.\s|^\(\d+\)',line):
+                    scope = ''; owner = None; date_scope=(); invalid_date=False; reset = True
                     m=NOTE_HEAD.match(line.strip())
-                    if m: section=line.strip()
+                    if m: section=line.strip(); title=line.strip()
+                    elif not re.fullmatch(r'\(\d+\)\s*(?:당|전)\s*(?:기|반기|분기)(?:말|초)?',line):
+                        title=line
+                if _title_item(line) and not AMT.search(line): title=line
                 ds=_dates(line)
+                if DATE_TEXT.search(line) and not ds: invalid_date=True
                 if ds and (re.fullmatch(r'[\d\s./년월일-]+(?:현재)?',line) or NOTE_HEAD.match(line.strip())):
                     date_scope=ds
                 p = _period(line)
@@ -220,25 +337,41 @@ def period_contexts(pdf, units):
             # Continue only adjacent first/last tables, same grid geometry and
             # declared unit, without a new section or conflicting local scope.
             if ti==1 and hdr==0 and previous and previous['page']==pi-1 and not reset and section and section==previous['section'] and previous['open']:
-                if layout is not None and layout==previous['layout'] and previous['nc']==nc and previous['unit'] is not None and previous['unit']==units.get((pi,ti)) and abs(previous['left']-tb.bbox[0]) < 1 and abs(previous['width']-(tb.bbox[2]-tb.bbox[0])) < 1:
+                compatible = layout is not None and previous['layout'] is not None and len(layout)==len(previous['layout']) and all(abs(a-b)<=2 for cell,old in zip(layout,previous['layout']) for a,b in zip(cell,old))
+                if compatible and previous['nc']==nc and previous['unit'] is not None and previous['unit']==units.get((pi,ti)) and abs(previous['left']-tb.bbox[0]) < 1 and abs(previous['width']-(tb.bbox[2]-tb.bbox[0])) < 1:
                     if not scope or _period(scope)==_period(previous['scope']):
-                        headers=previous['headers']; scope=previous['scope']; owner=previous['owner']; date_scope=previous['dates']; inherited=True
+                        headers=previous['headers']; scope=previous['scope']; owner=previous['owner']; date_scope=previous['dates']; title=previous['title']; invalid_date=previous['invalid_date']; inherited=True
             # A completed total or following narrative proves this is not an open
             # continuation. No numeric/amount agreement is used as an anchor.
             last_label=next((norm(c) for c in data[-1] if parse(c)[0]=='TEXT'), '')
             after=[line for y,line in _source_lines(page,tb.bbox[3],10000,tb.bbox[0],tb.bbox[2]) if not re.search(r'전자공시|dart.fss|Page\s*\d+',line)]
             is_open=not re.fullmatch(r'합\s*계|총\s*계|소\s*계|계',last_label) and not after
-            out[(pi,ti)] = dict(scope=scope,owner=owner,headers=headers,inherited=inherited,dates=date_scope,anchors=anchors)
-            previous=dict(page=pi,nc=nc,layout=layout,left=tb.bbox[0],width=tb.bbox[2]-tb.bbox[0],unit=units.get((pi,ti)),scope=scope,owner=owner,headers=headers,section=section,open=is_open,dates=date_scope)
+            donor=(previous['page'],previous['table']) if inherited else None
+            group=previous['group'] if inherited else None
+            _,active=_row_items(data,title,group)
+            out[(pi,ti)] = dict(scope=scope,owner=owner,headers=headers,inherited=inherited,dates=date_scope,anchors=anchors,anchor_sources=anchor_sources,title=title,group=group,donor=donor,invalid_date=invalid_date)
+            previous=dict(page=pi,table=ti,nc=nc,layout=layout,left=tb.bbox[0],width=tb.bbox[2]-tb.bbox[0],unit=units.get((pi,ti)),scope=scope,owner=owner,headers=headers,section=section,open=is_open,dates=date_scope,title=title,group=active,invalid_date=invalid_date)
             bottom=tb.bbox[3]; last_box=tb.bbox
     return out
 
 def _cell_evidence(data, context, tag=None):
     source = context['headers']
-    ps = column_periods(source,context['scope'])
+    ps = column_periods(source,context['scope'],grid_info(data)[-1])
+    # A period caption inside a mixed movement table can be placed over its
+    # middle columns. Use it only when all physical period headers agree.
+    header_periods = {_period(t) for t in _header_texts(source).values() if _period(t)}
+    texts = _header_texts(source)
+    conflict = any(PERIOD_SIDE.search(t) and not _period(t) for t in texts.values())
+    if len(header_periods)==1 and not conflict and not PERIOD_SIDE.search(context['scope']):
+        enclosing=next(iter(header_periods))
+        for j in grid_info(data)[-1]:
+            t=texts.get(j,'')
+            if not (PERIOD_SIDE.search(t) or SPAN_3M.search(t) or SPAN_CUM.search(t) or DATE_TEXT.search(t)):
+                ps.setdefault(j,enclosing)
     sides={p[0] for p in ps.values()}
     texts = _header_texts(source)
     G, K, V, hdr,nc,nr,cols=grid_info(data)
+    items,active = _row_items(data,context.get('title',''),context.get('group'),tag)
     out={}
     block=None
     for i in range(hdr,nr):
@@ -246,23 +379,35 @@ def _cell_evidence(data, context, tag=None):
         if tag=='SCE' and _period(label): block=_period(label)
         for j in cols:
             role=_role(label,texts.get(j,''),context['scope'],tag)
+            item=items.get(i)
+            if key(label) in ('계','합계','총계','소계') and re.search(r'지분법손익$',texts.get(j,'').replace(' ','')):
+                item='지분법손익'; role=('거래액',None)
+            if role is None and key(label) in ('계','합계','총계','소계') and item and _role(item,'','')==('거래액',None):
+                role=('거래액',None)
+            if key(label) in ('합계','계') and i==nr-1 and any(key(G[k][0])=='기말' for k in range(hdr,i)) and any(re.search(r'차감.*유동',key(G[k][0])) for k in range(hdr,i)):
+                role=('잔액','말')
             p=ps.get(j) or (block if tag=='SCE' else None)
+            if context.get('invalid_date'): p=None
             dates=context.get('dates')
             if p and dates and len(sides)>1 and not _period(context['scope']):
                 # An unbound standalone date cannot identify two fiscal sides.
-                dates=context.get('anchors',{}).get(p[0],())
+                dates=_anchor_dates(context.get('anchors',{}),p,role)
                 if not dates: p=None
             elif not dates:
-                dates=context.get('anchors',{}).get(p[0],()) if p else ()
+                dates=_anchor_dates(context.get('anchors',{}),p,role)
             if p and dates:
                 endpoint=dates[:1] if role and role==('잔액','초') else (dates[-1:] if role and role[0]=='잔액' else dates)
                 if p[3] and p[3] != endpoint: p=None
                 else: p=(p[0],p[1],p[2],endpoint)
+                if p and role and role[0]=='거래액' and not p[1] and p[2]=='반기' and len(endpoint)==2:
+                    p=(p[0],'누적',p[2],endpoint)
             # Duration is not applicable to an instant, but explicit date/cadence
             # conflicts stay visible. No missing movement span defaults to cumulative.
             if p and role and role[0]=='잔액': p=(p[0],None,p[2],p[3])
             out[(i,j)]=dict(period=p,role=role,period_source=context['owner'],
-                            period_text=texts.get(j,'')+' '+context['scope'])
+                            period_text=texts.get(j,'')+' '+context['scope'],
+                            period_anchor_sources=[s for values in context.get('anchor_sources',{}).values() for s in values if p and tuple(s['dates'])==p[3]],
+                            item_identity=item,item_source=dict(title=context.get('title',''),row=i,column=texts.get(j,''),donor=context.get('donor')))
     return out
 
 def collect_main(pdf, units, min_won, contexts=None):
@@ -288,7 +433,7 @@ def collect_main(pdf, units, min_won, contexts=None):
                     for tok in re.split(r"[,\s]+", norm(G[ri][j])):
                         if tok.isdigit(): refs.add(int(tok))
                 for p_, v in vals.items():
-                    rec = dict(tag=STMT_TAG[st], label=raw[:24], val=v, mult=mult,
+                    rec = dict(tag=STMT_TAG[st], label=raw[:24], full_label=raw, val=v, mult=mult,
                                refs=refs, page=pi, table=ti, row=ri, col=cof.get(p_),
                                ncol=(njs[0] if njs else None),
                                **evidence.get((ri,cof.get(p_)),dict(period=None,role=None)))
@@ -326,7 +471,7 @@ def collect_notes(pdf, rng, units, min_won, contexts=None):
                     v = V[i][j]
                     if abs(v * mult) < min_won: continue
                     out.append(dict(notes=ns, page=pi, table=ti, row=i, col=j,
-                                    val=v, mult=mult, label=(G[i][0] or "")[:24],
+                                    val=v, mult=mult, label=(G[i][0] or "")[:24],full_label=G[i][0] or '',
                                     **evidence.get((i,j),dict(period=None,role=None))))
     return out, excl_tabs
 
@@ -370,8 +515,8 @@ def build(pdf_path, tol=0.0, min_won=MIN_WON):
             equal = [n for ref in m['refs'] for n in bynote.get(ref,[])
                      if abs(n['val']*n['mult']-mwon) <= _pair_tol(m['mult'],n['mult'])+1e-6]
             if equal:
-                m['review_reason'] = '검토 필요: 기간 또는 잔액·거래액 의미 확인'
-                m['review_candidates'] = [dict(page=n['page'],table=n['table'],row=n['row'],col=n['col'],period=n['period'],role=n['role'],source=n.get('period_source'),text=n.get('period_text')) for n in equal]
+                m['review_reason'] = '검토 필요: 기간·잔액/거래액·계정/합계 범위 확인'
+                m['review_candidates'] = [dict(page=n['page'],table=n['table'],row=n['row'],col=n['col'],period=n['period'],role=n['role'],source=n.get('period_source'),text=n.get('period_text'),label=n.get('full_label',n['label']),item=n.get('item_identity'),item_source=n.get('item_source'),date_source=n.get('period_anchor_sources')) for n in equal]
             else:
                 m['review_reason'] = '동일 금액 미발견; 미검증'
             near = [n for n in {id(x): x for ref in m["refs"]

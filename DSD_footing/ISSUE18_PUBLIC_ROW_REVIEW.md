@@ -9,7 +9,7 @@
 ### 4. 아직 남은 문제는?
 주석 합계·표제·행 계층, 재무현금흐름 열, 연속표, 기간 출처를 더 정확히 읽어야 합니다. 실제 주주 비율 합계도 공백 표제 때문에 여전히 미검증입니다.
 ### 5. 내가 결정해야 할 게 있나?
-지금 추가 승인은 필요 없습니다. 이미 요청한 대로 의미가 다른 비교는 검토 대상으로 유지합니다. 회계 검토 대상으로 남길 근거 부족 항목은 기타포괄손익과 금융자산 평가·처분손익의 남은 세 기간입니다. 퇴직급여 누적과 당반기 누적 금융자산 손익은 인접 원문에서 구성 근거를 확보했지만 기존 결정에 따른 검토 상태를 유지합니다. 같은 구성 전체임을 입증하기 전에는 자동 연결하지 않습니다. 나머지는 프로그램 보완 사항이며 사용자에게 항목별 수작업 검사를 요구하지 않습니다.
+사용자가 LG에너지솔루션의 남은 세 기간을 미검증·검토 대상으로 유지하기로 결정했습니다. 해당 선택은 완료됐으며 자동 연결하지 않습니다. 퇴직급여 누적과 당반기 누적 금융자산 손익은 인접 원문에서 구성 근거를 확보했지만 기존 결정에 따른 검토 상태를 유지합니다. 나머지는 프로그램 보완 사항이며 사용자에게 항목별 수작업 검사를 요구하지 않습니다.
 ### 6. 지금 상태는?
 사람 확인 필요. 원문 검토와 분류를 마치고 Owner Review에서 멈춥니다. 병합·배포·기준 변경·Issue 종결은 하지 않습니다.
 
@@ -38,6 +38,8 @@ Definitions: ‘적절한 제외’ means exclusion from automatic normal same-p
 The87 records are current/prior/span-specific main amount cells, not87 distinct financial accounts or errors. These account for C linked235→148, unmatched149→236. No newly added main links.
 
 ### Remaining accounting question and source-supported review candidates
+
+**Owner Decision — 2026-10-06:** After identifying PDF viewer pages8/29 (printed Page7/28) and the three period cells, the Human Owner chose to retain them as unverified review candidates: “미검증·검토 대상 상태를 유지하면 됩니다. >> 이렇게 가는게 낫겠다”. Scope: current-half3M2025-04-01–2025-06-30 (−7,533millionwon), prior-half3M2024-04-01–2024-06-30 (213millionwon), prior-halfcumulative2024-01-01–2024-06-30 (1,650millionwon). Preserve the insufficient-evidence classification, reason and source coordinates; no normal automatic linkage or verified status from amount equality. This records the direct chat decision, not a finding that the accounting components are equivalent, a product fix, overall business acceptance, baseline change, merge/deploy permission or Issue closure. Owner Review remains the stopping point.
 
 **One remaining insufficient-evidence relation, three period cells:** LGES p8/t1/r7/c3,c7,c9 → p29/t1/r11/c2,c4,c5: non-reclassified FVOCI OCI −7,533/213/1,650百만원 vs category ‘평가손익/처분손익’. Same signs, periods, amounts and reference5 support candidates, but the entire note row is not explicitly bridged to the same OCI component for these three periods. Keep unverified. Additional current-half cumulative evidence must not be extended to quarter or prior-half periods. A future bridge needs exact-period OCI composition, not a waiver of matching rules.
 
