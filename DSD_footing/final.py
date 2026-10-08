@@ -2,7 +2,7 @@
 """DSD 풋팅 엔진 — 통합 실행 (A1·A2·A3·A5·A7·B·C7·F1). 완전 오프라인."""
 import argparse, datetime, io, os, subprocess, sys, collections
 import pdfplumber
-from pypdf import PdfReader, PdfWriter
+from pdf_output import write_tickmark_pdf
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import Color
 from core import check_table, verdict, find_unit, grid_info, mixed_currency
@@ -228,11 +228,7 @@ with pdfplumber.open(PDF) as pdf:
 B,cons = tieout.run(PDF)
 decl,refs,miss,unref,gap = notes.run(PDF)
 
-src=PdfReader(PDF); w=PdfWriter()
-for i,pg in enumerate(src.pages,1):
-    if i in overlays: pg.merge_page(PdfReader(io.BytesIO(overlays[i])).pages[0])
-    w.add_page(pg)
-with open(OUT_PDF,"wb") as f: w.write(f)
+write_tickmark_pdf(PDF, overlays, OUT_PDF)
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment

@@ -1,19 +1,21 @@
 ## 한눈에 보기
 
 ### 1. 이번에 무엇을 했나?
-합계·계정명·현금흐름 열·기간·연속표와 주주 표제 공백 인식을 보완했습니다. 원문 근거와 독립 검토 의견에 따라 잘못된 연결을 막는 검사도 추가했습니다.
+합계·계정명·현금흐름 열·기간·연속표와 주주 표제 공백 인식을 보완했습니다. 후속 출력 검토에서 발견한 PDF 표시 누락도 수정했습니다.
 ### 2. 실제로 무엇이 달라졌나?
 서로 다른 수익·비용 합계를 구분하고, 잔액과 재무현금흐름을 열별로 읽습니다. 3개월·누적 기간의 시작일과 종료일을 분리하며, 확인 가능한 연속표의 머리글을 이어 읽습니다. 끊겼던 연결 75건을 복구했습니다. 주주 비율 합계도 다시 검사합니다.
 ### 3. 확인 결과는 어땠나?
-집중 검사 48개와 보호 대상 검사는 통과했습니다. 공식 공개 자료 비교는 네 건 모두 기존 기준과 달라 실패했습니다. 기준은 변경하지 않았습니다. 전체 통과나 업무 수용으로 판단하지 않습니다.
+출력 보완 후 집중 검사 52개와 보호 대상 검사는 통과했습니다. 공식 공개 자료 비교는 네 건 모두 기존 기준과 달라 실패했습니다. 기준은 변경하지 않았습니다. 전체 통과나 업무 수용으로 판단하지 않습니다.
 ### 4. 아직 남은 문제는?
-의미 확인이 필요한 12개 금액 칸은 검토 대상으로 남습니다. 기존 기준과 달라진 검사 집계, 실제 화면·출력 결과 및 실제 업무 자료 확인도 남습니다.
+의미 확인이 필요한 12개 금액 칸은 검토 대상으로 남습니다. 기준 차이와 출력물을 확인했으며, 실제 화면·업무 자료와 전체 페이지 시각 검토는 남습니다. PDF의 주석 미성립은 예외 색인과 함께 확인해야 합니다.
 ### 5. 내가 결정해야 할 게 있나?
 지금 추가 결정은 요청하지 않습니다. LG엔솔의 세 기간은 사용자 결정대로 미검증·검토 대상으로 유지했습니다. 구성 근거를 찾았던 두 항목과 의미가 다른 비교도 기존 검토 상태를 유지합니다. 자동 연결이나 기준 변경 승인을 요청하지 않습니다.
 ### 6. 지금 상태는?
 사람 확인 필요. 독립 검토와 최종 공개 자료 비교를 마치고 Owner Review에서 멈춥니다. 병합·배포·기준 변경·요청 종결은 하지 않습니다.
 
 ## Developer Details
+
+Latest output follow-up: [OUTPUT_REVIEW_OWNER_REVIEW.md](OUTPUT_REVIEW_OWNER_REVIEW.md). It records the PDF merge defect and fix,52focusedPASS, fresh official4FAIL with the same ten metric differences,433source-page/395overlay-page preservation and11rendered page checks. Below remains the source-context implementation history; its48-test and output-NOT-RUN entries describe the earlier checkpoint, not the latest output status. No baseline approval or automatic mapping expansion is inferred.
 
 Date: 2026-10-08 Asia/Seoul. Source of truth: Issue #18 / DSD-002, implementation follow-ups #27/#29; preserve #28/#30. Existing draft PR #31. Product comparison: previous reviewed branch head2cea376 (implementation76a88c9) versus this follow-up. Historical main6373a classification is not changed by branch work.
 
