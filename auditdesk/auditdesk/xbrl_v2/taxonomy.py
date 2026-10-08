@@ -12,7 +12,7 @@ from zipfile import ZipFile
 from openpyxl import load_workbook
 from .model import ExpandedQName, stable_id
 
-PARSER_VERSION = 'dart-workbook-preview/3'
+PARSER_VERSION = 'dart-workbook-preview/4'
 
 @dataclass(frozen=True)
 class TaxonomyMetadata:
@@ -85,6 +85,17 @@ class TaxonomyLabel:
     source: WorkbookLocation
 
 @dataclass(frozen=True)
+class TaxonomyLabelSourceField:
+    field_id: str
+    qname: ExpandedQName | None
+    prefix: str
+    name: str
+    field_name: str
+    value: str
+    classification: str
+    source: WorkbookLocation
+
+@dataclass(frozen=True)
 class TaxonomyReference:
     resource_id: str
     qname: ExpandedQName | None
@@ -109,6 +120,7 @@ class TaxonomySnapshot:
     current_applicable: bool
     capabilities: str = 'PARTIAL'
     dimensions_known: bool = False
+    label_source_fields: tuple[TaxonomyLabelSourceField, ...] = ()
 
 
 def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
@@ -123,11 +135,11 @@ def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
     bindings = tuple(sorted(namespaces, key=lambda n: (n.prefix, n.namespace_uri, n.evidence)))
     digest = sha256(data).hexdigest()
     sid = stable_id('taxonomy', (digest, logical_uri, PARSER_VERSION, asdict(metadata), [asdict(n) for n in bindings]))
-    diagnostics=[]; concepts=[]; roles=[]; occurrences=[]; labels=[]; references=[]
+    diagnostics=[]; concepts=[]; roles=[]; occurrences=[]; labels=[]; references=[]; label_source_fields=[]
     def loc(sheet, row, column=0): return WorkbookLocation(sid, sheet, row, column)
     def error(code, message, source=None): diagnostics.append(TaxonomyDiagnostic(code, message, 'ERROR', source))
     def result():
-        return TaxonomySnapshot(sid,digest,logical_uri,PARSER_VERSION,metadata,bindings,tuple(concepts),tuple(roles),tuple(occurrences),tuple(labels),tuple(references),tuple(diagnostics),not any(d.severity=='ERROR' for d in diagnostics))
+        return TaxonomySnapshot(sid,digest,logical_uri,PARSER_VERSION,metadata,bindings,tuple(concepts),tuple(roles),tuple(occurrences),tuple(labels),tuple(references),tuple(diagnostics),not any(d.severity=='ERROR' for d in diagnostics),label_source_fields=tuple(label_source_fields))
     if not logical_uri.strip() or not metadata.version.strip() or not metadata.applicability_evidence.strip():
         error('MISSING_APPLICABILITY', 'Logical source, version and release applicability evidence required')
     if metadata.source_role != 'CURRENT_TAXONOMY':
@@ -159,7 +171,7 @@ def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
         wb=load_workbook(BytesIO(data),read_only=True,data_only=False,keep_links=False)
     except Exception as exc:
         error('INVALID_WORKBOOK',f'Workbook could not be opened ({type(exc).__name__})'); return result()
-    sheets={}
+    sheets={}; raw_label_rows=[]
     try:
         for ws in wb:
             if ws.title not in {'Concepts', 'RoleTypes', 'Presentation Link', 'Label Link', 'Reference Link'}:
@@ -170,6 +182,8 @@ def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
             for row in ws.iter_rows():
                 if any(c.data_type=='f' for c in row): error('FORMULA_UNSUPPORTED','Formula cells are not authoritative taxonomy data',loc(ws.title,row[0].row))
                 rows.append(tuple(text(c.value) for c in row))
+                if ws.title=='Label Link':
+                    raw_label_rows.append(tuple('' if c.value is None else str(c.value) for c in row))
             sheets[ws.title]=rows
     except Exception as exc:
         error('INVALID_WORKBOOK',f'Worksheet could not be read ({type(exc).__name__})'); return result()
@@ -301,29 +315,55 @@ def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
         error('EMPTY_PRESENTATION','No resolvable presentation occurrences')
     # Label headers repeat roles across language groups; carry language only from
     # the explicit language row, never infer it from text or workbook filename.
-    rows=sheets.get('Label Link',[]); hrow=None; langs=[]
+    rows=sheets.get('Label Link',[]); hrow=None; langs=[]; modes=[]
+    provenance_names={'base schema','systemid','prohibit','comment'}
+    valid_label_header=False; has_valid_label_header=False
     if not rows: diagnostics.append(TaxonomyDiagnostic('MISSING_LABELS','Label Link sheet absent','WARNING'))
     for index,row in enumerate(rows,1):
-        if 'prefix' in row and 'name' in row:
-            hrow=row; previous=rows[index-2] if index>=2 else (); language=''; langs=[]
+        if ('prefix' in row and 'name' in row) or (index<=8 and row and row[0]=='#' and provenance_names.intersection(row)):
+            hrow=row; previous=rows[index-2] if index>=2 else (); language=''; langs=[]; modes=[]
+            provenance_started=False; seen_provenance=set()
             for col in range(len(row)):
                 value=previous[col] if col<len(previous) else ''
+                if col>=3 and row[col] in provenance_names:
+                    provenance_started=True; language=''
+                    if value or row[col] in seen_provenance:
+                        error('AMBIGUOUS_LABEL_HEADER','Provenance column has language or duplicate header',loc('Label Link',index,col+1))
+                    seen_provenance.add(row[col]); modes.append('PROVENANCE'); langs.append('')
+                    continue
+                if col>=3 and provenance_started:
+                    modes.append('UNRESOLVED'); langs.append('')
+                    if row[col] or value:
+                        error('UNSUPPORTED_LABEL_COLUMN','Unknown column after provenance boundary',loc('Label Link',index,col+1))
+                    continue
                 if value: language=value
-                langs.append(language)
-            keys=[(langs[c],row[c]) for c in range(3,len(row)) if row[c]]
-            if row[:3] != ('#','prefix','name') or len(keys)!=len(set(keys)):
+                langs.append(language); modes.append('RESOURCE')
+            keys=[(langs[c],row[c]) for c in range(3,len(row)) if row[c] and modes[c]=='RESOURCE']
+            valid_label_header=row[:3]==('#','prefix','name') and len(keys)==len(set(keys))
+            if not valid_label_header:
                 error('AMBIGUOUS_LABEL_HEADER','Unique language/role pairs and explicit identity columns required',loc('Label Link',index))
-                hrow=None
+            has_valid_label_header |= valid_label_header
             continue
-        if hrow is None or not any(row): continue
+        if hrow is None or not (any(row) or any(raw_label_rows[index-1])): continue
         h={v:i for i,v in enumerate(hrow[:3]) if v}
-        q=linked(get(row,h,'prefix'),get(row,h,'name'),loc('Label Link',index))
+        prefix,name=get(row,h,'prefix'),get(row,h,'name')
+        q=linked(prefix,name,loc('Label Link',index))
         for col in range(3,min(len(row),len(hrow))):
-            if not row[col]: continue
-            if not langs[col] or not hrow[col]: error('AMBIGUOUS_LABEL','Label has no explicit language/role',loc('Label Link',index,col+1)); continue
             source=loc('Label Link',index,col+1)
+            classification=modes[col]
+            if classification=='RESOURCE' and (not valid_label_header or not langs[col] or not hrow[col]):
+                classification='UNRESOLVED'
+            value=row[col] if classification=='RESOURCE' else raw_label_rows[index-1][col]
+            if not value: continue
+            if modes[col]=='RESOURCE' and classification=='UNRESOLVED':
+                error('AMBIGUOUS_LABEL','Label has no unambiguous identity/language/role header',source)
+            elif classification=='UNRESOLVED':
+                error('UNSUPPORTED_LABEL_COLUMN','Value outside supported Label/provenance columns',source)
+            if classification!='RESOURCE':
+                label_source_fields.append(TaxonomyLabelSourceField(stable_id('label-source',(sid,index,col)),q,prefix,name,hrow[col],value,classification,source))
+                continue
             labels.append(TaxonomyLabel(stable_id('label',(sid,index,col)),q,langs[col],hrow[col],row[col],source))
-    if 'Label Link' in sheets and hrow is None:
+    if 'Label Link' in sheets and not has_valid_label_header:
         error('MISSING_LABEL_HEADER','Label Link has no unambiguous language/role header')
     rh=None
     if 'Reference Link' in sheets:

@@ -126,5 +126,5 @@ def test_supported_metadata_and_blank_rows_are_not_rejected():
 
 def test_integrity_parser_version_changes_snapshot_reuse_boundary():
     snapshot = parse()
-    assert snapshot.parser_version == 'dart-workbook-preview/3'
+    assert snapshot.parser_version == 'dart-workbook-preview/4'
     assert snapshot.capabilities == 'PARTIAL' and snapshot.dimensions_known is False
