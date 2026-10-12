@@ -354,6 +354,23 @@ def period_contexts(pdf, units):
             bottom=tb.bbox[3]; last_box=tb.bbox
     return out
 
+def _explicit_group_roles(data):
+    """Read only a standalone displayed valuation/disposal group, not a title alias."""
+    G, K, V, hdr, nc, nr, cols = grid_info(data)
+    out = {}; group = None
+    for i in range(nr):
+        label = G[i][0]
+        numeric = any(K[i][j] == 'NUM' for j in range(nc))
+        if not numeric:
+            group = (dict(kind='table_row_group', row=i, label=str(data[i][0]))
+                     if key(label) == '평가손익/처분손익' and not any(G[i][1:]) else None)
+        elif group:
+            out[i] = group
+            if key(label) in ('계','합계','총계','소계'):
+                group = None
+    return out
+
+
 def _cell_evidence(data, context, tag=None):
     source = context['headers']
     ps = column_periods(source,context['scope'],grid_info(data)[-1])
@@ -372,6 +389,7 @@ def _cell_evidence(data, context, tag=None):
     texts = _header_texts(source)
     G, K, V, hdr,nc,nr,cols=grid_info(data)
     items,active = _row_items(data,context.get('title',''),context.get('group'),tag)
+    group_roles = _explicit_group_roles(data)
     out={}
     block=None
     for i in range(hdr,nr):
@@ -379,6 +397,9 @@ def _cell_evidence(data, context, tag=None):
         if tag=='SCE' and _period(label): block=_period(label)
         for j in cols:
             role=_role(label,texts.get(j,''),context['scope'],tag)
+            role_source = None
+            if role is None and tag != 'SCE' and i in group_roles:
+                role=('거래액',None); role_source=group_roles[i]
             item=items.get(i)
             if key(label) in ('계','합계','총계','소계') and re.search(r'지분법손익$',texts.get(j,'').replace(' ','')):
                 item='지분법손익'; role=('거래액',None)
@@ -408,6 +429,8 @@ def _cell_evidence(data, context, tag=None):
                             period_text=texts.get(j,'')+' '+context['scope'],
                             period_anchor_sources=[s for values in context.get('anchor_sources',{}).values() for s in values if p and tuple(s['dates'])==p[3]],
                             item_identity=item,item_source=dict(title=context.get('title',''),row=i,column=texts.get(j,''),donor=context.get('donor')))
+            if role_source is not None:
+                out[(i,j)]['role_source']=role_source
     return out
 
 def collect_main(pdf, units, min_won, contexts=None):
@@ -516,7 +539,7 @@ def build(pdf_path, tol=0.0, min_won=MIN_WON):
                      if abs(n['val']*n['mult']-mwon) <= _pair_tol(m['mult'],n['mult'])+1e-6]
             if equal:
                 m['review_reason'] = '검토 필요: 기간·잔액/거래액·계정/합계 범위 확인'
-                m['review_candidates'] = [dict(page=n['page'],table=n['table'],row=n['row'],col=n['col'],period=n['period'],role=n['role'],source=n.get('period_source'),text=n.get('period_text'),label=n.get('full_label',n['label']),item=n.get('item_identity'),item_source=n.get('item_source'),date_source=n.get('period_anchor_sources')) for n in equal]
+                m['review_candidates'] = [dict(page=n['page'],table=n['table'],row=n['row'],col=n['col'],period=n['period'],role=n['role'],source=n.get('period_source'),text=n.get('period_text'),label=n.get('full_label',n['label']),item=n.get('item_identity'),item_source=n.get('item_source'),date_source=n.get('period_anchor_sources'),role_source=n.get('role_source')) for n in equal]
             else:
                 m['review_reason'] = '동일 금액 미발견; 미검증'
             near = [n for n in {id(x): x for ref in m["refs"]
