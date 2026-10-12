@@ -1,0 +1,139 @@
+{
+  "date": "2026-10-12",
+  "issue": 11,
+  "source_base": "051a49c5347f8106ebfc67ff3782379793f41034",
+  "main_base": "6373a333414f51015f9d1068e32ec2ef7702cbe4",
+  "parser_version": "dart-workbook-preview/5",
+  "raw_evidence_sha256": {
+    "preamble-red.log": "32bbf14b3e5e89e4182f2d8ed4a1b7520bb2c68d863ecb29d05ea36cd5f29b7f",
+    "preamble-red.xml": "cfd9b9c29f7df3720a0e8301f2f18db8067d8b7621dc2e4448899ee3b70d6d4b",
+    "metadata-whitespace-red.log": "e6ad748d2f22c740781571006484d59fdc80dd2ef931562937b15582549f0275",
+    "metadata-whitespace-red.xml": "870cd1849cef0f5d0073dacb15914779a52094dbe8c8b1a6ecc2bce5d40f915d",
+    "final-scoped.log": "7c222ee0c09d1516f5588df2a7768fea994c74ddface77c20967bf502298a319",
+    "final-scoped.xml": "2a113f889b638caf0d8e04316231f83edfc4d28775b0d2256a0842df08bafdd8",
+    "final-scoped.result.json": "9f579e5b1bd4d428d002a37689f907353fe2272a7b867eac325653ebbaa2291a",
+    "final-source/official-full-comparison.json": "d752c19931cc98ece3e94995292cab47ebe10741f117bbefed2f1b149ab61811",
+    "final-source/deep-comparison.json": "6b9baccdaf8923a5b0430a78389343cd59239f269a7540e007e72a16543c8dda",
+    "final-source/actual-source.result.json": "9abc18e541a451b988f3d72706aeab248f5c1818541a4b395a7d44cf91d57417",
+    "final-strict-auditdesk.log": "1c1d5cd32bf18dc95648dfffd159b83cac97f15d9e938ff18f152482c0859802",
+    "final-strict-auditdesk.result.json": "6cb61b95df28b12891b10e90398b0bc40a260ee4787012e1d6c2673837ef380e",
+    "final-all.json": "ca11f77dcc76d977c629c5e1cd3b508460f9b3be5dc0a473cb84509be6655ce1",
+    "final-all.log": "ef8781bad86372fa4b50fdb4b569683dc689213b45510c4822c2c7435f9e6f47",
+    "final-all.result.json": "efd3bb2d3ae8633a06118313ec7fcf1255fa630c374ca4f2fb8587b7af5c3e85",
+    "final-protected.log": "3d3db3d6b1ed27f6ff650e9636ed4fd20e5efcb0f54d329f8de7cab88093503b",
+    "final-whitespace.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final-acceptance.json": "a785442608d531a8833f16790baa9232ee52f1d01efd59eb5323368484404e4d"
+  },
+  "scoped": {
+    "status": "PASS",
+    "passed": 127,
+    "passing_subtests": 39,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "actual_source": {
+    "source_sha256": "d7135781ed425bb2e43a7dafffc3189435bbd16a70fae3d98c258ea8dc9845e7",
+    "parser_version": "dart-workbook-preview/5",
+    "seconds": 70.069,
+    "raw_language_merges": [
+      "D3:T3",
+      "U3:AK3"
+    ],
+    "expected_label_resources": 30909,
+    "actual_label_resources": 30909,
+    "label_count_by_language": {
+      "ko": 12374,
+      "en": 18535
+    },
+    "label_tuple_mismatches": 0,
+    "expected_provenance_fields": 9467,
+    "actual_source_fields": 9467,
+    "source_field_count_by_classification": {
+      "PROVENANCE": 9467
+    },
+    "source_field_exact_raw_value_identity_header_location_mismatches": 0,
+    "source_field_checks": {
+      "same_sheet": true,
+      "same_snapshot": true,
+      "no_invented_qname_without_bindings": true,
+      "unique_ids": true,
+      "unique_physical_cells": true
+    },
+    "record_counts": {
+      "concepts": 9451,
+      "roles": 2004,
+      "occurrences": 68898,
+      "labels": 30909,
+      "references": 6267,
+      "label_source_fields": 9467
+    },
+    "diagnostic_counts": {
+      "MISSING_APPLICABILITY": 1,
+      "NON_CURRENT_SOURCE": 1,
+      "INVALID_APPLICABILITY_DATE": 1,
+      "UNRESOLVED_NAMESPACE": 162316,
+      "UNKNOWN_ABSTRACT": 1829,
+      "DUPLICATE_SOURCE_ID": 2,
+      "DUPLICATE_CONCEPT": 1,
+      "AMBIGUOUS_PARENT": 68249,
+      "UNRESOLVED_CONCEPT": 27,
+      "MISSING_CONCEPT_IDENTITY": 16
+    },
+    "current_applicable": false,
+    "capabilities": "PARTIAL",
+    "dimensions_known": false,
+    "content_values_exported": false,
+    "applicability_and_namespace": "BLOCKED: NOT VERIFIED",
+    "verdict": "PASS"
+  },
+  "strict": {
+    "status": "FAIL",
+    "passed": 229,
+    "failed": 1,
+    "skipped": 76,
+    "webui_build": "PASS",
+    "failure": "dsd_workbench/dsd_tool/tests/test_version_check.py::test_g2_smoke_direct",
+    "reason": "KNOWN_GENERATION_MATERIAL_UNAVAILABLE"
+  },
+  "technical_gate": "PASS",
+  "aggregate_components": {
+    "auditdesk_python": {
+      "status": "PASS",
+      "reason": "COMPLETED",
+      "exit_code": 0,
+      "duration_seconds": 38.96
+    },
+    "webui_build": {
+      "status": "PASS",
+      "reason": "COMPLETED",
+      "exit_code": 0,
+      "duration_seconds": 11.95
+    },
+    "dsd_footing": {
+      "status": "PASS",
+      "reason": "COMPLETED",
+      "exit_code": 0,
+      "duration_seconds": 550.07
+    }
+  },
+  "compatibility": {
+    "status": "BLOCKED: REQUIRED MATERIAL UNAVAILABLE",
+    "counts": {
+      "PASS": 0,
+      "FAIL": 0,
+      "SKIP": 0,
+      "NOT RUN": 0,
+      "BLOCKED: REQUIRED MATERIAL UNAVAILABLE": 81
+    }
+  },
+  "business_acceptance": "PENDING",
+  "report_context_applicability": "BLOCKED: NOT VERIFIED",
+  "protected_and_whitespace": "PASS",
+  "independent_review": "PASS: 0 unresolved blockers",
+  "new_commit_remote_ci": "NOT RUN at report cutoff",
+  "client_values_or_private_paths_exported": false,
+  "workspace_implementation_sha256": "98ec425657662109f2bce09e49b11ad73d6e5c8c008e3af93027b4b127cc379f",
+  "git_lf_implementation_sha256": "c6fb7da58c96bd7191df8c6738727a69d4147a7d8359091e0dbb5e7dc9771301",
+  "implementation_line_endings": "Executed workspace CRLF; Git LF; identical after CRLF-to-LF normalization."
+}

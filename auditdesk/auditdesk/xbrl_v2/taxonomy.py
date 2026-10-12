@@ -9,10 +9,11 @@ from datetime import date
 from hashlib import sha256
 from io import BytesIO
 from zipfile import ZipFile
+import re
 from openpyxl import load_workbook
 from .model import ExpandedQName, stable_id
 
-PARSER_VERSION = 'dart-workbook-preview/4'
+PARSER_VERSION = 'dart-workbook-preview/5'
 
 @dataclass(frozen=True)
 class TaxonomyMetadata:
@@ -317,11 +318,23 @@ def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
     # the explicit language row, never infer it from text or workbook filename.
     rows=sheets.get('Label Link',[]); hrow=None; langs=[]; modes=[]
     provenance_names={'base schema','systemid','prohibit','comment'}
-    valid_label_header=False; has_valid_label_header=False
+    valid_label_header=False; has_valid_label_header=False; language_rows=set()
+    def label_header(index,row):
+        return ('prefix' in row and 'name' in row) or (index<=8 and row and row[0]=='#' and provenance_names.intersection(row))
+    def language_preamble(index,row):
+        raw=raw_label_rows[index-1]
+        if any(raw[:3]) or index>=len(rows) or not label_header(index+1,rows[index]):
+            return False
+        values=[value.strip() for value in raw[3:] if value!='']
+        # Check only the lexical language-marker shape, not language authority.
+        return bool(values) and all(re.fullmatch(r'[A-Za-z]{1,8}(?:-[A-Za-z0-9]{1,8})*',value) for value in values)
     if not rows: diagnostics.append(TaxonomyDiagnostic('MISSING_LABELS','Label Link sheet absent','WARNING'))
     for index,row in enumerate(rows,1):
-        if ('prefix' in row and 'name' in row) or (index<=8 and row and row[0]=='#' and provenance_names.intersection(row)):
-            hrow=row; previous=rows[index-2] if index>=2 else (); language=''; langs=[]; modes=[]
+        if language_preamble(index,row):
+            language_rows.add(index)
+            continue
+        if label_header(index,row):
+            hrow=row; previous=rows[index-2] if index-1 in language_rows else (); language=''; langs=[]; modes=[]
             provenance_started=False; seen_provenance=set()
             for col in range(len(row)):
                 value=previous[col] if col<len(previous) else ''
@@ -344,7 +357,19 @@ def parse_taxonomy_workbook(data: bytes, *, logical_uri: str,
                 error('AMBIGUOUS_LABEL_HEADER','Unique language/role pairs and explicit identity columns required',loc('Label Link',index))
             has_valid_label_header |= valid_label_header
             continue
-        if hrow is None or not (any(row) or any(raw_label_rows[index-1])): continue
+        if not (any(row) or any(raw_label_rows[index-1])): continue
+        if hrow is None:
+            if any(len(row)>value_col and row[key_col] in ('LinkRole','Definition')
+                   and not any(value!='' for col,value in enumerate(raw_label_rows[index-1])
+                               if col not in (key_col,value_col))
+                   for key_col,value_col in ((0,1),(1,3))):
+                continue
+            error('REJECTED_LABEL_ROW','Nonempty row cannot be interpreted without a Label header',loc('Label Link',index))
+            for col,value in enumerate(raw_label_rows[index-1]):
+                if value!='':
+                    source=loc('Label Link',index,col+1)
+                    label_source_fields.append(TaxonomyLabelSourceField(stable_id('label-source',(sid,index,col)),None,'','','',value,'UNRESOLVED',source))
+            continue
         h={v:i for i,v in enumerate(hrow[:3]) if v}
         prefix,name=get(row,h,'prefix'),get(row,h,'name')
         q=linked(prefix,name,loc('Label Link',index))

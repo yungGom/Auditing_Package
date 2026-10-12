@@ -116,7 +116,7 @@ def test_source_fields_are_immutable_deterministic_and_version_bound():
     data = edited(metadata)
     snapshot = parse(data)
     assert snapshot == parse(data)
-    assert snapshot.parser_version == 'dart-workbook-preview/4'
+    assert snapshot.parser_version == 'dart-workbook-preview/5'
     assert len({f.field_id for f in snapshot.label_source_fields}) == 4
     with pytest.raises(FrozenInstanceError): snapshot.label_source_fields[0].value = 'changed'
 
