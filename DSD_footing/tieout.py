@@ -2,7 +2,7 @@
 """B1~B10 본표 간 연계 검증 (별도재무제표 기준, 오프라인)"""
 import re
 import pdfplumber
-from core import grid_info, norm
+from core import grid_info, norm, UNIT, UNIT_MULT
 from statements import read_rows, stmt_type, key, period_axis, pick_period
 
 # 자본변동표 시점 라벨. 연차는 '(당기말)', 중간보고는 '(당반기말)'·'(당분기말)'.
@@ -59,10 +59,19 @@ def collect(pdf_path):
             tbs = page.extract_tables()
             if not tbs: carry = None; continue
             data = tbs[0]
+            # 새 본표는 단위 선언이 필요하다. 이전 본표의 단위를 빌리지 않는다.
+            matches = page.search(UNIT.pattern, regex=True) or []
+            found_tables = page.find_tables()
+            top = found_tables[0].bbox[1] if found_tables else 0
+            above = sorted((m for m in matches if m["top"] < top), key=lambda m: m["top"])
+            unit = norm(above[-1]["groups"][0]).replace(" ", "") if above else None
+            mult = UNIT_MULT.get(unit) if unit in ("원", "천원", "백만원", "억원") else None
             if carry and st is None:
                 try:
                     _,_,_,h0,nc0,_,_ = grid_info(data)
-                    if h0 == 0 and nc0 == carry[2]: data = carry[0] + data; st = carry[1]
+                    if h0 == 0 and nc0 == carry[2]:
+                        data = carry[0] + data; st = carry[1]
+                        if not above: mult = carry[3]
                 except Exception: pass
             if st in ("BS","IS","CI","CF"):
                 rows, nper = read_rows(data)
@@ -72,9 +81,13 @@ def collect(pdf_path):
                     axis[st] = (ax, npc)
                 d = book.setdefault(st, {}); o = order.setdefault(st, {})
                 for dep,k,raw,vals,ip,it,ri,cof in rows:
-                    if k and k not in d: d[k] = vals; o[k] = ri
+                    if k and k not in d:
+                        d[k] = {p: v * mult if mult is not None else None for p, v in vals.items()}
+                        o[k] = ri
                 try:
-                    _,_,_,_,ncL,_,_ = grid_info(tbs[-1]); carry = (tbs[-1], st, ncL)
+                    # 두 번째 표는 분석하지 않았으므로 그 표에 첫 표의 단위를 붙이면 안 된다.
+                    _,_,_,_,ncL,_,_ = grid_info(data)
+                    carry = (data, st, ncL, mult) if len(tbs) == 1 else None
                 except Exception: carry = None
             elif st == "SCE":
                 G,K,V,hdr,ncol,nrow,numcols = grid_info(data)
@@ -92,8 +105,9 @@ def collect(pdf_path):
                     for j in numcols:
                         if K[i][j] != "NUM": continue
                         col = key(hdrs[j]) or f"c{j}"
-                        if tag: sce[(tag, cur, col)] = V[i][j]
-                        else:   sce.setdefault((cur, kk, col), V[i][j])
+                        value = V[i][j] * mult if mult is not None else None
+                        if tag: sce[(tag, cur, col)] = value
+                        else:   sce.setdefault((cur, kk, col), value)
                 carry = None
             else: carry = None
     return book, order, axis, sce, sce_span, consolidated
@@ -125,6 +139,7 @@ def sce_row(sce, tag, k, comp="총계"):
 
 CHK = []
 def add(no, name, a, b, note=""):
+    note = "원 환산 비교; 단위 불명은 미검증" + ("; " + note if note else "")
     if a is None or b is None:
         CHK.append((no, name, None, None, "미검증", note)); return
     CHK.append((no, name, a, b, "OK" if abs(a-b) < 1e-9 else "차이", note))

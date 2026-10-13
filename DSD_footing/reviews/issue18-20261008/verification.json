@@ -1,0 +1,111 @@
+{
+  "date": "2026-10-08",
+  "focused": {
+    "status": "PASS",
+    "methods": 48
+  },
+  "official": {
+    "status": "FAIL",
+    "pass": 0,
+    "fail": 4,
+    "skipped": 0,
+    "exit": 1,
+    "samples": [
+      {
+        "sample": "삼성전자_감사보고서.pdf",
+        "status": "FAIL",
+        "C_linked": 46,
+        "C_unmatched": 61,
+        "deltas": [
+          {
+            "metric": "C_ok",
+            "baseline": 51,
+            "current": 46
+          },
+          {
+            "metric": "C_unmatched",
+            "baseline": 56,
+            "current": 61
+          }
+        ]
+      },
+      {
+        "sample": "[휴맥스홀딩스]연결감사보고서(2025.03.19).pdf",
+        "status": "FAIL",
+        "C_linked": 67,
+        "C_unmatched": 15,
+        "deltas": [
+          {
+            "metric": "A_total",
+            "baseline": 567,
+            "current": 572
+          },
+          {
+            "metric": "A_SKIP",
+            "baseline": 48,
+            "current": 53
+          }
+        ]
+      },
+      {
+        "sample": "[LG에너지솔루션]반기검토보고서(2025.08.14).pdf",
+        "status": "FAIL",
+        "C_linked": 75,
+        "C_unmatched": 40,
+        "deltas": [
+          {
+            "metric": "A_total",
+            "baseline": 395,
+            "current": 397
+          },
+          {
+            "metric": "A_OK",
+            "baseline": 379,
+            "current": 381
+          },
+          {
+            "metric": "C_ok",
+            "baseline": 82,
+            "current": 75
+          },
+          {
+            "metric": "C_unmatched",
+            "baseline": 33,
+            "current": 40
+          }
+        ]
+      },
+      {
+        "sample": "[조선내화]연결감사보고서(2026.03.19).pdf",
+        "status": "FAIL",
+        "C_linked": 35,
+        "C_unmatched": 45,
+        "deltas": [
+          {
+            "metric": "A_total",
+            "baseline": 380,
+            "current": 384
+          },
+          {
+            "metric": "A_SKIP",
+            "baseline": 29,
+            "current": 33
+          }
+        ]
+      }
+    ]
+  },
+  "source_identity": "PASS4/4",
+  "product_hash_unchanged_during_final_gate": true,
+  "protected": "PASS",
+  "diff": "PASS",
+  "intake": "PASS",
+  "independent_review": "No remaining blocking finding in reviewed changed scope;48methods independently PASS",
+  "not_run": [
+    "shared repository suites",
+    "rendered tickmark comparison",
+    "GUI/manual UAT",
+    "private compatibility",
+    "Linux"
+  ]
+}
