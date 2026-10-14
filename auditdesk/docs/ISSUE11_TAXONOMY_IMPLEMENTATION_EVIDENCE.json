@@ -1,0 +1,206 @@
+{
+  "date": "2026-10-08",
+  "issue": 11,
+  "main": "6373a333414f51015f9d1068e32ec2ef7702cbe4",
+  "source_pr13": "ec256e52d884e798fb880297b41be5be9648aa0c",
+  "branch": "codex/issue11-taxonomy-audit",
+  "source_manifest_and_final_hashes": [
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/__init__.py",
+      "sha256": "188fe642c1b53f63a94ce1b0d237c9b307148f728018d6bd9a2af19e4c2b4b3c",
+      "main_exists": false,
+      "final_sha256": "188fe642c1b53f63a94ce1b0d237c9b307148f728018d6bd9a2af19e4c2b4b3c",
+      "unchanged_from_approved_source": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/model.py",
+      "sha256": "d3245763e4d1ee2adb1f6fc631a4d79bc4147581528d7008017f43c58f72c868",
+      "main_exists": false,
+      "final_sha256": "d3245763e4d1ee2adb1f6fc631a4d79bc4147581528d7008017f43c58f72c868",
+      "unchanged_from_approved_source": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/ports.py",
+      "sha256": "6b1f11480cbf7306117acea6a604b8591540059254e8bbc5aeab545c71102913",
+      "main_exists": false,
+      "final_sha256": "6b1f11480cbf7306117acea6a604b8591540059254e8bbc5aeab545c71102913",
+      "unchanged_from_approved_source": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/provenance.py",
+      "sha256": "21476c4e6a31f70b2fe902b946033200389c4e202ee771e55d12932ecd39dfee",
+      "main_exists": false,
+      "final_sha256": "21476c4e6a31f70b2fe902b946033200389c4e202ee771e55d12932ecd39dfee",
+      "unchanged_from_approved_source": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/rules.py",
+      "sha256": "a668ef37680c069cd5029db95ac2a7d1b9a172646ba73cf799276a8fafa6b5ca",
+      "main_exists": false,
+      "final_sha256": "a668ef37680c069cd5029db95ac2a7d1b9a172646ba73cf799276a8fafa6b5ca",
+      "unchanged_from_approved_source": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/storage.py",
+      "sha256": "730e81542e0b65d9a2bc0907687f3bb36fa37e21c8779ee9196cca5441715377",
+      "main_exists": false,
+      "final_sha256": "730e81542e0b65d9a2bc0907687f3bb36fa37e21c8779ee9196cca5441715377",
+      "unchanged_from_approved_source": true
+    },
+    {
+      "path": "auditdesk/tests/test_xbrl_v2_core.py",
+      "sha256": "99aada063ec06147b574b06d2b2ee15a41ce0b3b4d047d791fddd620391917b7",
+      "main_exists": false,
+      "final_sha256": "99aada063ec06147b574b06d2b2ee15a41ce0b3b4d047d791fddd620391917b7",
+      "unchanged_from_approved_source": true
+    },
+    {
+      "path": "auditdesk/tests/test_xbrl_v2_offline.py",
+      "sha256": "6321d588b0fa689318262392703f075e552e5604784eb96db5e7cdd2afbfe93d",
+      "main_exists": false,
+      "final_sha256": "6321d588b0fa689318262392703f075e552e5604784eb96db5e7cdd2afbfe93d",
+      "unchanged_from_approved_source": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/taxonomy.py",
+      "sha256": "0e174ec6584b59f593b393737eefbd8b72bb93898d31c902e213a366fdb7b03a",
+      "main_exists": false,
+      "final_sha256": "cacfe8e5072ce5f59ef3ca667c24b9a542d9d8ed8c8813d7932b873f9733186d",
+      "unchanged_from_approved_source": false
+    },
+    {
+      "path": "auditdesk/tests/test_xbrl_v2_taxonomy.py",
+      "sha256": "95e12337ff04b81fc50bc0f8b327b367732b4c385c9bbba356b353c90de0d290",
+      "main_exists": false,
+      "final_sha256": "95e12337ff04b81fc50bc0f8b327b367732b4c385c9bbba356b353c90de0d290",
+      "unchanged_from_approved_source": true
+    }
+  ],
+  "failing_before": {
+    "pass": 1,
+    "fail": 13,
+    "error": 0,
+    "skip": 0,
+    "seconds": 6.23,
+    "exit_code": 1,
+    "junit": {
+      "tests": 14,
+      "failures": 13,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "scoped_after": {
+    "pass": 90,
+    "fail": 0,
+    "error": 0,
+    "skip": 0,
+    "subtests_pass": 38,
+    "seconds": 30.36,
+    "exit_code": 0,
+    "junit": {
+      "tests": 128,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "independent_acceptance_probe": {
+    "pass": 8,
+    "fail": 0,
+    "error": 0,
+    "skip": 0,
+    "exit_code": 0
+  },
+  "independent_edges": {
+    "run": 7,
+    "pass": 7,
+    "fail": 0,
+    "error": 0,
+    "skip": 0
+  },
+  "strict_auditdesk": {
+    "pass": 229,
+    "fail": 1,
+    "skip": 76,
+    "error": 0,
+    "warnings": 1,
+    "seconds": 96.27,
+    "exit_code": 1,
+    "webui_build": "PASS",
+    "failure": "dsd_workbench/dsd_tool/tests/test_version_check.py::test_g2_smoke_direct",
+    "reason": "assert _KNOWN_GENERATIONS failed: []"
+  },
+  "aggregate": {
+    "technical_gate": "PASS",
+    "technical_checks": {
+      "auditdesk_python": {
+        "status": "PASS",
+        "reason": "COMPLETED",
+        "exit_code": 0,
+        "duration_seconds": 39.25,
+        "counts": {
+          "PASS": 225,
+          "FAIL": 0,
+          "SKIP": 0,
+          "NOT RUN": 0,
+          "BLOCKED: REQUIRED MATERIAL UNAVAILABLE": 0
+        },
+        "collected": 306,
+        "collection_errors": 0
+      },
+      "webui_build": {
+        "status": "PASS",
+        "reason": "COMPLETED",
+        "exit_code": 0,
+        "duration_seconds": 16.31
+      },
+      "dsd_footing": {
+        "status": "PASS",
+        "reason": "COMPLETED",
+        "exit_code": 0,
+        "duration_seconds": 469.65
+      }
+    },
+    "compatibility": {
+      "status": "BLOCKED: REQUIRED MATERIAL UNAVAILABLE",
+      "reason": "MATERIAL_ASSESSMENT_ONLY",
+      "counts": {
+        "PASS": 0,
+        "FAIL": 0,
+        "SKIP": 0,
+        "NOT RUN": 0,
+        "BLOCKED: REQUIRED MATERIAL UNAVAILABLE": 81
+      }
+    },
+    "human_business_acceptance": "PENDING",
+    "exit_code": 0
+  },
+  "protected_checks": {
+    "base_origin_main": "PASS",
+    "staged": "PASS",
+    "diff_check": "PASS"
+  },
+  "review": {
+    "r1": "RESOLVED",
+    "r2": "RESOLVED",
+    "new_blocking_findings": 0,
+    "scope": "approved slice only"
+  },
+  "real_workbook_validation": "NOT RUN",
+  "current_extension": "UNSUPPORTED",
+  "full_dts_drs": "NOT RUN / UNSUPPORTED",
+  "capability": "PARTIAL",
+  "dimensions_known": false,
+  "owner_review": "PENDING",
+  "merge": "NOT PERFORMED",
+  "raw_evidence_sha256": {
+    "integrity-before.log": "68c00ef305e73d78a211c6c266ef6e824f61558fe2db521fa7582e4398647795",
+    "integrity-before.xml": "2b38c5b81922e970c8fa284faf3658b4ee2a4e7559a6b76f12ba07f8da5c278b",
+    "scoped-final.log": "10cb5df73c5a84f95e5fb2513f980e73936cd2bbbda08993ee4ac6ac78f43352",
+    "scoped-final.xml": "fcea6897745b7413f9a45e5f789cee0014ff936c5e370f69f74efc80cff12931",
+    "strict-final.log": "0cfe4acf84834011c90f58acc65d1c60c9a20a3ab3bcbb852d99f21ac22528a2",
+    "harness-final.log": "49faad6e920c6f213aa4b5d34697bea7b42acf2fa31efdf020143ed71ee2b731",
+    "harness-final.json": "4aba32a0c9f680377bdf2a16bdbabf3c7891b872a7944f1246c4215fd6bb1526"
+  }
+}
