@@ -208,13 +208,16 @@ with pdfplumber.open(PDF) as pdf:
                         c.setFont("Helvetica-Bold",7.5); c.setFillColor(AMB)
                         c.drawString(x,y,"?"); drew=True
                 if v in ("DIFF","ROUND","SKIP","SIGN"):
+                    delta = None if r["calc"] is None or r["disp"] is None else r["calc"]-r["disp"]
                     # '1원차이' 태그 — 원 단위 표에서 |차이|<=1이면 일괄 확인용 표시.
                     # 판정은 바꾸지 않는다 (원 단위는 반올림이 없어 흡수 금지 — 회계사 확인 대상)
                     tg = ("부호규약" if v == "SIGN" else
                           "1원차이" if v == "DIFF" and abs(r["calc"]-r["disp"]) <= 1
                           and (TUNIT.get((pi,ti)) or "").strip() == "원" else "")
+                    if r.get("reason"):
+                        tg = r.get("reason_text", r["reason"])
                     exc.append([pi,ti,r["kind"],r["label"],unit or "미표기",
-                                r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],
+                                r["disp"],r["calc"],delta,r["n"],
                                 {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증","SIGN":"미검증"}[v],tg])
         try:
             _,_,_,_,ncL,_,_=grid_info(tobjs[-1].extract()); carry=(tobjs[-1].extract(),ncL)
