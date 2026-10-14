@@ -1,0 +1,1 @@
+"""AuditDesk XBRL Engine V2 core contracts."""
