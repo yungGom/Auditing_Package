@@ -258,7 +258,7 @@ function formatHeaderDate(value: unknown): string {
   return s;
 }
 
-function readHeaderInfo(wb: XLSX.WorkBook): HeaderInfo {
+export function readHeaderInfo(wb: XLSX.WorkBook): HeaderInfo {
   const info: HeaderInfo = {
     company: "",
     processName: "",

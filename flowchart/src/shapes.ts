@@ -19,7 +19,8 @@ export type ShapeKey =
   | "document"
   | "db"
   | "interface"
-  | "textBox";
+  | "textBox"
+  | "lane"; // 스윔레인 배경 (배치 엔진 전용, 사이드바에 없음)
 
 export interface ShapeDef {
   key: ShapeKey;

@@ -43,6 +43,7 @@ export const icfrColors = {
   dbFill: "#D20050", // DB(can) 진한 로즈/마젠타
   dbBorder: "#E2E2E2", // DB 테두리 연회색
   arrow: "#BFBFBF", // 연결선 밝은 회색
+  laneBg: "#F8F9FB", // 스윔레인 본문 배경
 } as const;
 
 /* ─────────────────────────────────────────────
@@ -163,6 +164,7 @@ export const shapeNodeDesign = {
   db: { width: 100, height: 70, fontSize: 11, fontWeight: 700 },
   interface: { width: 48, height: 48, fontSize: 10, fontWeight: 700 },
   textBox: { width: 120, height: 36, fontSize: 11, fontWeight: 400 },
+  lane: { width: 1200, height: 200, fontSize: 12, fontWeight: 700 },
 
   borderWidth: 1.25,
 } as const;

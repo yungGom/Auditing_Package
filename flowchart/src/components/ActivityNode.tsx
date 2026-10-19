@@ -30,6 +30,8 @@ export interface ActivityNodeData {
   customHeight?: number;
   /** 위치 고정 여부 — true 면 드래그 불가(자물쇠 표시). 단축키 L 로 토글. */
   locked?: boolean;
+  /** 엑셀 행 순서 (Narrative 표 정렬용). 수기 추가 노드는 없음. */
+  seq?: number;
 }
 
 const DEFAULT_HEIGHT = 88;
@@ -149,7 +151,7 @@ export function ActivityNodeBody({
   return (
     <div style={cardStyle}>
       <div style={headerRowStyle}>
-        <div style={actNoStyle}>{activity.actNo}</div>
+        <div style={actNoStyle}>{activity.displayNo ?? activity.actNo}</div>
         <div style={teamStyle}>{team || " "}</div>
       </div>
 

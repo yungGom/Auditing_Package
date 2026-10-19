@@ -89,6 +89,8 @@ export interface Activity {
   /** v4: 이 활동이 속한 flowchart 코드 (예: "FA11", "FA21"). v3 호환을 위해 옵셔널. */
   flowchartCode?: string;
   actNo: number;
+  /** 박스 번호칸에 표시할 ID (숫자가 아닌 ID, 예: "3a"). 없으면 actNo 표시. */
+  displayNo?: string;
   rcmRow: number; // 참조할 RCM 행 번호
   actName: string;
   teamOverride: string; // 비어있으면 rcm.controlOrg 사용

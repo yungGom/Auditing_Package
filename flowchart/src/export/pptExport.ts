@@ -12,10 +12,20 @@ import {
   activityTeam,
   numberedStep,
   parseSubSteps,
+  resolvedControl,
   subStepsFontSize,
 } from "../types";
 import type { ActivityNodeData } from "../components/ActivityNode";
 import type { NonActivityShape, ShapeNodeData } from "../components/ShapeNode";
+import type { RoutedEdgeData } from "../components/RoutedEdge";
+import { headerFor } from "../state/flowState";
+import {
+  branchLabelAnchor,
+  routePoints,
+  smoothStepPoints,
+  type Pt,
+  type Side,
+} from "../parsing/edgeRouting";
 
 /**
  * PPT 다운로드 — pptxgenjs 로 모든 flowchart 를 하나의 .pptx 로 출력.
@@ -94,6 +104,18 @@ function hex(c: string): string {
  *   1 px ≈ 0.75pt (96dpi) 기준이 아니라, 인치 변환(scale) × 72 로 직접 포인트 산출.
  *   가독성을 위해 최소 5pt 보장 (기준 부서명 라벨이 5pt).
  */
+/**
+ * 한 줄에 들어가도록 글자 크기 계산 (배지처럼 높이가 한 줄뿐인 도형용).
+ *   한글 ≈ 1em, 영문·숫자 ≈ 0.58em 으로 폭을 추정해 maxPt 이하로 줄인다.
+ */
+function fitFontPt(text: string, wIn: number, maxPt: number, minPt = 3.5): number {
+  const units = [...(text || '')].reduce((s, ch) => s + (/[ -~]/.test(ch) ? 0.58 : 1), 0);
+  if (units === 0) return maxPt;
+  const usable = Math.max(0.05, wIn - 0.04);
+  const pt = (usable / units) * 72;
+  return Math.max(minPt, Math.min(maxPt, Math.floor(pt * 10) / 10));
+}
+
 function fpt(canvasPx: number): number {
   const pt = canvasPx * activeScaleInPerPx * 72;
   return Math.max(4, Math.round(pt * 10) / 10);
@@ -110,6 +132,8 @@ export interface PptFlowchart {
   name: string;
   nodes: Node[];
   edges: Edge[];
+  /** flowchart 별 대분류·중분류 (그래프 시트) */
+  header?: Partial<HeaderInfo>;
 }
 
 export async function exportToPpt(
@@ -127,14 +151,11 @@ export async function exportToPpt(
   // 페이지 1 — 가이드
   buildGuideSlide(pptx);
 
-  // 페이지 2~ — 각 flowchart
+  // 페이지 2~ — 각 flowchart (+ 업무기술이 있으면 Narrative 표)
   for (const fc of flowcharts) {
-    const localHeader: HeaderInfo = {
-      ...headerInfo,
-      flowchartCode: fc.code,
-      subProcessName: fc.name,
-    };
+    const localHeader = headerFor(headerInfo, fc);
     buildFlowchartSlide(pptx, localHeader, fc.nodes, fc.edges);
+    buildNarrativeSlides(pptx, localHeader, fc.nodes);
   }
 
   const fname =
@@ -299,11 +320,11 @@ function drawLink(slide: PptxGenJS.Slide, x: number, y: number) {
     line: { color: hex(icfrColors.border), width: 1 },
   });
   slide.addShape("line", {
-    x: x + w / 3, y, w: 0, h,
+    x: x + w * 0.1, y, w: 0, h,
     line: { color: hex(icfrColors.border), width: 0.75 },
   });
   slide.addShape("line", {
-    x: x + 2 * w / 3, y, w: 0, h,
+    x: x + w * 0.9, y, w: 0, h,
     line: { color: hex(icfrColors.border), width: 0.75 },
   });
 }
@@ -411,7 +432,7 @@ function buildFlowchartSlide(
   //   사용자가 본 배치 그대로(상대 위치·간격) 옮겨오기 위해 X·Y 동일 스칼라.
   //   여기서 X_STRETCH 같은 가로 늘리기를 하지 않으므로, 2-활동 짧은 flowchart 는
   //   짧은 그대로 가운데 정렬, 8-활동 wrap 은 슬라이드 폭을 가득 채우는 식.
-  const bbox = computeBoundingBox(nodes);
+  const bbox = computeBoundingBox(nodes, edges);
 
   const usableW = SLIDE_WIDTH_IN - 2 * MARGIN_X;
   const usableTop = CONTENT_TOP;
@@ -600,7 +621,7 @@ function drawActivity(slide: PptxGenJS.Slide, node: Node) {
     line: { color: hex(icfrColors.border), width: 0.5 },
   });
 
-  slide.addText(String(a.actNo), {
+  slide.addText(a.displayNo ?? String(a.actNo), {
     x, y, w: aCellW, h: hdrH,
     fontFace: FONT, fontSize: fpt(activityNodeDesign.actNoFontSize), bold: true, color: "0F172A",
     align: "center", valign: "middle",
@@ -711,16 +732,17 @@ function drawShapeNode(slide: PptxGenJS.Slide, node: Node) {
         line: { color: hex(icfrColors.border), width: 1 },
       });
       slide.addShape("line", {
-        x: x + W / 3, y, w: 0, h: H,
+        x: x + W * 0.1, y, w: 0, h: H,
         line: { color: hex(icfrColors.border), width: 0.75 },
       });
       slide.addShape("line", {
-        x: x + 2 * W / 3, y, w: 0, h: H,
+        x: x + W * 0.9, y, w: 0, h: H,
         line: { color: hex(icfrColors.border), width: 0.75 },
       });
       if (data.label) {
+        // 글자는 양쪽 세로선 안쪽(가운데 80%)에만
         slide.addText(data.label, {
-          x, y, w: W, h: H,
+          x: x + W * 0.1, y, w: W * 0.8, h: H,
           fontFace: FONT, fontSize: fpt(shapeNodeDesign.link.fontSize), color: "0F172A",
           align: "center", valign: "middle",
           shrinkText: true,
@@ -755,7 +777,8 @@ function drawShapeNode(slide: PptxGenJS.Slide, node: Node) {
             : isNeutral
               ? icfrColors.neutralCtrl
               : icfrColors.nonkeyCtrl;
-      const fg = key === "risk" || isNeutral ? "0F172A" : "FFFFFF";
+      // 흰 글씨는 진한 Key 배지만 (연분홍 Non-Key 는 흰 글씨가 안 보임)
+      const fg = key === "keyControl" && !isNeutral ? "FFFFFF" : "0F172A";
 
       const showChip =
         (key === "keyControl" || key === "nonkeyControl") &&
@@ -773,7 +796,7 @@ function drawShapeNode(slide: PptxGenJS.Slide, node: Node) {
       });
       slide.addText(data.label, {
         x, y, w: mainW, h: H,
-        fontFace: FONT, fontSize: fpt(shapeNodeDesign.risk.fontSize), bold: true, color: fg,
+        fontFace: FONT, fontSize: fitFontPt(data.label, mainW, fpt(shapeNodeDesign.risk.fontSize)), bold: true, color: fg,
         align: "center", valign: "middle",
         margin: 0.01,
         shrinkText: true,
@@ -892,6 +915,28 @@ function drawShapeNode(slide: PptxGenJS.Slide, node: Node) {
       }
       return;
     }
+    case "lane": {
+      // 스윔레인 배경 — 연한 본문 + 왼쪽 레인명 칸
+      const labelW = pxX(data.laneLabelWidth ?? 70);
+      slide.addShape("rect", {
+        x, y, w: W, h: H,
+        fill: { color: hex(icfrColors.laneBg) },
+        line: { color: hex(icfrColors.border), width: 0.75 },
+      });
+      slide.addShape("rect", {
+        x, y, w: labelW, h: H,
+        fill: { color: hex(icfrColors.headerBg) },
+        line: { color: hex(icfrColors.border), width: 0.75 },
+      });
+      slide.addText(data.label, {
+        x, y, w: labelW, h: H,
+        fontFace: FONT, fontSize: fpt(shapeNodeDesign.lane.fontSize), bold: true,
+        color: "FFFFFF", align: "center", valign: "middle",
+        margin: 0.03,
+        shrinkText: true,
+      });
+      return;
+    }
   }
 }
 
@@ -916,7 +961,7 @@ function handlePoint(node: Node, handle?: string | null): { x: number; y: number
  * 모든 노드를 둘러싸는 bounding box (캔버스 px). 빈 입력은 작은 더미 box.
  * width/height 는 customWidth/customHeight 또는 디자인 기본값에서 가져옴.
  */
-function computeBoundingBox(nodes: Node[]): {
+function computeBoundingBox(nodes: Node[], edges: Edge[] = []): {
   minX: number;
   minY: number;
   maxX: number;
@@ -935,6 +980,20 @@ function computeBoundingBox(nodes: Node[]): {
     if (n.position.y < minY) minY = n.position.y;
     if (n.position.x + w > maxX) maxX = n.position.x + w;
     if (n.position.y + h > maxY) maxY = n.position.y + h;
+  }
+  // 박스 바깥으로 돌아가는 화살표 통로도 슬라이드 안에 들어오게 포함 (+여유 8px)
+  for (const e of edges) {
+    const corridors = (e.data as RoutedEdgeData | undefined)?.route?.corridors;
+    if (!corridors) continue;
+    for (const c of corridors) {
+      if (c.axis === "x") {
+        minX = Math.min(minX, c.value - 8);
+        maxX = Math.max(maxX, c.value + 8);
+      } else {
+        minY = Math.min(minY, c.value - 8);
+        maxY = Math.max(maxY, c.value + 8);
+      }
+    }
   }
   if (!Number.isFinite(minX)) {
     minX = 0;
@@ -989,22 +1048,11 @@ function drawEdge(
 
   const isDashed = !!(edge.style as Record<string, unknown> | undefined)
     ?.strokeDasharray;
-
-  const a = handlePoint(source, edge.sourceHandle ?? null);
-  const b = handlePoint(target, edge.targetHandle ?? null);
-
-  // wrap 엣지 감지: 활동→활동 실선에만 적용.
-  //   점선 엣지(DB→활동, 활동→문서) 는 수직 직선이므로 wrap 4-segment 를 쓰면
-  //   엉뚱한 방향으로 그려진다 → 점선은 항상 handlePoint 기반 직선으로 처리.
-  const sBottom = source.position.y + nodeHeightPx(source);
-  const isWrap = !isDashed && sBottom < target.position.y - 10;
-  if (isWrap) {
-    drawWrapEdge(slide, source, target, isDashed);
-    if (typeof edge.label === "string" && edge.label) {
-      drawEdgeLabel(slide, source, target, edge.label);
-    }
-    return;
-  }
+  const sSide = ((edge.sourceHandle as Side | null) ?? "right") as Side;
+  const tSide = ((edge.targetHandle as Side | null) ?? "left") as Side;
+  const a = handlePoint(source, sSide);
+  const b = handlePoint(target, tSide);
+  const label = typeof edge.label === "string" ? edge.label : "";
 
   const lineOpts: LineOpts = {
     color: hex(icfrColors.arrow),
@@ -1013,114 +1061,126 @@ function drawEdge(
     dashType: isDashed ? "dash" : "solid",
   };
 
-  // 점선 엣지(활동→문서, DB→활동) 는 PowerPoint "복구(R) 대화상자" 의 직접적
-  // 원인이었던 `bentConnector3 + dashType:"dash"` 조합을 피해 항상 단순 직선으로 출력.
-  //   - 시각적으로도 자연스러움 (점선 엣지는 대부분 수직/수평 직선)
-  //   - addLine → addSafeLine 으로 좌표 정규화 + 슬라이드 범위 클램핑
-  //
-  // 추가 보정: 거의 수직(Δx 매우 작음) 이면 완벽 수직으로, 거의 수평이면 완벽 수평으로 보정.
-  //   캔버스에서 top↔bottom 핸들 연결은 X 가 같아야 하지만, 도형 폭 차이 때문에
-  //   소수점 단위 오차가 생길 수 있음 → snap.
+  // 점선(활동→문서·DB) 은 단순 직선. 거의 수직/수평이면 완전 수직/수평으로 보정.
   if (isDashed) {
     const dx = Math.abs(a.x - b.x);
     const dy = Math.abs(a.y - b.y);
-    // 수직 스냅: X 오차가 전체 거리의 10% 이하면 수직으로 간주
     if (dx < dy * 0.1 && dy > 1) {
       const midX = (a.x + b.x) / 2;
       a.x = midX;
       b.x = midX;
     }
-    // 수평 스냅: Y 오차가 전체 거리의 10% 이하면 수평으로 간주
     if (dy < dx * 0.1 && dx > 1) {
       const midY = (a.y + b.y) / 2;
       a.y = midY;
       b.y = midY;
     }
-    addLine(slide, a, b, lineOpts);
-  } else if (edge.type === "straight") {
-    addLine(slide, a, b, lineOpts);
-  } else if (edge.type === "smoothstep" || edge.type === "step") {
-    addBentConnector(slide, a, b, lineOpts);
-  } else {
-    addCurvedConnector(slide, a, b, lineOpts);
+    // 수직·수평이 아니면 캔버스 smoothstep 과 같은 꺾은선
+    if (a.x === b.x || a.y === b.y) {
+      addLine(slide, a, b, lineOpts);
+    } else {
+      addPolyline(slide, smoothStepPoints(a, sSide, b, tSide, 20), lineOpts);
+    }
+    return;
   }
 
-  if (typeof edge.label === "string" && edge.label) {
-    const cx = (a.x + b.x) / 2;
-    const cy = (a.y + b.y) / 2;
-    slide.addText(edge.label, {
-      x: nx(cx) - 0.4, y: ny(cy) - 0.12, w: 0.8, h: 0.24,
-      fontFace: FONT, fontSize: 9, color: "0F172A",
-      align: "center", valign: "middle",
-      fill: { color: "FFFFFF" },
-    });
+  if (edge.type === "straight") {
+    addLine(slide, a, b, lineOpts);
+    if (label) drawEdgeLabelAt(slide, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, label);
+    return;
   }
+  if (edge.type === "default" || edge.type === "simplebezier") {
+    addCurvedConnector(slide, a, b, lineOpts);
+    if (label) drawEdgeLabelAt(slide, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, label);
+    return;
+  }
+
+  // smoothstep / step / routed — 캔버스와 같은 계산식으로 직각 경로
+  const offset =
+    (edge as Edge & { pathOptions?: { offset?: number } }).pathOptions?.offset ?? 20;
+  const pts =
+    edge.type === "routed"
+      ? routePoints(a, sSide, b, tSide, (edge.data as RoutedEdgeData | undefined)?.route)
+      : smoothStepPoints(a, sSide, b, tSide, offset);
+  addPolyline(slide, pts, lineOpts);
+
+  if (label) {
+    // 분기 라벨(Y/N)은 출발점 옆 — 캔버스 RoutedEdge 와 같은 위치
+    const sourceIsDiamond =
+      source.type === "shape" &&
+      (source.data as ShapeNodeData).shapeKey === "diamond";
+    const at =
+      edge.type === "routed" || sourceIsDiamond
+        ? branchLabelAnchor(pts, sSide)
+        : polylineMidpoint(pts);
+    drawEdgeLabelAt(slide, at, label);
+  }
+}
+
+/** 꺾은선 길이의 절반 지점 */
+function polylineMidpoint(pts: Pt[]): Pt {
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  }
+  let half = total / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    if (half <= seg && seg > 0) {
+      const t = half / seg;
+      return {
+        x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+        y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t,
+      };
+    }
+    half -= seg;
+  }
+  return pts[pts.length - 1];
+}
+
+/** 화살표 라벨 — 캔버스 좌표 기준 중심점에 작은 흰 배경 텍스트 */
+function drawEdgeLabelAt(slide: PptxGenJS.Slide, at: Pt, label: string) {
+  const fs = fpt(11);
+  // 글자 수 기준 대략 폭 (한글 ≈ 1em, 영문 ≈ 0.6em)
+  const em = fs / 72;
+  const chars = [...label].reduce((s, ch) => s + (/[ -~]/.test(ch) ? 0.62 : 1), 0);
+  const w = Math.max(0.16, chars * em + 0.06);
+  const h = em * 1.5;
+  slide.addText(label, {
+    x: nx(at.x) - w / 2, y: ny(at.y) - h / 2, w, h,
+    fontFace: FONT, fontSize: fs, bold: true, color: "334155",
+    align: "center", valign: "middle",
+    margin: 0,
+    fill: { color: "FFFFFF" },
+  });
 }
 
 /**
- * 다음 행으로 wrap 되는 엣지 — 3-segment 직각 꺾임 (기준 양식 매칭).
- *
- *   캔버스 핸들: source bottom → target top (세로 흐름)
- *
- *   source
- *     │ (1: 아래로 — source bottom center)
- *     └──────────┐ (2: 가로로 — target X 로 이동)
- *                │ (3: 아래로 → target top center, 화살촉)
- *                ▼
- *              target
+ * 직각 꺾은선을 도형 1개(자유형)로 출력 — 끝점에 화살촉.
+ *   점 2개면 일반 직선으로 대체 (자유형의 폭/높이가 0 이 되는 경우 회피).
  */
-function drawWrapEdge(
-  slide: PptxGenJS.Slide,
-  source: Node,
-  target: Node,
-  isDashed: boolean,
-) {
-  const sW = nodeWidthPx(source);
-  const sH = nodeHeightPx(source);
-  const tW = nodeWidthPx(target);
-  const sx = source.position.x;
-  const sy = source.position.y;
-  const tx = target.position.x;
-  const ty = target.position.y;
-
-  // source bottom center → target top center
-  const startX = sx + sW / 2;
-  const startY = sy + sH;
-  const endX = tx + tW / 2;
-  const endY = ty;
-
-  // midY: source bottom 과 target top 사이의 40% 지점
-  const midY = startY + 0.4 * (endY - startY);
-
-  const color = hex(icfrColors.arrow);
-  const width = 1;
-  const dashType: "solid" | "dash" = isDashed ? "dash" : "solid";
-  const stroke: LineOpts = { color, width, dashType };
-  const strokeArrow: LineOpts = { color, width, dashType, endArrowType: "triangle" };
-
-  // 3-segment 직각 꺾임: ↓ → ←/→ → ↓
-  // 1: 아래로 (source bottom center → midY)
-  addSafeLine(slide, nx(startX), ny(startY), nx(startX), ny(midY), stroke);
-  // 2: 가로로 (source X → target X)
-  addSafeLine(slide, nx(startX), ny(midY), nx(endX), ny(midY), stroke);
-  // 3: 아래로 target top center (화살촉)
-  addSafeLine(slide, nx(endX), ny(midY), nx(endX), ny(endY), strokeArrow);
-}
-
-function drawEdgeLabel(
-  slide: PptxGenJS.Slide,
-  source: Node,
-  target: Node,
-  label: string,
-) {
-  const sH = nodeHeightPx(source);
-  const cx = (source.position.x + nodeWidthPx(source) + target.position.x) / 2;
-  const cy = (source.position.y + sH + target.position.y) / 2;
-  slide.addText(label, {
-    x: nx(cx) - 0.4, y: ny(cy) - 0.12, w: 0.8, h: 0.24,
-    fontFace: FONT, fontSize: 9, color: "0F172A",
-    align: "center", valign: "middle",
-    fill: { color: "FFFFFF" },
+function addPolyline(slide: PptxGenJS.Slide, ptsCanvas: Pt[], opts: LineOpts) {
+  if (ptsCanvas.length < 2) return;
+  if (ptsCanvas.length === 2) {
+    addLine(slide, ptsCanvas[0], ptsCanvas[1], opts);
+    return;
+  }
+  const P = ptsCanvas.map((p) => ({ x: clampX(nx(p.x)), y: clampY(ny(p.y)) }));
+  const minX = Math.min(...P.map((p) => p.x));
+  const minY = Math.min(...P.map((p) => p.y));
+  const maxX = Math.max(...P.map((p) => p.x));
+  const maxY = Math.max(...P.map((p) => p.y));
+  const w = Math.max(maxX - minX, 0.002);
+  const h = Math.max(maxY - minY, 0.002);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  slide.addShape("custGeom" as any, {
+    x: minX, y: minY, w, h,
+    points: P.map((p, i) => ({
+      x: p.x - minX,
+      y: p.y - minY,
+      ...(i === 0 ? { moveTo: true } : {}),
+    })),
+    line: opts,
   });
 }
 
@@ -1198,35 +1258,6 @@ function addLine(
   addSafeLine(slide, nx(a.x), ny(a.y), nx(b.x), ny(b.y), opts);
 }
 
-function addBentConnector(
-  slide: PptxGenJS.Slide,
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-  opts: LineOpts,
-) {
-  const x1 = clampX(nx(a.x)), y1 = clampY(ny(a.y));
-  const x2 = clampX(nx(b.x)), y2 = clampY(ny(b.y));
-  const minX = Math.min(x1, x2);
-  const minY = Math.min(y1, y2);
-  const w = Math.abs(x2 - x1);
-  const h = Math.abs(y2 - y1);
-  // bentConnector3 는 최소한 한쪽 방향으로 폭이 있어야 라우팅 가능 — degenerate fallback
-  if (w < 0.01 && h < 0.01) return;
-  if (w < 0.01 || h < 0.01) {
-    // 직선과 동일 → 단순 line 으로 대체 (bentConnector 가 degenerate XML 생성하는 케이스 회피)
-    addSafeLine(slide, x1, y1, x2, y2, opts);
-    return;
-  }
-  const flipH = x1 > x2;
-  const flipV = y1 > y2;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  slide.addShape("bentConnector3" as any, {
-    x: minX, y: minY, w, h,
-    flipH, flipV,
-    line: opts,
-  });
-}
-
 function addCurvedConnector(
   slide: PptxGenJS.Slide,
   a: { x: number; y: number },
@@ -1251,5 +1282,171 @@ function addCurvedConnector(
     x: minX, y: minY, w, h,
     flipH, flipV,
     line: opts,
+  });
+}
+
+/* ─────────────────────────────────────────────
+ * Narrative 표 — 그래프 시트로 만든 flowchart 의 업무기술·위험·통제를 표로.
+ *   행 순서 = 엑셀 행 순서(seq). 수기로 추가한 박스·구 매핑 시트 flowchart 는 제외.
+ *   표가 길면 여러 장으로 나누고 각 장에 헤더 표를 다시 그린다.
+ * ───────────────────────────────────────────── */
+
+interface NarrativeRow {
+  seq: number;
+  id: string;
+  kind: string;
+  name: string;
+  narrative: string;
+  dept: string;
+  system: string;
+  risk: string;
+  control: string;
+  key: string;
+  type: string;
+}
+
+function collectNarrativeRows(nodes: Node[]): NarrativeRow[] {
+  const rows: NarrativeRow[] = [];
+  for (const n of nodes) {
+    if (n.type === "activity") {
+      const d = n.data as ActivityNodeData;
+      if (d.seq == null) continue;
+      const a = d.activity;
+      const rc = resolvedControl(a);
+      const riskNo = (a.riskNoRaw || a.rcm?.riskNo || "").trim();
+      const riskDesc = (a.rcm?.riskDesc || "").trim();
+      rows.push({
+        seq: d.seq,
+        id: a.displayNo ?? String(a.actNo),
+        kind: "활동",
+        name: a.actName,
+        narrative: (a.rcm?.narrative || "").trim(),
+        dept: activityTeam(a),
+        system: activityLocation(a),
+        risk: [riskNo, riskDesc].filter(Boolean).join("\n"),
+        control: rc.controlNo
+          ? [`${rc.controlNo}${rc.controlName ? " " + rc.controlName : ""}`, rc.controlDesc]
+              .filter(Boolean)
+              .join("\n")
+          : "",
+        key: rc.controlNo
+          ? rc.isKeyControl === true ? "Y" : rc.isKeyControl === false ? "N" : "-"
+          : "",
+        type: rc.controlNo ? rc.controlType : "",
+      });
+    } else if (n.type === "shape") {
+      const d = n.data as ShapeNodeData;
+      if (d.seq == null) continue;
+      if (d.shapeKey !== "diamond" && d.shapeKey !== "link") continue;
+      rows.push({
+        seq: d.seq,
+        id: d.refId ?? "",
+        kind: d.shapeKey === "diamond" ? "분기" : "Link",
+        name: d.label,
+        narrative: (d.narrative || "").trim(),
+        dept: d.dept || "",
+        system: "",
+        risk: "",
+        control: "",
+        key: "",
+        type: "",
+      });
+    }
+  }
+  return rows.sort((p, q) => p.seq - q.seq);
+}
+
+function buildNarrativeSlides(
+  pptx: PptxGenJS,
+  headerInfo: HeaderInfo,
+  nodes: Node[],
+) {
+  const rows = collectNarrativeRows(nodes);
+  if (rows.length === 0 || rows.every((r) => !r.narrative && !r.risk && !r.control)) {
+    return;
+  }
+
+  const FS = 7; // pt
+  const colW = [0.42, 1.15, 2.75, 0.8, 0.72, 1.35, 1.66, 0.35, 0.4]; // 합 9.6"
+  const heads = ["ID", "활동명", "업무 내용", "담당부서", "시스템", "위험", "통제", "Key", "유형"];
+  const cellText = (r: NarrativeRow): string[] => [
+    r.id,
+    r.kind === "활동" ? r.name : `[${r.kind}] ${r.name}`,
+    r.narrative,
+    r.dept,
+    r.system,
+    r.risk,
+    r.control,
+    r.key,
+    r.type,
+  ];
+
+  // 행 높이 추정 (한글 글자폭 ≈ 1em, 영문 ≈ 0.6em)
+  const em = FS / 72;
+  const lineH = em * 1.35;
+  const estLines = (text: string, w: number): number => {
+    const usable = Math.max(0.2, w - 0.1);
+    return text.split("\n").reduce((sum, line) => {
+      const units = [...line].reduce((s, ch) => s + (/[ -~]/.test(ch) ? 0.6 : 1), 0);
+      return sum + Math.max(1, Math.ceil((units * em) / usable));
+    }, 0);
+  };
+  const rowH = (cells: string[]) =>
+    Math.max(...cells.map((t, i) => estLines(t, colW[i]))) * lineH + 0.08;
+
+  const tableTop = CONTENT_TOP + 0.32;
+  const avail = SLIDE_HEIGHT_IN - tableTop - 0.25;
+  const headH = lineH + 0.08;
+
+  // 장 나누기
+  const pages: NarrativeRow[][] = [];
+  let cur: NarrativeRow[] = [];
+  let used = headH;
+  for (const r of rows) {
+    const h = rowH(cellText(r));
+    if (cur.length > 0 && used + h > avail) {
+      pages.push(cur);
+      cur = [];
+      used = headH;
+    }
+    cur.push(r);
+    used += h;
+  }
+  if (cur.length) pages.push(cur);
+
+  const border = { type: "solid" as const, pt: 0.5, color: hex(icfrColors.border) };
+  pages.forEach((page, pi) => {
+    const slide = pptx.addSlide();
+    drawHeaderRow(slide, headerInfo);
+    slide.addText(
+      `업무 기술 (Narrative)${pages.length > 1 ? `  ${pi + 1}/${pages.length}` : ""}`,
+      {
+        x: MARGIN_X, y: CONTENT_TOP, w: 6, h: 0.26,
+        fontFace: FONT, fontSize: 10, bold: true, color: hex(icfrColors.headerBg),
+        margin: 0,
+      },
+    );
+    const headRow: PptxGenJS.TableRow = heads.map((t) => ({
+      text: t,
+      options: {
+        bold: true, color: "FFFFFF", fill: { color: hex(icfrColors.headerBg) },
+        align: "center", valign: "middle",
+      },
+    }));
+    const bodyRows: PptxGenJS.TableRow[] = page.map((r) =>
+      cellText(r).map((t, ci) => ({
+        text: t,
+        options: {
+          align: ci === 0 || ci >= 7 ? "center" : "left",
+          valign: "top",
+          ...(r.kind !== "활동" ? { fill: { color: "F5F5F5" } } : {}),
+        },
+      })),
+    );
+    slide.addTable([headRow, ...bodyRows], {
+      x: MARGIN_X, y: tableTop, w: colW.reduce((s, v) => s + v, 0), colW,
+      fontFace: FONT, fontSize: FS, color: "0F172A",
+      border, margin: 0.04,
+    });
   });
 }

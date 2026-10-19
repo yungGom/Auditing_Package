@@ -46,6 +46,23 @@ export interface FlowchartState {
   name: string; // 예: "유지보수" — 헤더 표 소분류, 드롭다운 라벨에 사용
   nodes: FlowNode[];
   edges: Edge[];
+  /** flowchart 별 헤더 값 (그래프 시트: 대분류·중분류). 없으면 전역 헤더 사용 */
+  header?: Partial<HeaderInfo>;
+}
+
+/** 전역 헤더 + flowchart 별 값 → 이 flowchart 에 표시·출력할 헤더 */
+export function headerFor(
+  global: HeaderInfo,
+  fc: Pick<FlowchartState, "code" | "name" | "header">,
+): HeaderInfo {
+  const own = fc.header ?? {};
+  return {
+    ...global,
+    ...(own.processName ? { processName: own.processName } : {}),
+    ...(own.middleCategory ? { middleCategory: own.middleCategory } : {}),
+    flowchartCode: fc.code,
+    subProcessName: fc.name,
+  };
 }
 
 export interface FlowContextValue {
@@ -182,6 +199,8 @@ function defaultShapeData(
     case "document": return { shapeKey: key, label: "문서" };
     case "db": return { shapeKey: key, label: "DB" };
     case "interface": return { shapeKey: key, label: "I/F" };
+    case "textBox": return { shapeKey: key, label: "텍스트" };
+    case "lane": return { shapeKey: key, label: "레인" };
   }
 }
 
@@ -432,9 +451,43 @@ export function FlowProvider({
     [mutateActive],
   );
 
-  const setActiveCode = useCallback((code: string) => {
-    setActiveCodeRaw(code);
-  }, []);
+  const setActiveCode = useCallback(
+    (code: string) => {
+      setActiveCodeRaw(code);
+      // 헤더 표(대·중·소분류, Code)를 이 flowchart 값으로 맞춤
+      const fc = flowcharts.find((f) => f.code === code);
+      if (fc) setHeaderInfo((h) => headerFor(h, fc));
+    },
+    [flowcharts],
+  );
+
+  /**
+   * 헤더 편집 모달 저장 — 전역 헤더 갱신 + 현재 flowchart 의 분류명에도 반영
+   * (PPT 는 flowchart 별 값을 우선하므로 여기서 같이 바꿔야 편집이 유지됨)
+   */
+  const saveHeaderInfo = useCallback(
+    (h: HeaderInfo) => {
+      setHeaderInfo(h);
+      setFlowcharts((prev) =>
+        prev.map((f) =>
+          f.code !== activeCode
+            ? f
+            : {
+                ...f,
+                name: h.subProcessName || f.name,
+                header: f.header
+                  ? {
+                      ...f.header,
+                      processName: h.processName,
+                      middleCategory: h.middleCategory,
+                    }
+                  : f.header,
+              },
+        ),
+      );
+    },
+    [activeCode],
+  );
 
   const addNode = useCallback(
     (key: ShapeKey, position?: { x: number; y: number }) => {
@@ -497,10 +550,11 @@ export function FlowProvider({
       setNodes((prev) =>
         prev.map((n) => {
           if (n.id !== id || n.type !== "activity") return n;
-          const cur = (n.data as ActivityNodeData).activity;
+          const d = n.data as ActivityNodeData;
+          // 크기·고정·순서 등 다른 data 필드는 유지하고 activity 만 갱신
           return {
             ...n,
-            data: { activity: { ...cur, ...partial } },
+            data: { ...d, activity: { ...d.activity, ...partial } },
           } as FlowNode;
         }),
       );
@@ -542,11 +596,13 @@ export function FlowProvider({
       activeCode?: string;
     }) => {
       setFlowcharts(input.flowcharts);
-      setHeaderInfo(input.headerInfo);
       if (input.controls) setControls(input.controls);
       if (input.risks) setRisks(input.risks);
       const next = input.activeCode ?? input.flowcharts[0]?.code ?? "DEFAULT";
       setActiveCodeRaw(next);
+      // 첫 화면 헤더 = 활성 flowchart 의 분류·Code
+      const fc = input.flowcharts.find((f) => f.code === next);
+      setHeaderInfo(fc ? headerFor(input.headerInfo, fc) : input.headerInfo);
     },
     [],
   );
@@ -734,7 +790,7 @@ export function FlowProvider({
     loadFlowcharts,
 
     headerInfo,
-    setHeaderInfo,
+    setHeaderInfo: saveHeaderInfo,
 
     undo,
     redo,

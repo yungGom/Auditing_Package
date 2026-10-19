@@ -37,6 +37,16 @@ export interface ShapeNodeData {
   neutralControl?: boolean;
   /** 위치 고정 여부 — true 면 드래그 불가(자물쇠 표시). 단축키 L 로 토글. */
   locked?: boolean;
+  /** 그래프 시트의 원래 ID (분기 D1, Link L1 등) — Narrative 표에 표시 */
+  refId?: string;
+  /** 업무기술(Process Narrative) — Narrative 표에 표시 */
+  narrative?: string;
+  /** 담당부서 — Narrative 표에 표시 */
+  dept?: string;
+  /** 엑셀 행 순서 (Narrative 표 정렬용) */
+  seq?: number;
+  /** lane 전용: 왼쪽 레인 이름 칸 폭 (px) */
+  laneLabelWidth?: number;
 }
 
 const SHAPE_DEF = Object.fromEntries(SHAPES.map((s) => [s.key, s]));
@@ -98,14 +108,14 @@ function getRender(
     }
     case "link": {
       const { width, height, fontSize } = shapeNodeDesign.link;
-      const sideW = (width - 14) / 2;
-      const midX1 = sideW;
-      const midX2 = sideW + 14;
+      // 양쪽 끝 좁은 세로선 (타 프로세스 연결 기호) — 가운데에 글자
+      const midX1 = width * 0.1;
+      const midX2 = width * 0.9;
       return {
         refWidth: width, refHeight: height,
         fontSize, fontColor: "#0F172A",
-        padX: 8, padY: 4,
-        handles: [Position.Left, Position.Right],
+        padX: 20, padY: 4,
+        handles: [Position.Left, Position.Right, Position.Top, Position.Bottom],
         preserveAspect: "none",
         minWidth: 60, minHeight: 24,
         bg: (sel) => (
@@ -159,7 +169,8 @@ function getRender(
       return {
         refWidth: width, refHeight: height,
         fontSize, fontWeight,
-        fontColor: isRisk ? "#0F172A" : (isNeutral ? "#0F172A" : "#FFFFFF"),
+        // 흰 글씨는 진한 Key 배지만 — 연분홍 Non-Key·노랑 위험·회색 미지정은 어두운 글씨
+        fontColor: shapeKey === "keyControl" && !isNeutral ? "#FFFFFF" : "#0F172A",
         padX: 4, padY: 2,
         handles: [Position.Left, Position.Right, Position.Bottom],
         preserveAspect: "none",
@@ -288,6 +299,30 @@ function getRender(
         ),
       };
     }
+    case "lane": {
+      // 스윔레인 배경 — 왼쪽 레인명 칸 + 연한 본문. 실제 크기를 viewBox 로 써서 칸 폭 고정.
+      const width = data.customWidth ?? shapeNodeDesign.lane.width;
+      const height = data.customHeight ?? shapeNodeDesign.lane.height;
+      const labelW = data.laneLabelWidth ?? 70;
+      return {
+        refWidth: width, refHeight: height,
+        fontSize: shapeNodeDesign.lane.fontSize,
+        fontWeight: shapeNodeDesign.lane.fontWeight,
+        fontColor: "#FFFFFF",
+        padX: 6, padY: 4,
+        handles: [],
+        preserveAspect: "none",
+        minWidth: 200, minHeight: 60,
+        bg: () => (
+          <>
+            <rect x={0} y={0} width={width} height={height}
+              fill={icfrColors.laneBg} stroke={icfrColors.border} strokeWidth={1} />
+            <rect x={0} y={0} width={labelW} height={height}
+              fill={icfrColors.headerBg} stroke={icfrColors.border} strokeWidth={1} />
+          </>
+        ),
+      };
+    }
   }
 }
 
@@ -317,6 +352,9 @@ export function ShapeNodeBody({
   // 칩 배경/글자색: 기준 통제구분 색 (A=핑크/흰, M=연핑크/검정, I=골드/검정)
   const chipColors = CTRL_TYPE_COLORS;
   const chipW = showChip ? H : 0; // 칩은 정사각형
+  // 레인은 왼쪽 이름 칸에만 텍스트
+  const textRight =
+    data.shapeKey === "lane" ? W - (data.laneLabelWidth ?? 70) : chipW;
 
   const containerStyle: CSSProperties = {
     position: "relative",
@@ -328,7 +366,7 @@ export function ShapeNodeBody({
     position: "absolute",
     top: 0,
     left: 0,
-    right: chipW, // M 칩 자리 비워둠 (텍스트 영역 축소)
+    right: textRight, // M 칩 자리 / 레인 본문 자리 비워둠
     bottom: 0,
     padding: `4px ${r.padX}px`,
     display: "flex",
