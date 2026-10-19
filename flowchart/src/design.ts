@@ -174,6 +174,8 @@ export const shapeNodeDesign = {
   db: { width: 116, height: 54, fontSize: 14.7, fontWeight: 400 },
   interface: { width: 48, height: 48, fontSize: 14.7, fontWeight: 400 },
   textBox: { width: 120, height: 36, fontSize: 14.7, fontWeight: 400 },
+  // 단계(구분) 라벨 — 양식 118.8×16.2pt, 글자 9pt
+  phase: { width: 220, height: 34, fontSize: 18.9, fontWeight: 400 },
   lane: { width: 1200, height: 200, fontSize: 13, fontWeight: 700 },
 
   borderWidth: 1,

@@ -200,6 +200,7 @@ function defaultShapeData(
     case "db": return { shapeKey: key, label: "DB" };
     case "interface": return { shapeKey: key, label: "I/F" };
     case "textBox": return { shapeKey: key, label: "텍스트" };
+    case "phase": return { shapeKey: key, label: "단계" };
     case "lane": return { shapeKey: key, label: "레인" };
   }
 }

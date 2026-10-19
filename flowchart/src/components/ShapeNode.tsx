@@ -301,6 +301,24 @@ function getRender(
         ),
       };
     }
+    case "phase": {
+      const { width, height, fontSize, fontWeight } = shapeNodeDesign.phase;
+      return {
+        refWidth: width, refHeight: height,
+        fontSize, fontWeight, fontColor: "#0F172A",
+        padX: 6, padY: 2,
+        handles: [],
+        preserveAspect: "none",
+        minWidth: 60, minHeight: 20,
+        bg: (sel) => (
+          <rect x={sw / 2} y={sw / 2}
+            width={width - sw} height={height - sw}
+            fill={def.fill}
+            stroke={sel ? icfrColors.keyCtrl : def.stroke}
+            strokeWidth={sel ? 2 : sw} vectorEffect="non-scaling-stroke" />
+        ),
+      };
+    }
     case "lane": {
       // 스윔레인 배경 — 왼쪽 레인명 칸 + 연한 본문. 실제 크기를 viewBox 로 써서 칸 폭 고정.
       const width = data.customWidth ?? shapeNodeDesign.lane.width;
@@ -367,11 +385,13 @@ export function ShapeNodeBody({
   };
 
   // 글자 크기 — 양식 7pt 기준, 칸보다 길면 줄임 (PPT 와 같은 규칙)
+  // 배지·단계 라벨은 한 줄로
   const isBadge =
     data.shapeKey === "risk" ||
     data.shapeKey === "keyControl" ||
     data.shapeKey === "nonkeyControl" ||
-    data.shapeKey === "controlType";
+    data.shapeKey === "controlType" ||
+    data.shapeKey === "phase";
   const textW = Math.max(1, W - textRight - 2 * r.padX);
   const textH = Math.max(1, H - 8);
   const fullText = data.sublabel ? `${data.label}\n${data.sublabel}` : data.label;

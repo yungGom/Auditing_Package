@@ -33,6 +33,9 @@ import {
  *   회사 양식처럼 DB 는 활동 왼쪽 아래, 문서는 오른쪽 아래 모서리에 걸쳐 붙인다
  *   (연결선 없음). 가운데 아래는 비워 두어 세로 화살표가 지나갈 수 있게 한다.
  *
+ *   단계(구분) 열이 있으면 단계마다 새 줄에서 시작하고 왼쪽 위에 단계 라벨을 붙인다.
+ *   흐름은 단계를 넘어 이어지며, 들어오는 화살표가 없는 단계는 자기 START 로 시작한다.
+ *
  *   배치 순서 = 엑셀 행 순서. 화살표 = Next ID (비우면 다음 행).
  *   분기에서 갈라져 끝나는 Link 는 줄에 넣지 않고 분기 아래에 붙인다.
  *
@@ -64,6 +67,12 @@ const SE = { w: shapeNodeDesign.startEnd.width, h: shapeNodeDesign.startEnd.heig
 const DB = { w: shapeNodeDesign.db.width, h: shapeNodeDesign.db.height };
 const DOC = { w: shapeNodeDesign.document.width, h: shapeNodeDesign.document.height };
 const SIDE_LINK_GAP = 44; // 분기 하단 ~ Link
+
+/** 단계 라벨 — 줄 첫 칸 위, 왼쪽 끝을 첫 칸보다 조금 앞으로 */
+const PHASE_LABEL = { w: shapeNodeDesign.phase.width, h: shapeNodeDesign.phase.height };
+const PHASE_LABEL_DX = -10; // 첫 칸 왼쪽 끝 기준 (왼쪽으로 30px 은 들어오는 화살표 자리)
+const PHASE_LABEL_GAP = 16; // 라벨 아래 ~ 첫 칸 박스(또는 배지) 위
+const PHASE_EXTRA_GAP = 24; // 단계가 바뀌는 줄 사이 추가 간격
 
 /** DB·문서가 활동 하단에 걸치는 깊이 (px) — 아래 칸 글자를 가리지 않을 만큼만 */
 const ATTACH_OVERLAP = 2;
@@ -130,6 +139,17 @@ interface GNode {
   dir: 1 | -1;
   seqIdx: number; // -1 = 줄 밖 (분기 아래 Link)
   hostKey?: string; // 분기 아래 Link 의 호스트
+  /** 몇 번째 단계에 속하는가 (단계 열이 없으면 모두 0) */
+  phaseIdx: number;
+}
+
+/** 단계 — 엑셀에서 단계 값이 같은 연속 행 묶음 */
+interface PhaseInfo {
+  name: string;
+  /** 줄에 놓이는 행 (분기 아래 Link 제외), 엑셀 순서 */
+  keys: string[];
+  /** 이 단계를 여는 START (들어오는 화살표가 없을 때만) */
+  startKey?: string;
 }
 
 interface GEdge {
@@ -238,6 +258,10 @@ interface Graph {
   edges: GEdge[];
   sideLinks: Set<string>;
   hasEnd: boolean;
+  phases: PhaseInfo[];
+  startKeys: string[];
+  /** 단계 이름이 하나라도 있으면 라벨을 그린다 */
+  showPhaseLabels: boolean;
 }
 
 function buildGraph(
@@ -249,7 +273,7 @@ function buildGraph(
   const order: string[] = [];
   const base = (key: string, nodeId: string, kind: GKind): GNode => ({
     key, nodeId, kind, w: 0, h: 0, above: 0, below: 0,
-    cx: 0, cy: 0, gridRow: 0, dir: 1, seqIdx: -1,
+    cx: 0, cy: 0, gridRow: 0, dir: 1, seqIdx: -1, phaseIdx: 0,
   });
 
   nodes.set(START, { ...base(START, `start-${fc.code}`, "start"), w: SE.w, h: SE.h });
@@ -330,7 +354,7 @@ function buildGraph(
   order.forEach((key, i) => {
     const n = nodes.get(key)!;
     const row = n.row!;
-    if (row.next.length > 0 || n.kind === "link") return;
+    if (row.next.length > 0 || n.kind === "link" || row.stop) return;
     const nextKey = order.slice(i + 1).find((k) => !sideLinks.has(k));
     if (n.kind === "decision") {
       warnings.push(
@@ -355,17 +379,50 @@ function buildGraph(
     }
   }
 
-  // START → 첫 행 (분기 아래 Link 제외)
-  const firstKey = order.find((k) => !sideLinks.has(k));
-  if (firstKey) edges.unshift({ from: START, to: firstKey });
+  // 단계 묶기 — 단계 값이 같은 연속 행 (분기 아래 Link 제외)
+  const phases: PhaseInfo[] = [];
+  for (const k of order) {
+    if (sideLinks.has(k)) continue;
+    const name = nodes.get(k)!.row!.phase;
+    const last = phases[phases.length - 1];
+    if (!last || last.name !== name) phases.push({ name, keys: [k] });
+    else last.keys.push(k);
+  }
+  phases.forEach((ph, pi) => {
+    for (const k of ph.keys) nodes.get(k)!.phaseIdx = pi;
+  });
+
+  // START — 첫 단계는 항상, 이후 단계는 첫 행으로 들어오는 화살표가 없을 때만
+  const hasIncoming = new Set(edges.map((e) => e.to));
+  const startKeys: string[] = [];
+  const startEdges: GEdge[] = [];
+  phases.forEach((ph, pi) => {
+    const first = ph.keys[0];
+    if (pi > 0 && hasIncoming.has(first)) return;
+    const sk = pi === 0 ? START : `${START}${pi}`;
+    if (pi > 0) {
+      nodes.set(sk, { ...base(sk, `start-${fc.code}-${pi}`, "start"), w: SE.w, h: SE.h });
+    }
+    nodes.get(sk)!.phaseIdx = pi;
+    ph.startKey = sk;
+    startKeys.push(sk);
+    startEdges.push({ from: sk, to: first });
+  });
+  if (startKeys.length === 0) startKeys.push(START);
+  edges.unshift(...startEdges);
 
   if (hasEnd) {
-    nodes.set(END, { ...base(END, `end-${fc.code}`, "end"), w: SE.w, h: SE.h });
+    nodes.set(END, {
+      ...base(END, `end-${fc.code}`, "end"),
+      w: SE.w,
+      h: SE.h,
+      phaseIdx: Math.max(0, phases.length - 1),
+    });
   }
 
-  // 도달 불가 점검
-  const reach = new Set<string>([START]);
-  const queue = [START];
+  // 도달 불가 점검 (모든 START 에서)
+  const reach = new Set<string>(startKeys);
+  const queue = [...startKeys];
   while (queue.length) {
     const cur = queue.shift()!;
     for (const e of edges) {
@@ -390,7 +447,52 @@ function buildGraph(
     host.below = SIDE_LINK_GAP + LINK.h;
   }
 
-  return { nodes, order, edges, sideLinks, hasEnd };
+  return {
+    nodes,
+    order,
+    edges,
+    sideLinks,
+    hasEnd,
+    phases,
+    startKeys,
+    showPhaseLabels: phases.some((ph) => !!ph.name),
+  };
+}
+
+/**
+ * 출발 핸들 배정 — 한 박스에서 나가는 화살표가 같은 핸들을 나눠 쓰면 꺾은선과
+ * 분기 라벨(Y/N)이 겹쳐 구분이 안 된다. 먼저 인접 연결이 쓰는 핸들을 표시해 두고,
+ * 나머지는 후보 순서대로 비어 있는 핸들을 고른다 (다 차 있으면 첫 후보).
+ */
+function exitPicker() {
+  const used = new Map<string, Set<HandleSide>>();
+  const mark = (key: string, side: HandleSide) => {
+    const set = used.get(key) ?? new Set<HandleSide>();
+    set.add(side);
+    used.set(key, set);
+  };
+  const pick = (key: string, candidates: HandleSide[]): HandleSide => {
+    const set = used.get(key);
+    const side = candidates.find((c) => !set?.has(c)) ?? candidates[0];
+    mark(key, side);
+    return side;
+  };
+  return { mark, pick };
+}
+
+/** 단계 라벨 노드 */
+function phaseLabelNode(code: string, pi: number, name: string, x: number, y: number, w: number): Node {
+  return {
+    id: `phase-${code}-${pi}`,
+    type: "shape",
+    position: { x, y },
+    data: {
+      shapeKey: "phase",
+      label: name,
+      customWidth: w,
+      customHeight: PHASE_LABEL.h,
+    } satisfies ShapeNodeData,
+  };
 }
 
 /* ─────────────────────────────────────────────
@@ -403,24 +505,39 @@ function layoutSnake(
   activities: Activity[],
 ): { nodes: Node[]; edges: Edge[] } {
   const g = buildGraph(fc, warnings, activities);
-  const seq = [START, ...g.order.filter((k) => !g.sideLinks.has(k))];
-  if (g.hasEnd) seq.push(END);
+  // 단계마다 [START?, 행들], 마지막 단계 끝에 END. 단계는 새 줄 왼쪽에서 시작.
+  const seqs: string[][] = g.phases.map((ph) => [
+    ...(ph.startKey ? [ph.startKey] : []),
+    ...ph.keys,
+  ]);
+  if (seqs.length === 0) seqs.push([START]);
+  if (g.hasEnd) seqs[seqs.length - 1].push(END);
+  const seq = seqs.flat();
 
-  const nRows = Math.ceil(seq.length / PER_ROW);
   const slotCx = (col: number) => X0 + col * (SLOT_W + COL_GAP) + SLOT_W / 2;
 
-  // 줄·칸 배정
-  seq.forEach((key, i) => {
-    const n = g.nodes.get(key)!;
-    const gridRow = Math.floor(i / PER_ROW);
-    const pos = i % PER_ROW;
-    const dir: 1 | -1 = gridRow % 2 === 0 ? 1 : -1;
-    const col = dir === 1 ? pos : PER_ROW - 1 - pos;
-    n.seqIdx = i;
-    n.gridRow = gridRow;
-    n.dir = dir;
-    n.cx = slotCx(col);
+  // 줄·칸 배정 (단계 안에서 스네이크)
+  const phaseFirstRow: number[] = [];
+  let rowCursor = 0;
+  let seqCursor = 0;
+  seqs.forEach((phSeq, pi) => {
+    phaseFirstRow[pi] = rowCursor;
+    phSeq.forEach((key, i) => {
+      const n = g.nodes.get(key)!;
+      const local = Math.floor(i / PER_ROW);
+      const pos = i % PER_ROW;
+      const dir: 1 | -1 = local % 2 === 0 ? 1 : -1;
+      const col = dir === 1 ? pos : PER_ROW - 1 - pos;
+      n.seqIdx = seqCursor++;
+      n.gridRow = rowCursor + local;
+      n.dir = dir;
+      n.cx = slotCx(col);
+      n.phaseIdx = pi;
+    });
+    rowCursor += Math.max(1, Math.ceil(phSeq.length / PER_ROW));
   });
+  const nRows = rowCursor;
+  const phaseStartRows = new Set(phaseFirstRow);
 
   // 줄별 위/아래 범위 → 줄 중심선(cy) 쌓기
   const relTop: number[] = Array(nRows).fill(0);
@@ -430,12 +547,28 @@ function layoutSnake(
     relTop[n.gridRow] = Math.min(relTop[n.gridRow], -n.h / 2 - n.above);
     relBottom[n.gridRow] = Math.max(relBottom[n.gridRow], n.h / 2 + n.below);
   }
+  // 단계 라벨 — 단계 첫 줄의 첫 칸 위 (그 칸 박스·배지보다 위)
+  const labelRelTop = (pi: number): number => {
+    const first = g.nodes.get(seqs[pi][0])!;
+    return -first.h / 2 - first.above - PHASE_LABEL_GAP - PHASE_LABEL.h;
+  };
+  if (g.showPhaseLabels) {
+    g.phases.forEach((ph, pi) => {
+      if (!ph.name) return;
+      const r = phaseFirstRow[pi];
+      relTop[r] = Math.min(relTop[r], labelRelTop(pi));
+    });
+  }
   const rowCy: number[] = [];
   for (let r = 0; r < nRows; r++) {
     rowCy[r] =
       r === 0
         ? Y0 - relTop[0]
-        : rowCy[r - 1] + relBottom[r - 1] + ROW_GAP - relTop[r];
+        : rowCy[r - 1] +
+          relBottom[r - 1] +
+          ROW_GAP +
+          (g.showPhaseLabels && phaseStartRows.has(r) ? PHASE_EXTRA_GAP : 0) -
+          relTop[r];
   }
   for (const key of seq) {
     const n = g.nodes.get(key)!;
@@ -455,6 +588,7 @@ function layoutSnake(
       const n = g.nodes.get(k)!;
       n.gridRow = host.gridRow;
       n.dir = host.dir;
+      n.phaseIdx = host.phaseIdx;
       n.cx = host.cx - total / 2 + LINK.w / 2 + i * (LINK.w + 16);
       n.cy = host.cy + host.h / 2 + SIDE_LINK_GAP + LINK.h / 2;
     });
@@ -467,6 +601,13 @@ function layoutSnake(
 
   const rfNodes: Node[] = [];
   const rfEdges: Edge[] = [];
+  if (g.showPhaseLabels) {
+    g.phases.forEach((ph, pi) => {
+      if (!ph.name) return;
+      const y = rowCy[phaseFirstRow[pi]] + labelRelTop(pi);
+      rfNodes.push(phaseLabelNode(fc.code, pi, ph.name, X0 + PHASE_LABEL_DX, y, PHASE_LABEL.w));
+    });
+  }
   emitNodes(g, rfNodes, SNAKE_STYLE);
   const SO = SNAKE_STYLE.sideOffset;
   // 활동 좌우로 삐져나온 DB·문서·배지를 비켜가는 바깥 여유
@@ -481,8 +622,16 @@ function layoutSnake(
   };
   const outSide = (n: GNode): HandleSide => (n.dir === 1 ? "right" : "left");
   const inSide = (n: GNode): HandleSide => (n.dir === 1 ? "left" : "right");
-  const bottomFree = (n: GNode) =>
-    n.kind === "decision" && !linksByHost.has(n.key);
+  const isSideLinkEdge = (u: GNode, v: GNode) => g.sideLinks.has(v.key) && v.hostKey === u.key;
+  const isSeqAdjacent = (u: GNode, v: GNode) =>
+    v.seqIdx === u.seqIdx + 1 && u.seqIdx >= 0 && u.phaseIdx === v.phaseIdx;
+  const exits = exitPicker();
+  for (const e of g.edges) {
+    const u = g.nodes.get(e.from)!;
+    const v = g.nodes.get(e.to)!;
+    if (isSideLinkEdge(u, v)) exits.mark(u.key, "bottom");
+    else if (isSeqAdjacent(u, v)) exits.mark(u.key, outSide(u));
+  }
 
   const specs: EdgeSpec[] = [];
   g.edges.forEach((e, i) => {
@@ -493,11 +642,11 @@ function layoutSnake(
     let th: HandleSide;
     let route: EdgeRoute | undefined;
 
-    if (g.sideLinks.has(v.key) && v.hostKey === u.key) {
+    if (isSideLinkEdge(u, v)) {
       // 분기 → 바로 아래 Link
       sh = "bottom";
       th = "top";
-    } else if (v.seqIdx === u.seqIdx + 1 && u.seqIdx >= 0) {
+    } else if (isSeqAdjacent(u, v)) {
       if (v.gridRow === u.gridRow) {
         sh = outSide(u);
         th = inSide(v);
@@ -512,8 +661,8 @@ function layoutSnake(
         route = { srcOffset: 12, tgtOffset: 12, corridors: [{ axis: "x", value: x }] };
       }
     } else {
-      // 인접하지 않은 화살표
-      sh = bottomFree(u) ? "bottom" : outSide(u);
+      // 인접하지 않은 화살표 — 분기는 아래, 아래가 차 있으면 진행 방향 옆으로
+      sh = u.kind === "decision" ? exits.pick(u.key, ["bottom", outSide(u)]) : outSide(u);
       th = inSide(v);
       const srcOffset = sh === "bottom" ? 12 : SO;
       if (v.gridRow > u.gridRow) {
@@ -598,8 +747,18 @@ function layoutSwimlane(
   }
   const linkSpan = (n: number) => n * LINK.w + (n - 1) * 16;
 
+  // 칸 = 단계 순서대로 [START?, 행들], 마지막에 END
+  const seqCols: string[] = [];
+  const phaseFirstCol: number[] = [];
+  g.phases.forEach((ph, pi) => {
+    phaseFirstCol[pi] = seqCols.length;
+    if (ph.startKey) seqCols.push(ph.startKey);
+    seqCols.push(...ph.keys);
+  });
+  if (seqCols.length === 0) seqCols.push(START);
+  if (endN) seqCols.push(END);
+
   // 칸 폭 = 그 칸 박스 폭 (START·END·마름모는 좁게) — 가로 길이를 줄여 글씨를 키움
-  const seqCols = [START, ...main, ...(endN ? [END] : [])];
   let cursor = X0 + LANE_LABEL_W + 30;
   seqCols.forEach((k, i) => {
     const n = g.nodes.get(k)!;
@@ -615,7 +774,11 @@ function layoutSwimlane(
   const laneIdx = new Map<string, number>(lanes.map((l, i) => [l, i]));
   const nodeLane = new Map<string, number>();
   for (const k of main) nodeLane.set(k, laneIdx.get(laneOf(k))!);
-  nodeLane.set(START, main.length ? nodeLane.get(main[0])! : 0);
+  // 단계별 START 는 그 단계 첫 행의 레인에
+  for (const ph of g.phases) {
+    if (ph.startKey) nodeLane.set(ph.startKey, nodeLane.get(ph.keys[0]) ?? 0);
+  }
+  if (!nodeLane.has(START)) nodeLane.set(START, main.length ? nodeLane.get(main[0])! : 0);
   if (endN) {
     const preds = g.edges.filter((e) => e.to === END).map((e) => e.from);
     nodeLane.set(END, preds.length ? nodeLane.get(preds[0]) ?? 0 : 0);
@@ -699,11 +862,31 @@ function layoutSwimlane(
     });
   });
 
+  // 단계 라벨 — 레인 위, 단계 첫 칸 박스 폭에 맞춤
+  const phaseBand = g.showPhaseLabels ? PHASE_LABEL.h + 8 : 0;
+  if (g.showPhaseLabels) {
+    g.phases.forEach((ph, pi) => {
+      if (!ph.name) return;
+      const first = g.nodes.get(seqCols[phaseFirstCol[pi]])!;
+      rfNodes.push(
+        phaseLabelNode(fc.code, pi, ph.name, first.cx - first.w / 2, Y0 - phaseBand, first.w),
+      );
+    });
+  }
+
   emitNodes(g, rfNodes, SWIM_STYLE);
 
   const inSide: HandleSide = "left";
   const lanesBottom = y;
   let laneCounter = 0;
+
+  const exits = exitPicker();
+  for (const e of g.edges) {
+    const u = g.nodes.get(e.from)!;
+    const v = g.nodes.get(e.to)!;
+    if (g.sideLinks.has(v.key) && v.hostKey === u.key) exits.mark(u.key, "bottom");
+    else if (v.seqIdx === u.seqIdx + 1) exits.mark(u.key, "right");
+  }
 
   const specs: EdgeSpec[] = [];
   g.edges.forEach((e, i) => {
@@ -723,7 +906,7 @@ function layoutSwimlane(
       th = inSide;
     } else if (v.seqIdx > u.seqIdx) {
       // 앞으로 건너뛰기: 레인 아래쪽 통로 대신, 전체 레인 아래로 우회
-      sh = u.kind === "decision" && !g.sideLinks.has(v.key) ? "bottom" : "right";
+      sh = u.kind === "decision" ? exits.pick(u.key, ["bottom", "right"]) : "right";
       const yy = lanesBottom + 18 + laneCounter++ * 10;
       route = {
         srcOffset: sh === "bottom" ? 12 : 20,
@@ -732,9 +915,9 @@ function layoutSwimlane(
       };
       th = inSide;
     } else {
-      // 되돌아가기: 전체 레인 위로 우회
-      sh = u.kind === "decision" ? "top" : "right";
-      const yy = Y0 - 18 - laneCounter++ * 10;
+      // 되돌아가기: 전체 레인(과 단계 라벨) 위로 우회
+      sh = u.kind === "decision" ? exits.pick(u.key, ["top", "right"]) : "right";
+      const yy = Y0 - phaseBand - 18 - laneCounter++ * 10;
       route = {
         srcOffset: sh === "top" ? 12 : 20,
         tgtOffset: 20,
@@ -756,7 +939,7 @@ function layoutSwimlane(
 
 function emitNodes(g: Graph, rfNodes: Node[], style: AttachStyle) {
   let seq = 0;
-  const all = [START, ...g.order, ...(g.hasEnd ? [END] : [])];
+  const all = [...g.startKeys, ...g.order, ...(g.hasEnd ? [END] : [])];
   for (const key of all) {
     const n = g.nodes.get(key);
     if (!n) continue;
@@ -826,7 +1009,7 @@ function emitNodes(g: Graph, rfNodes: Node[], style: AttachStyle) {
         data: {
           shapeKey: "db",
           label: isManual ? row.db : sys,
-          sublabel: isManual ? undefined : row.db,
+          sublabel: isManual || row.db.trim() === sys ? undefined : row.db,
           customWidth: box.db.w,
           customHeight: DB.h,
         } satisfies ShapeNodeData,

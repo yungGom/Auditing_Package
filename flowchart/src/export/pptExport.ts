@@ -775,6 +775,18 @@ function drawShapeNode(slide: PptxGenJS.Slide, node: Node) {
       if (data.label) centerText(data.label, { maxPt: fpt(S.textBox.fontSize) });
       return;
     }
+    case "phase": {
+      // 단계(구분) 라벨 — 흰 상자 + 얇은 회색 테두리, 한 줄 글자 (양식 9pt)
+      slide.addShape("rect", { x, y, w: W, h: H, fill: { color: "FFFFFF" }, line: thin() });
+      if (data.label) {
+        slide.addText(data.label, {
+          x, y, w: W, h: H,
+          fontFace: FONT, fontSize: fitFontPt(data.label, W, fpt(S.phase.fontSize), 3.5, 6),
+          color: TEXT, align: "center", valign: "middle", margin: 2,
+        });
+      }
+      return;
+    }
     case "lane": {
       // 스윔레인 배경 — 연한 본문 + 왼쪽 레인명 칸
       const labelW = pxX(data.laneLabelWidth ?? 70);

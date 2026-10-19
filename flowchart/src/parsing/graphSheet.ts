@@ -8,7 +8,9 @@ import { readHeaderInfo } from "./xlsxParser";
  *
  *   필수 열 : Flowchart Code · ID · 활동명
  *   연결    : Next ID — "2", "D1", "3(Y), L1(N)", "END". 비우면 다음 행으로 이어짐.
+ *             "-" (또는 "없음") 은 화살표 없이 여기서 흐름이 끝남.
  *   유형    : 비움=활동 / 분기 / Link
+ *   단계    : 선택. 값이 바뀌는 행부터 새 줄에 단계 라벨과 함께 그린다. 비우면 위 행의 단계를 이어받음.
  *   헤더    : 대분류·중분류·소분류 열 (선택) + 헤더정보 시트 (선택, 회사명·작성일 등)
  *
  * 열 이름은 별칭으로 매칭한다 (한글/영문, 공백·괄호·* 무시).
@@ -32,6 +34,10 @@ export interface GraphRow {
   name: string;
   /** 엑셀에 적힌 Next ID 원문 기준 (비었으면 빈 배열 → 빌더가 다음 행으로 이음) */
   next: GraphNext[];
+  /** Next ID 가 "-" / "없음" — 다음 행으로 잇지 않고 여기서 흐름이 끝남 */
+  stop: boolean;
+  /** 단계(구분) 이름 — 비어 있으면 위 행의 값을 이어받은 결과. 단계 열이 없으면 "" */
+  phase: string;
   narrative: string;
   dept: string;
   system: string;
@@ -84,7 +90,7 @@ type Field =
   | "subCode" | "subName" | "id" | "type" | "name" | "next" | "narrative"
   | "dept" | "system" | "docs" | "db" | "riskNo" | "riskDesc" | "controlNo"
   | "controlTitle" | "controlDesc" | "keyCa" | "controlType" | "lane"
-  | "subSteps";
+  | "subSteps" | "phase";
 
 const ALIASES: Record<Field, string[]> = {
   code: ["flowchartcode", "flowchart코드", "플로우차트코드", "fc코드", "fccode"],
@@ -124,6 +130,8 @@ const ALIASES: Record<Field, string[]> = {
   ],
   lane: ["레인순서", "laneorder", "lane", "레인"],
   subSteps: ["세부단계", "substeps", "세부절차", "세부내용"],
+  // "단계명" 은 활동명, "통제구분" 은 통제유형 별칭이므로 쓰지 않는다
+  phase: ["단계", "업무단계", "프로세스단계", "단계구분", "구분", "phase", "section", "stage"],
 };
 
 const NORMALIZED_ALIASES: Record<Field, Set<string>> = Object.fromEntries(
@@ -205,9 +213,14 @@ function parseKind(raw: string): GraphNodeKind | null {
   return null;
 }
 
+/** Next ID 가 "흐름 끝(화살표 없음)" 표시인가 */
+export function isStopNext(raw: string): boolean {
+  return ["-", "–", "—", "없음", "none", "stop"].includes(raw.trim().toLowerCase());
+}
+
 /** "3(Y), L1(N)" / "END" / "2" → GraphNext[] */
 export function parseNext(raw: string): GraphNext[] {
-  if (!raw.trim()) return [];
+  if (!raw.trim() || isStopNext(raw)) return [];
   return raw
     .split(/[,，;\n]/)
     .map((tok) => tok.trim())
@@ -264,6 +277,7 @@ export function parseGraphWorkbook(wb: XLSX.WorkBook): ParsedGraph {
 
   const byCode = new Map<string, GraphFlowchart>();
   const seenIds = new Map<string, Set<string>>();
+  const lastPhase = new Map<string, string>(); // Code 별 직전 단계 (빈 칸은 이어받음)
 
   for (let r = headerRowIdx + 1; r < rows.length; r++) {
     const row = rows[r] ?? [];
@@ -336,12 +350,18 @@ export function parseGraphWorkbook(wb: XLSX.WorkBook): ParsedGraph {
     const laneRaw = get(row, "lane");
     const laneNum = laneRaw ? Number(laneRaw) : NaN;
 
+    const phase = get(row, "phase") || lastPhase.get(code) || "";
+    lastPhase.set(code, phase);
+    const nextRaw = get(row, "next");
+
     fc.rows.push({
       excelRow,
       id,
       kind,
       name: name || id,
-      next: parseNext(get(row, "next")),
+      next: parseNext(nextRaw),
+      stop: isStopNext(nextRaw),
+      phase,
       narrative: get(row, "narrative"),
       dept: get(row, "dept"),
       system: get(row, "system"),
