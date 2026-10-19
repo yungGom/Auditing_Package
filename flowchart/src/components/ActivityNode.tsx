@@ -14,6 +14,7 @@ import {
   icfrColors,
 } from "../design";
 import { useFlow } from "../state/flowState";
+import { fitOneLinePx } from "../textFit";
 import { LockBadge } from "./LockBadge";
 
 /**
@@ -64,7 +65,6 @@ export function ActivityNodeBody({
     borderColor: icfrColors.border,
     backgroundColor: icfrColors.actBody,
     borderStyle: "solid",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
     position: "relative",
     userSelect: "none",
     outline: selected ? `2px solid ${icfrColors.keyCtrl}` : undefined,
@@ -75,8 +75,10 @@ export function ActivityNodeBody({
   };
 
   // 헤더/푸터는 고정 픽셀 높이 (활동이 커져도 일정). 본문이 나머지를 차지.
-  const HDR_PX = 24;
-  const FOOT_PX = 20;
+  const HDR_PX = N.headerHeight;
+  const FOOT_PX = N.footerHeight;
+  // 수행팀은 양식처럼 한 줄 — 길면 글자를 줄인다
+  const teamFontPx = fitOneLinePx(team, W - N.actNoColWidth - 8, N.teamFontSize);
   const headerRowStyle: CSSProperties = {
     display: "flex",
     flex: `0 0 ${HDR_PX}px`,
@@ -96,10 +98,13 @@ export function ActivityNodeBody({
 
   const teamStyle: CSSProperties = {
     flex: 1,
-    paddingLeft: 6,
-    paddingRight: 6,
-    fontSize: N.teamFontSize,
+    paddingLeft: 4,
+    paddingRight: 4,
+    fontSize: teamFontPx,
     lineHeight: 1.2,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    letterSpacing: teamFontPx < N.teamFontSize ? "-0.03em" : undefined,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",

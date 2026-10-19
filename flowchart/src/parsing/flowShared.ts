@@ -1,6 +1,6 @@
 import { Edge, MarkerType, Node } from "reactflow";
 
-import { canvasDesign as C, shapeNodeDesign } from "../design";
+import { canvasDesign as C, CHIP_GAP, shapeNodeDesign } from "../design";
 import type { Activity } from "../types";
 import { hasRisk, resolvedControl } from "../types";
 import type { ShapeNodeData } from "../components/ShapeNode";
@@ -33,7 +33,7 @@ export function solidEdge(
   };
   if (opts.label) {
     edge.label = opts.label;
-    edge.labelStyle = { fontSize: 11, fontWeight: 700, fill: "#334155" };
+    edge.labelStyle = { fontSize: 12, fontWeight: 400, fill: "#0F172A" };
     edge.labelBgStyle = { fill: "#FFFFFF" };
   }
   if (opts.offset != null) {
@@ -99,10 +99,20 @@ export function makeLabelTriplet(a: Activity): LabelTriplet | null {
 /** 라벨 띠 한 줄이 차지하는 높이 (줄 간격 포함) */
 export const LABEL_ROW_H = shapeNodeDesign.risk.height + 2;
 /** 활동 상단과 라벨 띠 사이 여백 */
-export const LABEL_GAP = 4;
+export const LABEL_GAP = 3;
+/** 위험 배지 ↔ 통제 배지 간격 */
+const BADGE_GAP = 4;
+
+/** 통제 배지 폭 — A/M/I 칩이 있으면 [배지][간격][칩] 전체 */
+export function controlBadgeWidth(ctrlType?: "A" | "M" | "I"): number {
+  return (
+    shapeNodeDesign.keyControl.width +
+    (ctrlType ? CHIP_GAP + shapeNodeDesign.controlType.width : 0)
+  );
+}
 
 /**
- * 활동 위에 [위험] [통제+칩] 을 가로 한 줄로, 활동 중앙에 맞춰 배치.
+ * 활동 위에 [위험] [통제][칩] 을 가로 한 줄로, 활동 왼쪽 끝에 맞춰 배치 (회사 양식).
  * rowIdx > 0 이면 위로 한 줄씩 더 쌓는다.
  */
 export function addLabelRow(
@@ -110,25 +120,17 @@ export function addLabelRow(
   key: string | number,
   rowIdx: number,
   actX: number,
-  actW: number,
+  _actW: number,
   yAct: number,
   triplet: LabelTriplet,
 ) {
   const labelH = shapeNodeDesign.risk.height;
   const riskW = shapeNodeDesign.risk.width;
-  const ctrlW =
-    triplet.control?.isKey === true
-      ? shapeNodeDesign.keyControl.width
-      : shapeNodeDesign.nonkeyControl.width;
-  const gap = 2;
+  const ctrlW = controlBadgeWidth(triplet.ctrlType);
+  const gap = BADGE_GAP;
 
-  let totalW = 0;
-  if (triplet.risk) totalW += riskW;
-  if (triplet.risk && triplet.control) totalW += gap;
-  if (triplet.control) totalW += ctrlW;
-
-  const startX = actX + (actW - totalW) / 2;
-  const rowY = yAct - labelH - LABEL_GAP - rowIdx * (labelH + gap);
+  const startX = actX;
+  const rowY = yAct - labelH - LABEL_GAP - rowIdx * (labelH + 2);
 
   let curX = startX;
   if (triplet.risk) {

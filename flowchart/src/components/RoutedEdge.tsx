@@ -63,9 +63,9 @@ function RoutedEdgeImpl({
             style={{
               position: "absolute",
               transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)`,
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#334155",
+              fontSize: 12,
+              fontWeight: 400,
+              color: "#0F172A",
               background: "#FFFFFF",
               padding: "0 2px",
               lineHeight: 1.2,

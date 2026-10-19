@@ -9,14 +9,13 @@ import type { RoutedEdgeData } from "../components/RoutedEdge";
 import type { FlowchartBuilt } from "./buildFlowFromExcel";
 import {
   addLabelRow,
-  dashedEdge,
   LABEL_GAP,
   LABEL_ROW_H,
   makeLabelTriplet,
   solidEdge,
   type HandleSide,
 } from "./flowShared";
-import type { EdgeRoute } from "./edgeRouting";
+import { routePoints, type EdgeRoute, type Pt } from "./edgeRouting";
 import {
   idKey,
   type GraphFlowchart,
@@ -30,6 +29,9 @@ import {
  *
  *   스네이크 배치: 한 줄에 PER_ROW 칸, 줄마다 진행 방향을 바꿔(→ ← →) 줄바꿈 화살표를
  *   짧은 U턴으로 만든다. 행 높이는 그 줄에 있는 배지·DB·문서에 맞춰 자동 계산.
+ *
+ *   회사 양식처럼 DB 는 활동 왼쪽 아래, 문서는 오른쪽 아래 모서리에 걸쳐 붙인다
+ *   (연결선 없음). 가운데 아래는 비워 두어 세로 화살표가 지나갈 수 있게 한다.
  *
  *   배치 순서 = 엑셀 행 순서. 화살표 = Next ID (비우면 다음 행).
  *   분기에서 갈라져 끝나는 Link 는 줄에 넣지 않고 분기 아래에 붙인다.
@@ -49,20 +51,59 @@ export interface GraphBuildResult {
 }
 
 /* ── 치수 ── */
-const PER_ROW = 4;
+const PER_ROW = 5;
 const SLOT_W = activityNodeDesign.width; // 180
 const COL_GAP = 80;
 const X0 = 60;
 const Y0 = 160;
-const ROW_GAP = 90;
+const ROW_GAP = 80;
 
 const DIAMOND = { w: shapeNodeDesign.diamond.width, h: shapeNodeDesign.diamond.height };
-const LINK = { w: 170, h: 44 };
+const LINK = { w: shapeNodeDesign.link.width, h: shapeNodeDesign.link.height };
 const SE = { w: shapeNodeDesign.startEnd.width, h: shapeNodeDesign.startEnd.height };
-const DB = { w: 84, h: 60 };
-const DOC_H = shapeNodeDesign.document.height;
-const BELOW_GAP = 30; // 활동 하단 ~ DB/문서
+const DB = { w: shapeNodeDesign.db.width, h: shapeNodeDesign.db.height };
+const DOC = { w: shapeNodeDesign.document.width, h: shapeNodeDesign.document.height };
 const SIDE_LINK_GAP = 44; // 분기 하단 ~ Link
+
+/** DB·문서가 활동 하단에 걸치는 깊이 (px) — 아래 칸 글자를 가리지 않을 만큼만 */
+const ATTACH_OVERLAP = 2;
+/** DB 와 문서 사이 — 활동 아래 가운데로 세로 화살표가 지나갈 틈 */
+const ATTACH_MID_GAP = 12;
+
+/**
+ * 배치별 여백.
+ *   overhang: DB·문서가 활동 좌우로 삐져나오는 폭 (스윔레인은 칸이 좁아 0)
+ *   sideOffset: 옆 핸들에서 꺾이기 전 직진 거리 — 삐져나온 DB·문서를 비켜간다
+ */
+interface AttachStyle {
+  overhang: number;
+  sideOffset: number;
+}
+const SNAKE_STYLE: AttachStyle = { overhang: 16, sideOffset: 30 };
+const SWIM_STYLE: AttachStyle = { overhang: 0, sideOffset: 20 };
+
+/** 활동 기준 상대 x·폭 — DB 는 왼쪽 아래, 문서는 오른쪽 아래 */
+function attachBoxes(
+  w: number,
+  hasDb: boolean,
+  hasDoc: boolean,
+  overhang: number,
+): { db?: { x: number; w: number }; doc?: { x: number; w: number } } {
+  // 둘 다 있으면 가운데 틈을 남기고 반씩
+  const half = (w + 2 * overhang - ATTACH_MID_GAP) / 2;
+  const dbW = hasDoc ? Math.min(DB.w, half) : DB.w;
+  const docW = hasDb ? Math.min(DOC.w, half) : DOC.w;
+  return {
+    db: hasDb ? { x: -overhang, w: dbW } : undefined,
+    doc: hasDoc ? { x: w + overhang - docW, w: docW } : undefined,
+  };
+}
+
+/** 활동 아래로 내려오는 DB·문서 높이 (활동 하단 기준) */
+function attachBelow(hasDb: boolean, hasDoc: boolean): number {
+  const h = Math.max(hasDb ? DB.h : 0, hasDoc ? DOC.h : 0);
+  return h ? h - ATTACH_OVERLAP : 0;
+}
 
 /* ─────────────────────────────────────────────
  * 내부 모델
@@ -221,7 +262,6 @@ function buildGraph(
       activities.push(a);
       const steps = parseSubSteps(a.subSteps);
       const labels = labelRowCount(a);
-      const hasBelow = !!row.db || row.docs.length > 0;
       nodes.set(key, {
         ...base(key, `act-${fc.code}-${safe}`, "activity"),
         row,
@@ -229,7 +269,7 @@ function buildGraph(
         w: SLOT_W,
         h: activityAutoHeight(steps.length, steps),
         above: labels ? LABEL_GAP + labels * LABEL_ROW_H : 0,
-        below: hasBelow ? BELOW_GAP + Math.max(row.db ? DB.h : 0, row.docs.length ? DOC_H : 0) : 0,
+        below: attachBelow(!!row.db, row.docs.length > 0),
       });
     } else if (row.kind === "decision") {
       nodes.set(key, {
@@ -427,7 +467,10 @@ function layoutSnake(
 
   const rfNodes: Node[] = [];
   const rfEdges: Edge[] = [];
-  emitNodes(g, rfNodes, rfEdges);
+  emitNodes(g, rfNodes, SNAKE_STYLE);
+  const SO = SNAKE_STYLE.sideOffset;
+  // 활동 좌우로 삐져나온 DB·문서·배지를 비켜가는 바깥 여유
+  const outerClear = SNAKE_STYLE.overhang + 26;
 
   // 화살표
   const skipLane = new Map<number, number>(); // 줄별 건너뛰기 통로 번호
@@ -441,6 +484,7 @@ function layoutSnake(
   const bottomFree = (n: GNode) =>
     n.kind === "decision" && !linksByHost.has(n.key);
 
+  const specs: EdgeSpec[] = [];
   g.edges.forEach((e, i) => {
     const u = g.nodes.get(e.from)!;
     const v = g.nodes.get(e.to)!;
@@ -463,32 +507,32 @@ function layoutSnake(
         th = sh;
         const x =
           u.dir === 1
-            ? Math.max(u.cx + u.w / 2, v.cx + v.w / 2) + 32
-            : Math.min(u.cx - u.w / 2, v.cx - v.w / 2) - 32;
+            ? Math.max(u.cx + u.w / 2, v.cx + v.w / 2) + outerClear
+            : Math.min(u.cx - u.w / 2, v.cx - v.w / 2) - outerClear;
         route = { srcOffset: 12, tgtOffset: 12, corridors: [{ axis: "x", value: x }] };
       }
     } else {
       // 인접하지 않은 화살표
       sh = bottomFree(u) ? "bottom" : outSide(u);
       th = inSide(v);
-      const srcOffset = sh === "bottom" ? 12 : 20;
+      const srcOffset = sh === "bottom" ? 12 : SO;
       if (v.gridRow > u.gridRow) {
         // 아래 줄로 점프: 출발 줄 아래 통로 → 도착 박스 옆 칸 사이로 내려감
         const y = bandBottom(u.gridRow) + 22 + nextLane(u.gridRow) * 10;
-        route = { srcOffset, tgtOffset: 22, corridors: [{ axis: "y", value: y }] };
+        route = { srcOffset, tgtOffset: SO, corridors: [{ axis: "y", value: y }] };
       } else if (v.gridRow === u.gridRow) {
         // 같은 줄 건너뛰기/되돌아가기: 줄 아래 통로
         const y = bandBottom(u.gridRow) + 22 + nextLane(u.gridRow) * 10;
-        route = { srcOffset, tgtOffset: 22, corridors: [{ axis: "y", value: y }] };
+        route = { srcOffset, tgtOffset: SO, corridors: [{ axis: "y", value: y }] };
       } else {
         // 위 줄로 되돌아가기: 출발 줄 아래 → 바깥 세로 통로 → 도착 줄 위
         const y1 = bandBottom(u.gridRow) + 22 + nextLane(u.gridRow) * 10;
         const goLeft = (u.cx + v.cx) / 2 <= (gridLeft + gridRight) / 2;
-        const x = goLeft ? gridLeft - 56 : gridRight + 56;
+        const x = goLeft ? gridLeft - outerClear - 30 : gridRight + outerClear + 30;
         const y2 = bandTop(v.gridRow) - 22 - nextLane(v.gridRow - 1 + 1000) * 10;
         route = {
           srcOffset,
-          tgtOffset: 22,
+          tgtOffset: SO,
           corridors: [
             { axis: "y", value: y1 },
             { axis: "x", value: x },
@@ -498,9 +542,11 @@ function layoutSnake(
       }
     }
 
-    rfEdges.push(routedEdge(id, u.nodeId, v.nodeId, sh, th, e.label, route));
+    specs.push({ id, u, v, sh, th, label: e.label, route });
   });
 
+  separateOverlaps(specs);
+  for (const sp of specs) rfEdges.push(specEdge(sp));
   return { nodes: rfNodes, edges: rfEdges };
 }
 
@@ -653,12 +699,13 @@ function layoutSwimlane(
     });
   });
 
-  emitNodes(g, rfNodes, rfEdges);
+  emitNodes(g, rfNodes, SWIM_STYLE);
 
   const inSide: HandleSide = "left";
   const lanesBottom = y;
   let laneCounter = 0;
 
+  const specs: EdgeSpec[] = [];
   g.edges.forEach((e, i) => {
     const u = g.nodes.get(e.from)!;
     const v = g.nodes.get(e.to)!;
@@ -695,9 +742,11 @@ function layoutSwimlane(
       };
       th = inSide;
     }
-    rfEdges.push(routedEdge(id, u.nodeId, v.nodeId, sh, th, e.label, route));
+    specs.push({ id, u, v, sh, th, label: e.label, route });
   });
 
+  separateOverlaps(specs);
+  for (const sp of specs) rfEdges.push(specEdge(sp));
   return { nodes: rfNodes, edges: rfEdges };
 }
 
@@ -705,7 +754,7 @@ function layoutSwimlane(
  * 노드 출력 (배치 방식 공통)
  * ───────────────────────────────────────────── */
 
-function emitNodes(g: Graph, rfNodes: Node[], rfEdges: Edge[]) {
+function emitNodes(g: Graph, rfNodes: Node[], style: AttachStyle) {
   let seq = 0;
   const all = [START, ...g.order, ...(g.hasEnd ? [END] : [])];
   for (const key of all) {
@@ -748,7 +797,7 @@ function emitNodes(g: Graph, rfNodes: Node[], rfEdges: Edge[]) {
       continue;
     }
 
-    // 활동 + 배지 + 아래 DB/문서
+    // 활동 + 배지 + 아래 모서리 DB/문서
     const a = n.activity!;
     rfNodes.push({
       id: n.nodeId,
@@ -764,53 +813,146 @@ function emitNodes(g: Graph, rfNodes: Node[], rfEdges: Edge[]) {
     const triplet = makeLabelTriplet(a);
     if (triplet) addLabelRow(rfNodes, n.nodeId, 0, x, n.w, yTop, triplet);
 
-    const belowY = yTop + n.h + BELOW_GAP;
     const docs = row.docs;
-    let docLeft = x;
-    let docWidth = n.w;
-    if (row.db) {
-      const dbId = `db-${n.nodeId}`;
-      const dbX = docs.length ? x : n.cx - DB.w / 2;
+    const box = attachBoxes(n.w, !!row.db, docs.length > 0, style.overhang);
+    const attachY = yTop + n.h - ATTACH_OVERLAP;
+    if (row.db && box.db) {
       const sys = row.system.trim();
       const isManual = !sys || /^(manual|수기|수작업)$/i.test(sys);
       rfNodes.push({
-        id: dbId,
+        id: `db-${n.nodeId}`,
         type: "shape",
-        position: { x: dbX, y: belowY },
+        position: { x: x + box.db.x, y: attachY },
         data: {
           shapeKey: "db",
           label: isManual ? row.db : sys,
           sublabel: isManual ? undefined : row.db,
-          customWidth: DB.w,
+          customWidth: box.db.w,
           customHeight: DB.h,
         } satisfies ShapeNodeData,
       });
-      rfEdges.push(dashedEdge(`e-${n.nodeId}-db`, n.nodeId, dbId, "bottom", "top"));
-      docLeft = x + DB.w + 8;
-      docWidth = n.w - DB.w - 8;
     }
-    if (docs.length) {
-      const gap = 6;
-      const perW = (docWidth - gap * (docs.length - 1)) / docs.length;
-      docs.forEach((label, i) => {
-        const docId = `doc-${n.nodeId}-${i}`;
-        rfNodes.push({
-          id: docId,
-          type: "shape",
-          position: { x: docLeft + i * (perW + gap), y: belowY },
-          data: {
-            shapeKey: "document",
-            label,
-            customWidth: perW,
-            customHeight: DOC_H,
-          } satisfies ShapeNodeData,
-        });
-        rfEdges.push(
-          dashedEdge(`e-${n.nodeId}-doc-${i}`, n.nodeId, docId, "bottom", "top"),
-        );
+    if (docs.length && box.doc) {
+      // 문서가 여럿이면 양식처럼 한 문서 도형에 쉼표로 묶는다
+      rfNodes.push({
+        id: `doc-${n.nodeId}`,
+        type: "shape",
+        position: { x: x + box.doc.x, y: attachY },
+        data: {
+          shapeKey: "document",
+          label: docs.join(", "),
+          customWidth: box.doc.w,
+          customHeight: DOC.h,
+        } satisfies ShapeNodeData,
       });
     }
   }
+}
+
+/* ─────────────────────────────────────────────
+ * 화살표 겹침 분리
+ *   서로 다른 화살표가 같은 세로/가로선을 나눠 쓰면 어디서 어디로 가는지 헷갈린다.
+ *   (같은 출발점에서 갈라지거나 같은 도착점으로 모이는 경우는 괜찮음)
+ *   겹치면 꺾는 지점을 10px 씩 옮겨 가며 겹치지 않는 경로를 고른다.
+ * ───────────────────────────────────────────── */
+
+interface EdgeSpec {
+  id: string;
+  u: GNode;
+  v: GNode;
+  sh: HandleSide;
+  th: HandleSide;
+  label?: string;
+  route?: EdgeRoute;
+}
+
+interface Seg {
+  axis: "v" | "h";
+  at: number; // 세로선이면 x, 가로선이면 y
+  a: number;
+  b: number; // a < b 구간
+  from: string;
+  to: string;
+}
+
+const SEP_STEP = 10;
+
+function handlePt(n: GNode, side: HandleSide): Pt {
+  switch (side) {
+    case "left": return { x: n.cx - n.w / 2, y: n.cy };
+    case "right": return { x: n.cx + n.w / 2, y: n.cy };
+    case "top": return { x: n.cx, y: n.cy - n.h / 2 };
+    case "bottom": return { x: n.cx, y: n.cy + n.h / 2 };
+  }
+}
+
+function specSegments(sp: EdgeSpec, route: EdgeRoute | undefined): Seg[] {
+  const pts = routePoints(handlePt(sp.u, sp.sh), sp.sh, handlePt(sp.v, sp.th), sp.th, route);
+  const out: Seg[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i - 1];
+    const q = pts[i];
+    if (Math.abs(p.x - q.x) < 0.5) {
+      out.push({ axis: "v", at: p.x, a: Math.min(p.y, q.y), b: Math.max(p.y, q.y), from: sp.u.key, to: sp.v.key });
+    } else if (Math.abs(p.y - q.y) < 0.5) {
+      out.push({ axis: "h", at: p.y, a: Math.min(p.x, q.x), b: Math.max(p.x, q.x), from: sp.u.key, to: sp.v.key });
+    }
+  }
+  return out;
+}
+
+function clashes(segs: Seg[], used: Seg[]): boolean {
+  for (const s of segs) {
+    for (const t of used) {
+      if (s.axis !== t.axis) continue;
+      if (s.from === t.from || s.to === t.to) continue;
+      if (Math.abs(s.at - t.at) >= 5) continue;
+      if (Math.min(s.b, t.b) - Math.max(s.a, t.a) > 2) return true;
+    }
+  }
+  return false;
+}
+
+function separateOverlaps(specs: EdgeSpec[]) {
+  const used: Seg[] = [];
+  // 꺾는 지점 이동 후보: [출발 직진 ±, 도착 직진 ±, 통로 바깥쪽으로] × SEP_STEP
+  const tries: Array<[number, number, number]> = [
+    [0, 0, 0], [1, 0, 0], [0, 1, 0], [-1, 0, 0], [0, -1, 0],
+    [1, 1, 0], [-1, -1, 0], [1, -1, 0], [-1, 1, 0], [0, 0, 1],
+    [2, 0, 0], [0, 2, 0], [1, 1, 1], [0, 0, 2],
+  ];
+  for (const sp of specs) {
+    const base = sp.route;
+    if (!base?.corridors?.length) {
+      used.push(...specSegments(sp, base));
+      continue;
+    }
+    const src = handlePt(sp.u, sp.sh);
+    let chosen = base;
+    for (const [ds, dt, dc] of tries) {
+      const r: EdgeRoute = {
+        ...base,
+        srcOffset: Math.max(8, (base.srcOffset ?? 14) + ds * SEP_STEP),
+        tgtOffset: Math.max(8, (base.tgtOffset ?? 14) + dt * SEP_STEP),
+        corridors: base.corridors.map((c) => {
+          // 통로는 박스에서 멀어지는 쪽으로 이동
+          const ref = c.axis === "y" ? src.y : src.x;
+          const sign = c.value >= ref ? 1 : -1;
+          return { ...c, value: c.value + sign * dc * SEP_STEP };
+        }),
+      };
+      if (!clashes(specSegments(sp, r), used)) {
+        chosen = r;
+        break;
+      }
+    }
+    sp.route = chosen;
+    used.push(...specSegments(sp, chosen));
+  }
+}
+
+function specEdge(sp: EdgeSpec): Edge {
+  return routedEdge(sp.id, sp.u.nodeId, sp.v.nodeId, sp.sh, sp.th, sp.label, sp.route);
 }
 
 function routedEdge(
