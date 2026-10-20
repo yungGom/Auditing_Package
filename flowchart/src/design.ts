@@ -14,13 +14,14 @@
  * 색상
  * ───────────────────────────────────────────── */
 /*
- * 색상 출처 — 회사 표준 Flowchart 양식.
- *   헤더 라벨 #B4185C, 박스 테두리/연결선 #BFBFBF (밝은 회색),
+ * 색상 출처 — 회사 표준 Flowchart 양식 (예시 PPT 의 실제 XML 값).
+ *   헤더 라벨 #AA0041, 박스 테두리/연결선 #BFBFBF (밝은 회색),
  *   DB(can) #D20050, Document #E2E2E2,
- *   Risk #FFC000, Control #FF69A2, Manual(M) #FFC0CB.
+ *   Risk #FFC000, Key Control #D20050, Non-Key Control #FF69A2,
+ *   통제구분 칩(A/M/I) #FFC0CB.
  */
 export const icfrColors = {
-  headerBg: "#B4185C", // 상단 헤더 표 라벨 (진한 마젠타)
+  headerBg: "#AA0041", // 상단 헤더 표 라벨 (진한 크림슨)
   headerCellBg: "#FCE3EE", // (UI 액센트) 사이드바 활성 하이라이트 연핑크 — 실제 헤더 값 칸은 흰색
   titleBg: "#1F3A5F", // (legacy) START/END 은 이제 흰 박스 + 회색 테두리
   border: "#BFBFBF", // 도형/박스 테두리 (밝은 회색)
@@ -28,21 +29,22 @@ export const icfrColors = {
   actHdr: "#FFFFFF", // 활동 박스 헤더/푸터 — 기준은 전부 흰색, 회색 칸선으로만 구분
   actBody: "#FFFFFF", // 활동 박스 본문 흰색
 
-  risk: "#FFC000", // Risk(Reference) 뱃지 골드
-  keyCtrl: "#FF69A2", // Key Control 뱃지 핑크
-  nonkeyCtrl: "#FFC0CB", // Non-Key Control 뱃지 연핑크
+  risk: "#FFC000", // Risk 뱃지 골드 (검정 글씨)
+  keyCtrl: "#D20050", // Key Control 뱃지 크림슨 (흰 글씨)
+  nonkeyCtrl: "#FF69A2", // Non-Key Control 뱃지 핑크 (검정 글씨)
   neutralCtrl: "#D9D9D9", // Key/Non-Key 미지정 (KEY_CA 공란) — 연회색
 
-  // 통제유형(M/A/I) 작은 칩
-  ctrlA: "#FF69A2", // Automated → 핑크 + 흰 글씨
-  ctrlM: "#FFC0CB", // Manual → 연핑크 + 검정 글씨
-  ctrlI: "#FFC000", // ITDM/ITGC → 골드 + 검정 글씨
+  // 통제구분(A/M/I) 작은 칩 — 양식은 세 가지 모두 연핑크 + 검정 글씨
+  ctrlA: "#FFC0CB",
+  ctrlM: "#FFC0CB",
+  ctrlI: "#FFC0CB",
 
   docFill: "#E2E2E2", // Document 도형 연회색
   docBorder: "#E2E2E2", // Document 테두리 (동일 연회색)
   dbFill: "#D20050", // DB(can) 진한 로즈/마젠타
   dbBorder: "#E2E2E2", // DB 테두리 연회색
   arrow: "#BFBFBF", // 연결선 밝은 회색
+  laneBg: "#FAFAFA", // 스윔레인 본문 배경
 } as const;
 
 /* ─────────────────────────────────────────────
@@ -50,24 +52,28 @@ export const icfrColors = {
  *   - px 단위. inline style 로 적용되어 HMR 즉시 반영.
  * ───────────────────────────────────────────── */
 export const activityNodeDesign = {
-  // 회사 산출물 예시(references/Python_생성_예시.pptx) 기준 비율로 슬림하게.
-  // 224 → 180 으로 줄여 Risk/Control/M 라벨 띠 폭과 자연스럽게 정렬되도록 함.
+  // 회사 양식 예시의 활동 박스 85.9×42pt 를 캔버스 180×88px 로 (PX_PER_PT 배).
+  //   위 칸(번호|수행팀)·아래 칸(시스템) 은 각 8.8pt, 글자는 굵지 않은 7pt.
   width: 180,
   borderWidth: 1,
 
-  // 좌상단 활동번호 칸
-  actNoColWidth: 32,
-  actNoFontSize: 12,
-  actNoFontWeight: 700,
+  // 위·아래 칸 높이 (px) — 활동이 길어져도 일정
+  headerHeight: 19,
+  footerHeight: 19,
 
-  // 상단 우측 수행팀 칸
-  teamFontSize: 10,
+  // 좌상단 활동번호 칸
+  actNoColWidth: 50,
+  actNoFontSize: 14.7, // 7pt
+  actNoFontWeight: 400,
+
+  // 상단 우측 수행팀 칸 (양식은 5~7pt — 길면 줄여서 한 줄)
+  teamFontSize: 14.7, // 최대 7pt — 길면 줄임
 
   // 중앙 본문
   bodyPaddingX: 8,
   bodyPaddingY: 7,
-  bodyTitleFontSize: 12,
-  bodyTitleFontWeight: 700,
+  bodyTitleFontSize: 14.7, // 7pt
+  bodyTitleFontWeight: 400,
   bodySubFontSize: 10,
   bodySubColor: "#475569", // slate-600 톤
   bodyLineHeight: 1.3,
@@ -75,8 +81,11 @@ export const activityNodeDesign = {
   // 헤더/푸터 공통
   headerPaddingY: 3,
   footerPaddingY: 3,
-  locationFontSize: 10,
+  locationFontSize: 14.7, // 7pt
 } as const;
+
+/** 캔버스 px ↔ PPT pt 기준 비율. 활동 180px = 양식 85.9pt → 약 2.1 */
+export const PX_PER_PT = 2.1;
 
 /* ─────────────────────────────────────────────
  * 통제유형 원형 배지 (활동 노드 우상단)
@@ -102,7 +111,7 @@ export const canvasDesign = {
   // 화살표 — 기본 모양·색. 사용자가 캔버스 좌상단 셀렉터로 직선/꺾은선/곡선 변경.
   edgeType: "smoothstep" as const,
   edgeStroke: icfrColors.arrow,
-  edgeStrokeWidth: 1.5,
+  edgeStrokeWidth: 1,
   edgeDashedPattern: "5 4", // 데이터/정보 흐름 (점선)
 
   // 자동 배치 시 노드 간 간격
@@ -145,27 +154,35 @@ export const shellDesign = {
  * 폭을 좁게 잡고 한 줄에 자연스럽게 들어가도록 한다.
  * ───────────────────────────────────────────── */
 export const shapeNodeDesign = {
-  // 회사 양식의 빈 사각형 (캡슐 ×)
-  startEnd: { width: 110, height: 50, fontSize: 13, fontWeight: 600 },
+  // 글자는 모두 양식의 7pt (= 14.7px). 칸보다 길면 자동으로 줄인다.
+  // 회사 양식: START/END·분기점은 활동과 같은 크기의 빈 사각형/마름모
+  startEnd: { width: 180, height: 88, fontSize: 14.7, fontWeight: 400 },
 
-  // Link — 3분할 사각형 (가이드 그림 비율: 가로:세로 ≈ 3:1)
-  link: { width: 120, height: 36, fontSize: 11 },
+  // Link — 양쪽 끝에 세로선이 있는 사각형
+  link: { width: 170, height: 52, fontSize: 14.7 },
 
-  diamond: { width: 130, height: 80, fontSize: 12 },
+  diamond: { width: 180, height: 88, fontSize: 14.7 },
 
-  // 활동 위 한 줄에 묶이는 콤팩트 라벨들
-  risk: { width: 70, height: 22, fontSize: 10, fontWeight: 700 },
-  keyControl: { width: 80, height: 22, fontSize: 10, fontWeight: 700 },
-  nonkeyControl: { width: 80, height: 22, fontSize: 10, fontWeight: 700 },
-  controlType: { width: 22, height: 22, fontSize: 11, fontWeight: 700 },
+  // 활동 위 한 줄(왼쪽 정렬)에 묶이는 라벨 — 양식 42×10.5pt, 칩 8.5×10.5pt
+  risk: { width: 84, height: 22, fontSize: 14.7, fontWeight: 400 },
+  keyControl: { width: 84, height: 22, fontSize: 14.7, fontWeight: 400 },
+  nonkeyControl: { width: 84, height: 22, fontSize: 14.7, fontWeight: 400 },
+  controlType: { width: 18, height: 22, fontSize: 14.7, fontWeight: 400 },
 
-  document: { width: 120, height: 52, fontSize: 11 },
-  db: { width: 100, height: 70, fontSize: 11, fontWeight: 700 },
-  interface: { width: 48, height: 48, fontSize: 10, fontWeight: 700 },
-  textBox: { width: 120, height: 36, fontSize: 11, fontWeight: 400 },
+  // 활동 아래 모서리에 걸쳐 붙는 문서·DB (양식 68×34pt / 62.6×28pt)
+  document: { width: 126, height: 62, fontSize: 14.7 },
+  db: { width: 116, height: 54, fontSize: 14.7, fontWeight: 400 },
+  interface: { width: 48, height: 48, fontSize: 14.7, fontWeight: 400 },
+  textBox: { width: 120, height: 36, fontSize: 14.7, fontWeight: 400 },
+  // 단계(구분) 라벨 — 양식 118.8×16.2pt, 글자 9pt
+  phase: { width: 220, height: 34, fontSize: 18.9, fontWeight: 400 },
+  lane: { width: 1200, height: 200, fontSize: 13, fontWeight: 700 },
 
-  borderWidth: 1.25,
+  borderWidth: 1,
 } as const;
+
+/** 통제 배지 오른쪽 A/M/I 칩 — 배지와의 간격 (px) */
+export const CHIP_GAP = 4;
 
 /* ─────────────────────────────────────────────
  * 폰트 패밀리 — Tailwind fontFamily.sans 로도 동시에 적용됨

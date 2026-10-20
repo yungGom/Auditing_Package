@@ -19,7 +19,9 @@ export type ShapeKey =
   | "document"
   | "db"
   | "interface"
-  | "textBox";
+  | "textBox"
+  | "phase" // 단계(구분) 라벨 — 테두리 있는 작은 이름 상자
+  | "lane"; // 스윔레인 배경 (배치 엔진 전용, 사이드바에 없음)
 
 export interface ShapeDef {
   key: ShapeKey;
@@ -133,6 +135,13 @@ export const SHAPES: ShapeDef[] = [
     description: "텍스트 박스 — 테두리·배경 없는 자유 텍스트 메모.",
     fill: "transparent",
     stroke: "transparent",
+  },
+  {
+    key: "phase",
+    label: "단계 라벨",
+    description: "단계(구분) 라벨 — flowchart 를 여러 단계로 나눌 때 각 단계 앞에 붙이는 이름 상자.",
+    fill: "#FFFFFF",
+    stroke: icfrColors.border,
   },
 ];
 

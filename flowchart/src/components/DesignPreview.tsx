@@ -45,7 +45,7 @@ interface ActivityVariant {
 const ACTIVITY_VARIANTS: ActivityVariant[] = [
   {
     label: "통제 없음",
-    hint: "단순 활동 — 우상단 배지 없음",
+    hint: "단순 활동 — 통제 없음",
     activity: {
       actNo: 1,
       rcmRow: 4,
@@ -64,7 +64,7 @@ const ACTIVITY_VARIANTS: ActivityVariant[] = [
   },
   {
     label: "Manual · Non-Key",
-    hint: "연분홍 M 배지, 흰 링 없음",
+    hint: "수동통제 · 비핵심통제",
     activity: {
       actNo: 2,
       rcmRow: 5,
@@ -86,7 +86,7 @@ const ACTIVITY_VARIANTS: ActivityVariant[] = [
   },
   {
     label: "Automated · Key",
-    hint: "진분홍 A 배지 + 흰 링",
+    hint: "자동통제 · 핵심통제",
     activity: {
       actNo: 3,
       rcmRow: 6,
@@ -108,7 +108,7 @@ const ACTIVITY_VARIANTS: ActivityVariant[] = [
   },
   {
     label: "ITDM · Key",
-    hint: "노란 I 배지 + 흰 링 (글자 검정)",
+    hint: "ITDM · 핵심통제",
     activity: {
       actNo: 4,
       rcmRow: 7,
@@ -255,27 +255,27 @@ const SHAPE_VARIANTS: ShapeVariant[] = [
   },
   {
     label: "Key Control",
-    hint: "진분홍 작은 박스 — Control No.",
+    hint: "크림슨 작은 박스(흰 글씨) — Control No.",
     data: { shapeKey: "keyControl", label: "C.FA21-2" },
   },
   {
     label: "Non-Key Control",
-    hint: "연분홍 작은 박스",
+    hint: "핑크 작은 박스",
     data: { shapeKey: "nonkeyControl", label: "C.FA21-1" },
   },
   {
     label: "통제구분 — A (Auto)",
-    hint: "진분홍 정사각형",
+    hint: "연분홍 작은 칩 (A·M·I 공통)",
     data: { shapeKey: "controlType", label: "A" },
   },
   {
     label: "통제구분 — M (Manual)",
-    hint: "연분홍 정사각형",
+    hint: "연분홍 작은 칩 (A·M·I 공통)",
     data: { shapeKey: "controlType", label: "M" },
   },
   {
     label: "통제구분 — I (ITDM)",
-    hint: "노란 정사각형 (글자 검정)",
+    hint: "연분홍 작은 칩 (A·M·I 공통)",
     data: { shapeKey: "controlType", label: "I" },
   },
   {
