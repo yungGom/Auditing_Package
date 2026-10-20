@@ -397,7 +397,7 @@ export function ShapeNodeBody({
   const fullText = data.sublabel ? `${data.label}\n${data.sublabel}` : data.label;
   const fontPx =
     data.shapeKey === "lane"
-      ? r.fontSize
+      ? fitOneLinePx(data.label, (data.laneLabelWidth ?? 70) - 8, r.fontSize, 8)
       : isBadge
         ? fitOneLinePx(data.label, textW, r.fontSize)
         : fitBoxPx(fullText, textW, textH, r.fontSize);
@@ -418,7 +418,7 @@ export function ShapeNodeBody({
     fontWeight: r.fontWeight ?? 400,
     color: r.fontColor,
     lineHeight: 1.2,
-    whiteSpace: isBadge ? "nowrap" : undefined,
+    whiteSpace: isBadge || data.shapeKey === "lane" ? "nowrap" : undefined,
     userSelect: "none",
     pointerEvents: "none",
     overflow: "hidden",
