@@ -1,0 +1,753 @@
+{
+  "date": "2026-10-08",
+  "issue": 11,
+  "authorization": "Owner: 제안대로 해주라; approved R6 source/resource separation, original values/locations and revalidation. No merge/business acceptance.",
+  "main": "6373a333414f51015f9d1068e32ec2ef7702cbe4",
+  "previous_commit": "3b48893354b3262d9dad010afc23eae58425ed9c",
+  "official_source_sha256": "d7135781ed425bb2e43a7dafffc3189435bbd16a70fae3d98c258ea8dc9845e7",
+  "before_first14": {
+    "failed": 14,
+    "passed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 5.39,
+    "exit_code": 1
+  },
+  "raw_value_before": {
+    "failed": 2,
+    "passed": 1,
+    "deselected": 14,
+    "seconds": 2.16,
+    "exit_code": 1,
+    "context": "Intermediate /4 before preserving exact whitespace; not original /3 result."
+  },
+  "final_scoped": {
+    "passed": 115,
+    "subtests_passed": 38,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 22.57,
+    "exit_code": 0,
+    "junit": [
+      {
+        "tests": "153",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "22.302"
+      }
+    ]
+  },
+  "official_comparison": {
+    "source_sha256": "d7135781ed425bb2e43a7dafffc3189435bbd16a70fae3d98c258ea8dc9845e7",
+    "parser_version": "dart-workbook-preview/4",
+    "parser_sha256": "8c1bc2977fd9b5a3ec0abb1214fee8c0f5463145d84cab75ffbdaa907114bdf5",
+    "metadata": {
+      "version": "2026-06-30",
+      "source_role": "CURRENT_TAXONOMY",
+      "report_period": "",
+      "applicable_from": "",
+      "applicable_to": "",
+      "applicability_evidence": "Official filer release132 and notice443; applies from2026half-year originals, corrections retain existing format. Target report context not supplied.",
+      "content_sha256": "d7135781ed425bb2e43a7dafffc3189435bbd16a70fae3d98c258ea8dc9845e7"
+    },
+    "current_applicable": false,
+    "capabilities": "PARTIAL",
+    "dimensions_known": false,
+    "records": {
+      "concepts": 9451,
+      "roles": 2004,
+      "occurrences": 68898,
+      "labels": 30909,
+      "references": 6267,
+      "label_source_fields": 9467,
+      "diagnostics": 232441
+    },
+    "expected_label_cells": 30909,
+    "expected_source_field_cells": 9467,
+    "language_counts": {
+      "ko": 12374,
+      "en": 18535
+    },
+    "source_field_counts": {
+      "base schema": 9467
+    },
+    "diagnostic_counts": {
+      "INVALID_APPLICABILITY_DATE": 1,
+      "UNRESOLVED_NAMESPACE": 162316,
+      "UNKNOWN_ABSTRACT": 1829,
+      "DUPLICATE_SOURCE_ID": 2,
+      "DUPLICATE_CONCEPT": 1,
+      "AMBIGUOUS_PARENT": 68249,
+      "UNRESOLVED_CONCEPT": 27,
+      "MISSING_CONCEPT_IDENTITY": 16
+    },
+    "checks": {
+      "source_hash": true,
+      "exact_labels": true,
+      "exact_provenance": true,
+      "unique_label_locations": true,
+      "unique_field_locations": true,
+      "all_field_snapshot_locators": true,
+      "unique_field_ids": true,
+      "no_provenance_roles_as_labels": true,
+      "fail_closed": true
+    },
+    "seconds": 29.232,
+    "namespace_binding": "NOT VERIFIED",
+    "target_context": "NOT SUPPLIED",
+    "content_values_exported": false
+  },
+  "same_published_semantic_probe": {
+    "source_sha256": "d7135781ed425bb2e43a7dafffc3189435bbd16a70fae3d98c258ea8dc9845e7",
+    "parser_version": "dart-workbook-preview/4",
+    "seconds": 30.429,
+    "label_count": 30909,
+    "language_group_label_counts": {
+      "ko": 12374,
+      "en": 18535
+    },
+    "provenance_columns_as_labels": {
+      "base schema": 0,
+      "systemid": 0,
+      "prohibit": 0,
+      "comment": 0
+    },
+    "provenance_labels_language_counts": {},
+    "provenance_labels_source_columns": {},
+    "all_false_labels_have_row_and_source_snapshot": true,
+    "valid_language_block_label_count": 30909,
+    "sheet_merge_ranges": [
+      "D3:T3",
+      "U3:AK3"
+    ],
+    "label_resource_semantics_verdict": "PASS",
+    "current_applicable": false,
+    "diagnostic_count": 232443,
+    "scope": "Counts/header/schema metadata only; no resource text, author, or private paths exported."
+  },
+  "same_acceptance_probes": {
+    "cases": {
+      "control": {
+        "current_applicable": true,
+        "diagnostics": [],
+        "concepts": 2,
+        "roles": 1,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "duplicate_concept_source_id": {
+        "current_applicable": false,
+        "diagnostics": [
+          "DUPLICATE_SOURCE_ID",
+          "DUPLICATE_SOURCE_ID"
+        ],
+        "concepts": 2,
+        "roles": 1,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "duplicate_role_source_id": {
+        "current_applicable": false,
+        "diagnostics": [
+          "DUPLICATE_SOURCE_ID",
+          "DUPLICATE_SOURCE_ID"
+        ],
+        "concepts": 2,
+        "roles": 2,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "duplicate_role_uri": {
+        "current_applicable": false,
+        "diagnostics": [
+          "AMBIGUOUS_ROLE"
+        ],
+        "concepts": 2,
+        "roles": 2,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "missing_second_presentation_header": {
+        "current_applicable": false,
+        "diagnostics": [
+          "REJECTED_PRESENTATION_ROW",
+          "REJECTED_PRESENTATION_ROW",
+          "MISSING_PRESENTATION_HEADER"
+        ],
+        "concepts": 2,
+        "roles": 1,
+        "occurrences": 2,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "repeated_same_qname_role_path": {
+        "current_applicable": true,
+        "diagnostics": [],
+        "concepts": 2,
+        "roles": 1,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "blank_arcrole": {
+        "current_applicable": true,
+        "diagnostics": [],
+        "concepts": 2,
+        "roles": 1,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "blank_order": {
+        "current_applicable": true,
+        "diagnostics": [],
+        "concepts": 2,
+        "roles": 1,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "same_local_name_distinct_namespaces": {
+        "current_applicable": true,
+        "diagnostics": [],
+        "concepts": 3,
+        "roles": 1,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      },
+      "current_extension_source_role": {
+        "current_applicable": false,
+        "diagnostics": [
+          "NON_CURRENT_SOURCE"
+        ],
+        "concepts": 2,
+        "roles": 1,
+        "occurrences": 4,
+        "references": 1,
+        "occurrence_ids_unique": true,
+        "labels": [
+          [
+            "ko",
+            "label",
+            "현금"
+          ],
+          [
+            "ko",
+            "verboseLabel",
+            "현금 설명"
+          ],
+          [
+            "en",
+            "label",
+            "Cash"
+          ]
+        ]
+      }
+    },
+    "test_results": {
+      "run": 8,
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failing_tests": []
+    }
+  },
+  "independent_official": {
+    "source_sha256": "d7135781ed425bb2e43a7dafffc3189435bbd16a70fae3d98c258ea8dc9845e7",
+    "parser_version": "dart-workbook-preview/4",
+    "seconds": 48.814,
+    "raw_language_merges": [
+      "D3:T3",
+      "U3:AK3"
+    ],
+    "expected_label_resources": 30909,
+    "actual_label_resources": 30909,
+    "label_count_by_language": {
+      "ko": 12374,
+      "en": 18535
+    },
+    "label_tuple_mismatches": 0,
+    "expected_provenance_fields": 9467,
+    "actual_source_fields": 9467,
+    "source_field_count_by_classification": {
+      "PROVENANCE": 9467
+    },
+    "source_field_exact_raw_value_identity_header_location_mismatches": 0,
+    "source_field_checks": {
+      "same_sheet": true,
+      "same_snapshot": true,
+      "no_invented_qname_without_bindings": true,
+      "unique_ids": true,
+      "unique_physical_cells": true
+    },
+    "record_counts": {
+      "concepts": 9451,
+      "roles": 2004,
+      "occurrences": 68898,
+      "labels": 30909,
+      "references": 6267,
+      "label_source_fields": 9467
+    },
+    "diagnostic_counts": {
+      "MISSING_APPLICABILITY": 1,
+      "NON_CURRENT_SOURCE": 1,
+      "INVALID_APPLICABILITY_DATE": 1,
+      "UNRESOLVED_NAMESPACE": 162316,
+      "UNKNOWN_ABSTRACT": 1829,
+      "DUPLICATE_SOURCE_ID": 2,
+      "DUPLICATE_CONCEPT": 1,
+      "AMBIGUOUS_PARENT": 68249,
+      "UNRESOLVED_CONCEPT": 27,
+      "MISSING_CONCEPT_IDENTITY": 16
+    },
+    "current_applicable": false,
+    "capabilities": "PARTIAL",
+    "dimensions_known": false,
+    "content_values_exported": false,
+    "applicability_and_namespace": "BLOCKED: NOT VERIFIED",
+    "verdict": "PASS"
+  },
+  "independent_edges": {
+    "run": 8,
+    "pass": 8,
+    "fail": 0,
+    "error": 0,
+    "skip": 0
+  },
+  "strict": {
+    "status": "FAIL",
+    "passed": 229,
+    "failed": 1,
+    "skipped": 76,
+    "errors": 0,
+    "warnings": 1,
+    "exit_code": 1,
+    "reason": "Known-generation material unavailable; test_g2_smoke_direct; unchanged expectations/skip criteria.",
+    "web_build": "PASS",
+    "pytest_seconds": 50.06
+  },
+  "harness": {
+    "technical_gate": "PASS",
+    "human_business_acceptance": "PENDING",
+    "scope": "all",
+    "counts": {
+      "PASS": 3,
+      "FAIL": 0,
+      "SKIP": 0,
+      "NOT RUN": 0,
+      "BLOCKED: REQUIRED MATERIAL UNAVAILABLE": 0
+    },
+    "technical_checks": {
+      "auditdesk_python": {
+        "status": "PASS",
+        "reason": "COMPLETED",
+        "exit_code": 0,
+        "duration_seconds": 23.49,
+        "counts": {
+          "PASS": 225,
+          "FAIL": 0,
+          "SKIP": 0,
+          "NOT RUN": 0,
+          "BLOCKED: REQUIRED MATERIAL UNAVAILABLE": 0
+        },
+        "collected": 306,
+        "collection_errors": 0
+      },
+      "webui_build": {
+        "status": "PASS",
+        "reason": "COMPLETED",
+        "exit_code": 0,
+        "duration_seconds": 6.27
+      },
+      "dsd_footing": {
+        "status": "PASS",
+        "reason": "COMPLETED",
+        "exit_code": 0,
+        "duration_seconds": 451.9
+      }
+    },
+    "real_material_compatibility": {
+      "status": "BLOCKED: REQUIRED MATERIAL UNAVAILABLE",
+      "reason": "MATERIAL_ASSESSMENT_ONLY",
+      "counts": {
+        "PASS": 0,
+        "FAIL": 0,
+        "SKIP": 0,
+        "NOT RUN": 0,
+        "BLOCKED: REQUIRED MATERIAL UNAVAILABLE": 81
+      }
+    }
+  },
+  "import_hashes": [
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/__init__.py",
+      "source_sha256": "188fe642c1b53f63a94ce1b0d237c9b307148f728018d6bd9a2af19e4c2b4b3c",
+      "final_sha256": "188fe642c1b53f63a94ce1b0d237c9b307148f728018d6bd9a2af19e4c2b4b3c",
+      "unchanged": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/model.py",
+      "source_sha256": "d3245763e4d1ee2adb1f6fc631a4d79bc4147581528d7008017f43c58f72c868",
+      "final_sha256": "d3245763e4d1ee2adb1f6fc631a4d79bc4147581528d7008017f43c58f72c868",
+      "unchanged": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/ports.py",
+      "source_sha256": "6b1f11480cbf7306117acea6a604b8591540059254e8bbc5aeab545c71102913",
+      "final_sha256": "6b1f11480cbf7306117acea6a604b8591540059254e8bbc5aeab545c71102913",
+      "unchanged": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/provenance.py",
+      "source_sha256": "21476c4e6a31f70b2fe902b946033200389c4e202ee771e55d12932ecd39dfee",
+      "final_sha256": "21476c4e6a31f70b2fe902b946033200389c4e202ee771e55d12932ecd39dfee",
+      "unchanged": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/rules.py",
+      "source_sha256": "a668ef37680c069cd5029db95ac2a7d1b9a172646ba73cf799276a8fafa6b5ca",
+      "final_sha256": "a668ef37680c069cd5029db95ac2a7d1b9a172646ba73cf799276a8fafa6b5ca",
+      "unchanged": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/storage.py",
+      "source_sha256": "730e81542e0b65d9a2bc0907687f3bb36fa37e21c8779ee9196cca5441715377",
+      "final_sha256": "730e81542e0b65d9a2bc0907687f3bb36fa37e21c8779ee9196cca5441715377",
+      "unchanged": true
+    },
+    {
+      "path": "auditdesk/tests/test_xbrl_v2_core.py",
+      "source_sha256": "99aada063ec06147b574b06d2b2ee15a41ce0b3b4d047d791fddd620391917b7",
+      "final_sha256": "99aada063ec06147b574b06d2b2ee15a41ce0b3b4d047d791fddd620391917b7",
+      "unchanged": true
+    },
+    {
+      "path": "auditdesk/tests/test_xbrl_v2_offline.py",
+      "source_sha256": "6321d588b0fa689318262392703f075e552e5604784eb96db5e7cdd2afbfe93d",
+      "final_sha256": "6321d588b0fa689318262392703f075e552e5604784eb96db5e7cdd2afbfe93d",
+      "unchanged": true
+    },
+    {
+      "path": "auditdesk/auditdesk/xbrl_v2/taxonomy.py",
+      "source_sha256": "0e174ec6584b59f593b393737eefbd8b72bb93898d31c902e213a366fdb7b03a",
+      "final_sha256": "8c1bc2977fd9b5a3ec0abb1214fee8c0f5463145d84cab75ffbdaa907114bdf5",
+      "unchanged": false
+    },
+    {
+      "path": "auditdesk/tests/test_xbrl_v2_taxonomy.py",
+      "source_sha256": "95e12337ff04b81fc50bc0f8b327b367732b4c385c9bbba356b353c90de0d290",
+      "final_sha256": "95e12337ff04b81fc50bc0f8b327b367732b4c385c9bbba356b353c90de0d290",
+      "unchanged": true
+    }
+  ],
+  "raw_evidence": [
+    {
+      "name": "evidence/before.log",
+      "sha256": "db0bd3d7b97041030b93939888f6a871792250ce46567a91b5f0299e17b3ce71",
+      "bytes": 15573
+    },
+    {
+      "name": "evidence/before.xml",
+      "sha256": "d62d29cd5eafca8b7322e6cf4bfd4d751fca26617636864978d102b7b7b2d085",
+      "bytes": 20415
+    },
+    {
+      "name": "evidence/raw-before.log",
+      "sha256": "8e3df567dcd3d3589bdd77e18b1f2bf77e73aab0beab742adbbe0a714f0e83e0",
+      "bytes": 2060
+    },
+    {
+      "name": "evidence/raw-before.xml",
+      "sha256": "81a01ee8c1dfad2f8be0973bf1121fade0fd91b7c32f99f05a2b5a54f502d770",
+      "bytes": 2324
+    },
+    {
+      "name": "evidence/scoped-after.log",
+      "sha256": "dcc780ed9af3bd4a38d33223ebb7cc40a076cd8c1024cba11f19e31ccd6f5a1f",
+      "bytes": 172
+    },
+    {
+      "name": "evidence/final-scoped.log",
+      "sha256": "ea7109f1222ed7d12db06019c1c20afe3963d32fbb58d0ab998aaefae1337cae",
+      "bytes": 175
+    },
+    {
+      "name": "evidence/final-scoped.xml",
+      "sha256": "768d6a6821256f4a98d050e2d5efe39f9aba10c62f7ddc8ce7ff882b79a0cca9",
+      "bytes": 17159
+    },
+    {
+      "name": "evidence/official.json",
+      "sha256": "51708f7805424e15b0ef2a08c256d9fb53ea362ff3a7e41ecaf3d6b45ab8ba37",
+      "bytes": 1920
+    },
+    {
+      "name": "evidence/published-semantics.json",
+      "sha256": "2427da767246548ba4766153f84613c6ad449dc67ce02ae964742fc8b6a28e7b",
+      "bytes": 855
+    },
+    {
+      "name": "evidence/published-semantics.log",
+      "sha256": "2427da767246548ba4766153f84613c6ad449dc67ce02ae964742fc8b6a28e7b",
+      "bytes": 855
+    },
+    {
+      "name": "evidence/acceptance.json",
+      "sha256": "a785442608d531a8833f16790baa9232ee52f1d01efd59eb5323368484404e4d",
+      "bytes": 5603
+    },
+    {
+      "name": "evidence/strict.log",
+      "sha256": "b70f9b400b8e9d312500ca19b4e49176d3a817b189005c20c5e335ae73c377a9",
+      "bytes": 2392
+    },
+    {
+      "name": "evidence/harness.json",
+      "sha256": "4ebb3c40454452eb13cb2c39bf4efba6799d64e22f83d7484752dd464e65b29e",
+      "bytes": 48981
+    },
+    {
+      "name": "evidence/harness.log",
+      "sha256": "8ac2154d9fb28b3e609a368112f413e202be829dbe358e4b8c8e26d738aa2858",
+      "bytes": 47962
+    },
+    {
+      "name": "evidence/protected-base.log",
+      "sha256": "3d3db3d6b1ed27f6ff650e9636ed4fd20e5efcb0f54d329f8de7cab88093503b",
+      "bytes": 72
+    },
+    {
+      "name": "evidence/protected-staged.log",
+      "sha256": "3d3db3d6b1ed27f6ff650e9636ed4fd20e5efcb0f54d329f8de7cab88093503b",
+      "bytes": 72
+    },
+    {
+      "name": "reviewer/r6/official-full-comparison.json",
+      "sha256": "4259b60cbcdc2a4bcf589b28394a5129f7b96626aed9005f91bfaeaad685ea92",
+      "bytes": 1569
+    },
+    {
+      "name": "reviewer/r6/edge-results.json",
+      "sha256": "545e8a0e37d60da73553e384963ddf9f1d0179d3488070e6723bc086cfe40518",
+      "bytes": 75
+    },
+    {
+      "name": "reviewer/r6/deep-comparison.json",
+      "sha256": "6b9baccdaf8923a5b0430a78389343cd59239f269a7540e007e72a16543c8dda",
+      "bytes": 507
+    },
+    {
+      "name": "reviewer/r6/review.md",
+      "sha256": "d3a60f15fa9ef4f08513b28fd49f025d11808a8a5bc1f499b942b385a924fa6c",
+      "bytes": 10911
+    },
+    {
+      "name": "reviewer/r6/source-field-tests.log",
+      "sha256": "45bb0fb2ee8d8af59ac8444ad26f7cc9b9ac086e318ab21b9bb13c7ab341fcea",
+      "bytes": 101
+    }
+  ],
+  "human_business_acceptance": "PENDING",
+  "limits": [
+    "Report/company/period/original-vs-correction not supplied",
+    "Authoritative current namespace declarations not obtained; no prior promoted",
+    "Source duplicateConceptIDs/identity remain preserved, missingidentity16/unknownabstract1829 not guessed",
+    "Workbook PARTIAL, dimensions unknown; full DTS/DRS and extension/report UAT unsupported or NOT RUN",
+    "81 existing real-material catalog cases remain separately BLOCKED"
+  ],
+  "protected_checks": {
+    "base_origin_main": "PASS / exit0",
+    "staged": "PASS / exit0",
+    "whitespace": "PASS / exit0"
+  },
+  "independent_other_fields": {
+    "source_sha256": "d7135781ed425bb2e43a7dafffc3189435bbd16a70fae3d98c258ea8dc9845e7",
+    "raw_record_comparisons": {
+      "concepts": 9451,
+      "roles": 2004,
+      "occurrences": 68898,
+      "labels": 30909,
+      "references": 6267
+    },
+    "mismatched_records": {
+      "concepts": 0,
+      "roles": 0,
+      "occurrences": 0,
+      "labels": 0,
+      "references": 0
+    },
+    "all_comparisons_pass": true,
+    "content_values_exported": false,
+    "authority_and_applicability": "BLOCKED: NOT VERIFIED"
+  },
+  "raw_evidence_roots": {
+    "evidence/": "relative to real-material/r6",
+    "reviewer/r6/": "relative to real-material"
+  },
+  "final_file_hashes": {
+    "auditdesk/auditdesk/xbrl_v2/taxonomy.py": "8c1bc2977fd9b5a3ec0abb1214fee8c0f5463145d84cab75ffbdaa907114bdf5",
+    "auditdesk/tests/test_xbrl_v2_taxonomy_integrity.py": "a769441e1ce9052fa7469d45c4185ea5022b80e7eb008dc7e2d75dcb60060b43",
+    "auditdesk/tests/test_xbrl_v2_taxonomy_label_provenance.py": "9c254cdc27cdbf00c3cfa994a68366402bcd1897498fed5ff74e4f1829c8c199"
+  }
+}
