@@ -620,6 +620,14 @@ function layoutSnake(
     skipLane.set(r, k + 1);
     return k;
   };
+  // 같은 줄에서 같은 박스로 모이는 화살표는 같은 통로를 함께 쓴다 —
+  // 평행선 여러 개 대신 합류선 하나로 보이게
+  const laneByTarget = new Map<string, number>();
+  const laneFor = (r: number, target: string) => {
+    const key = `${r}|${target}`;
+    if (!laneByTarget.has(key)) laneByTarget.set(key, nextLane(r));
+    return laneByTarget.get(key)!;
+  };
   const outSide = (n: GNode): HandleSide => (n.dir === 1 ? "right" : "left");
   const inSide = (n: GNode): HandleSide => (n.dir === 1 ? "left" : "right");
   const isSideLinkEdge = (u: GNode, v: GNode) => g.sideLinks.has(v.key) && v.hostKey === u.key;
@@ -667,18 +675,18 @@ function layoutSnake(
       const srcOffset = sh === "bottom" ? 12 : SO;
       if (v.gridRow > u.gridRow) {
         // 아래 줄로 점프: 출발 줄 아래 통로 → 도착 박스 옆 칸 사이로 내려감
-        const y = bandBottom(u.gridRow) + 22 + nextLane(u.gridRow) * 10;
+        const y = bandBottom(u.gridRow) + 22 + laneFor(u.gridRow, v.key) * 10;
         route = { srcOffset, tgtOffset: SO, corridors: [{ axis: "y", value: y }] };
       } else if (v.gridRow === u.gridRow) {
         // 같은 줄 건너뛰기/되돌아가기: 줄 아래 통로
-        const y = bandBottom(u.gridRow) + 22 + nextLane(u.gridRow) * 10;
+        const y = bandBottom(u.gridRow) + 22 + laneFor(u.gridRow, v.key) * 10;
         route = { srcOffset, tgtOffset: SO, corridors: [{ axis: "y", value: y }] };
       } else {
         // 위 줄로 되돌아가기: 출발 줄 아래 → 바깥 세로 통로 → 도착 줄 위
-        const y1 = bandBottom(u.gridRow) + 22 + nextLane(u.gridRow) * 10;
+        const y1 = bandBottom(u.gridRow) + 22 + laneFor(u.gridRow, v.key) * 10;
         const goLeft = (u.cx + v.cx) / 2 <= (gridLeft + gridRight) / 2;
         const x = goLeft ? gridLeft - outerClear - 30 : gridRight + outerClear + 30;
-        const y2 = bandTop(v.gridRow) - 22 - nextLane(v.gridRow - 1 + 1000) * 10;
+        const y2 = bandTop(v.gridRow) - 22 - laneFor(v.gridRow - 1 + 1000, v.key) * 10;
         route = {
           srcOffset,
           tgtOffset: SO,
@@ -703,7 +711,7 @@ function layoutSnake(
  * 스윔레인 배치 — 담당부서별 가로 레인, 왼쪽→오른쪽 진행
  * ───────────────────────────────────────────── */
 
-const LANE_LABEL_W = 70;
+const LANE_LABEL_W = 80;
 const LANE_PAD = 34;
 const SW_COL_GAP = 44;
 
@@ -879,6 +887,12 @@ function layoutSwimlane(
   const inSide: HandleSide = "left";
   const lanesBottom = y;
   let laneCounter = 0;
+  const laneByTarget = new Map<string, number>();
+  const laneFor = (way: "fwd" | "back", target: string) => {
+    const key = `${way}|${target}`;
+    if (!laneByTarget.has(key)) laneByTarget.set(key, laneCounter++);
+    return laneByTarget.get(key)!;
+  };
 
   const exits = exitPicker();
   for (const e of g.edges) {
@@ -907,7 +921,7 @@ function layoutSwimlane(
     } else if (v.seqIdx > u.seqIdx) {
       // 앞으로 건너뛰기: 레인 아래쪽 통로 대신, 전체 레인 아래로 우회
       sh = u.kind === "decision" ? exits.pick(u.key, ["bottom", "right"]) : "right";
-      const yy = lanesBottom + 18 + laneCounter++ * 10;
+      const yy = lanesBottom + 18 + laneFor("fwd", v.key) * 10;
       route = {
         srcOffset: sh === "bottom" ? 12 : 20,
         tgtOffset: 20,
@@ -917,7 +931,7 @@ function layoutSwimlane(
     } else {
       // 되돌아가기: 전체 레인(과 단계 라벨) 위로 우회
       sh = u.kind === "decision" ? exits.pick(u.key, ["top", "right"]) : "right";
-      const yy = Y0 - phaseBand - 18 - laneCounter++ * 10;
+      const yy = Y0 - phaseBand - 18 - laneFor("back", v.key) * 10;
       route = {
         srcOffset: sh === "top" ? 12 : 20,
         tgtOffset: 20,
@@ -1084,12 +1098,16 @@ function specSegments(sp: EdgeSpec, route: EdgeRoute | undefined): Seg[] {
   return out;
 }
 
-function clashes(segs: Seg[], used: Seg[]): boolean {
+/** 서로 무관한 평행선 사이 간격 — 이상적으로는 넓게, 자리가 없으면 겹치지만 않게 */
+const PREFERRED_GAP = 12;
+const MIN_GAP = 5;
+
+function clashes(segs: Seg[], used: Seg[], minGap: number): boolean {
   for (const s of segs) {
     for (const t of used) {
       if (s.axis !== t.axis) continue;
       if (s.from === t.from || s.to === t.to) continue;
-      if (Math.abs(s.at - t.at) >= 5) continue;
+      if (Math.abs(s.at - t.at) >= minGap) continue;
       if (Math.min(s.b, t.b) - Math.max(s.a, t.a) > 2) return true;
     }
   }
@@ -1111,22 +1129,26 @@ function separateOverlaps(specs: EdgeSpec[]) {
       continue;
     }
     const src = handlePt(sp.u, sp.sh);
+    const variant = ([ds, dt, dc]: [number, number, number]): EdgeRoute => ({
+      ...base,
+      srcOffset: Math.max(8, (base.srcOffset ?? 14) + ds * SEP_STEP),
+      tgtOffset: Math.max(8, (base.tgtOffset ?? 14) + dt * SEP_STEP),
+      corridors: base.corridors!.map((c) => {
+        // 통로는 박스에서 멀어지는 쪽으로 이동
+        const ref = c.axis === "y" ? src.y : src.x;
+        const sign = c.value >= ref ? 1 : -1;
+        return { ...c, value: c.value + sign * dc * SEP_STEP };
+      }),
+    });
+    // 넉넉한 간격을 먼저 찾고, 없으면 겹치지만 않는 경로
     let chosen = base;
-    for (const [ds, dt, dc] of tries) {
-      const r: EdgeRoute = {
-        ...base,
-        srcOffset: Math.max(8, (base.srcOffset ?? 14) + ds * SEP_STEP),
-        tgtOffset: Math.max(8, (base.tgtOffset ?? 14) + dt * SEP_STEP),
-        corridors: base.corridors.map((c) => {
-          // 통로는 박스에서 멀어지는 쪽으로 이동
-          const ref = c.axis === "y" ? src.y : src.x;
-          const sign = c.value >= ref ? 1 : -1;
-          return { ...c, value: c.value + sign * dc * SEP_STEP };
-        }),
-      };
-      if (!clashes(specSegments(sp, r), used)) {
-        chosen = r;
-        break;
+    search: for (const gap of [PREFERRED_GAP, MIN_GAP]) {
+      for (const t of tries) {
+        const r = variant(t);
+        if (!clashes(specSegments(sp, r), used, gap)) {
+          chosen = r;
+          break search;
+        }
       }
     }
     sp.route = chosen;
