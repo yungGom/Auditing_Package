@@ -7,6 +7,7 @@ import ReactFlow, {
   Controls,
   MarkerType,
   MiniMap,
+  EdgeTypes,
   NodeTypes,
   SelectionMode,
   addEdge,
@@ -16,6 +17,7 @@ import "reactflow/dist/style.css";
 
 import { ActivityNode } from "./ActivityNode";
 import { ShapeNode } from "./ShapeNode";
+import { RoutedEdge } from "./RoutedEdge";
 import { CanvasHeaderTable } from "./CanvasHeaderTable";
 import {
   canvasDesign as C,
@@ -28,6 +30,11 @@ import { SHAPES, ShapeKey } from "../shapes";
 const nodeTypes: NodeTypes = {
   activity: ActivityNode,
   shape: ShapeNode,
+};
+
+// 배치 엔진이 통로를 지정한 직각 화살표 (분기 Y/N 라벨 포함)
+const edgeTypes: EdgeTypes = {
+  routed: RoutedEdge,
 };
 
 /* ─────────────────────────────────────────────
@@ -123,6 +130,7 @@ export function FlowCanvas({
         onConnect={onConnect}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         connectionRadius={C.connectionRadius}
         // loose 모드: 어느 핸들(left/right/top/bottom) ↔ 어느 핸들이든 연결 가능
         connectionMode={ConnectionMode.Loose}

@@ -7,17 +7,16 @@ import {
 } from "../design";
 import type { Activity, HeaderInfo } from "../types";
 import {
-  hasRisk,
   activityDocs,
   activityLocation,
   activityAutoHeight,
   parseSubSteps,
   isControlActivity,
-  resolvedControl,
 } from "../types";
 import type { ActivityNodeData } from "../components/ActivityNode";
 import type { ShapeNodeData } from "../components/ShapeNode";
 import type { ParsedXlsx } from "./xlsxParser";
+import { addLabelRow, makeLabelTriplet, type LabelTriplet } from "./flowShared";
 
 /**
  * 파싱 결과(ParsedXlsx) → N개의 flowchart 노드/엣지 세트로 변환.
@@ -38,6 +37,11 @@ export interface FlowchartBuilt {
   name: string;
   nodes: Node[];
   edges: Edge[];
+  /**
+   * flowchart 별 헤더 값 (대분류·중분류 등). 한 파일에 여러 Cycle 이 섞인
+   * 그래프 시트에서 사용. 없으면 전역 headerInfo 를 그대로 쓴다.
+   */
+  header?: Partial<HeaderInfo>;
 }
 
 export interface BuildResult {
@@ -425,119 +429,4 @@ function layoutSingleFlowchart(activities: Activity[]): {
   }
 
   return { nodes, edges };
-}
-
-/* ─────────────────────────────────────────────
- * 라벨 띠 헬퍼
- * ───────────────────────────────────────────── */
-
-interface LabelTriplet {
-  risk?: { no: string };
-  /** isKey: true=Key(진분홍) / false=Non-Key(연분홍) / null=미지정(회색) */
-  control?: { no: string; isKey: boolean | null };
-  ctrlType?: "A" | "M" | "I";
-}
-
-function makeLabelTriplet(a: Activity): LabelTriplet | null {
-  const resolved = resolvedControl(a);
-  // v9: 위험번호 우선순위 — 매핑 시트 RISK_NO > RCM riskNo
-  const mappingRiskNo = (a.riskNoRaw || "").trim();
-  const r = mappingRiskNo
-    ? { no: mappingRiskNo }
-    : a.rcm && hasRisk(a.rcm)
-      ? { no: a.rcm.riskNo }
-      : undefined;
-  const c = resolved.controlNo
-    ? { no: resolved.controlNo, isKey: resolved.isKeyControl }
-    : undefined;
-  const t = resolved.controlNo ? resolved.controlType : undefined;
-  if (!r && !c) return null;
-  return { risk: r, control: c, ctrlType: t };
-}
-
-/**
- * 활동 위에 [위험] [통제+배지] 를 **가로 한 줄** 로 배치.
- *
- *   v9 회사 양식:
- *     [R.FA.X.X-N] [C.FA.X.X-N | M]
- *          ↑              ↑       ↑
- *       위험 박스    통제 박스   배지(칩)
- *     ├────── 세트 전체 폭 ──────┤
- *              ← 활동 중앙 정렬 →
- *     ┌──────────────────────────┐
- *     │  활동 박스 (4분할)        │
- *     └──────────────────────────┘
- *
- *   - 세 요소가 딱 붙어서 한 세트 (사이 간격 2px)
- *   - 통제구분(M/A/I) 칩은 통제 박스 우측에 내장 (data.controlType)
- *   - 세트의 좌우 중심이 활동 박스 좌우 중심과 정렬
- *   - rowIdx > 0 인 경우 위로 더 쌓아 올림
- */
-function addLabelRow(
-  nodes: Node[],
-  actNo: number,
-  rowIdx: number,
-  actX: number,
-  actW: number,
-  yAct: number,
-  triplet: LabelTriplet,
-) {
-  const labelH = shapeNodeDesign.risk.height; // 22
-  const riskW = shapeNodeDesign.risk.width; // 70
-  const ctrlW = triplet.control?.isKey === true
-    ? shapeNodeDesign.keyControl.width
-    : shapeNodeDesign.nonkeyControl.width; // 80
-  const gap = 2;
-
-  // 총 세트 폭
-  let totalW = 0;
-  if (triplet.risk) totalW += riskW;
-  if (triplet.risk && triplet.control) totalW += gap;
-  if (triplet.control) totalW += ctrlW;
-
-  // 세트 시작 X — 활동 중앙 정렬
-  const startX = actX + (actW - totalW) / 2;
-
-  // Y — 활동 바로 위(여백 4px), rowIdx 만큼 위로 쌓기
-  const badgeGap = 4;
-  const rowY = yAct - labelH - badgeGap - rowIdx * (labelH + gap);
-
-  let curX = startX;
-
-  // R (위험) — 왼쪽
-  if (triplet.risk) {
-    nodes.push({
-      id: `lbl-r-a${actNo}-${rowIdx}`,
-      type: "shape",
-      position: { x: curX, y: rowY },
-      data: {
-        shapeKey: "risk",
-        label: triplet.risk.no,
-        customWidth: riskW,
-        customHeight: labelH,
-      } satisfies ShapeNodeData,
-    });
-    curX += riskW + gap;
-  }
-
-  // C (통제 + 배지) — 오른쪽
-  if (triplet.control) {
-    const shapeKey =
-      triplet.control.isKey === true ? "keyControl" : "nonkeyControl";
-    const neutralControl =
-      triplet.control.isKey === null ? true : undefined;
-    nodes.push({
-      id: `lbl-c-a${actNo}-${rowIdx}`,
-      type: "shape",
-      position: { x: curX, y: rowY },
-      data: {
-        shapeKey,
-        label: triplet.control.no,
-        customWidth: ctrlW,
-        customHeight: labelH,
-        controlType: triplet.ctrlType,
-        neutralControl,
-      } satisfies ShapeNodeData,
-    });
-  }
 }

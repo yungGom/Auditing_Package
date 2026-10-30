@@ -1,0 +1,232 @@
+{
+  "source_context_base": "356bc72067bf7fdd5633ed8cc6935649fcceaf2f",
+  "main_reproduction": {
+    "main_commit": "6373a333414f51015f9d1068e32ec2ef7702cbe4",
+    "identities": [
+      {
+        "path": "DSD_footing/run.bat",
+        "git_blob": "9dbfad842b69b4128e9080abfa7a952fbc7da70d"
+      },
+      {
+        "path": "DSD_footing/foot.py",
+        "git_blob": "b2e97c104b4214eb45eebd7a916a932c30c7739f"
+      },
+      {
+        "path": "DSD_footing/final.py",
+        "git_blob": "21ee64542148ecd95063947e70161102df0e7c85"
+      },
+      {
+        "path": "DSD_footing/core.py",
+        "git_blob": "37ba418bab182f3f4eabdd0dd21d03cb6d4ca873"
+      },
+      {
+        "path": "DSD_footing/refmap.py",
+        "git_blob": "7bfd51905f7b44bd3e1fb6688e7934bbfb7935e0"
+      },
+      {
+        "path": "DSD_footing/statements.py",
+        "git_blob": "f045c87f6c048190b7c2ab33387da16ef679284b"
+      },
+      {
+        "path": "DSD_footing/tieout.py",
+        "git_blob": "580520906484bc5e09dde7851f016362a1eba69d"
+      },
+      {
+        "path": "DSD_footing/notes.py",
+        "git_blob": "f172d6ee45489a2a932bec87631624161da96f9b"
+      },
+      {
+        "path": "DSD_footing/prose.py",
+        "git_blob": "20711b808b0c32b98f94f09292ab467e9a7ada65"
+      },
+      {
+        "path": "DSD_footing/consist.py",
+        "git_blob": "c38373f1d6c710eace09665801bb52855a724620"
+      }
+    ],
+    "scenario": "Missing public/synthetic file: direct CLI vs Windows launcher, no pause",
+    "engine_exit": 2,
+    "batch_exit": 0,
+    "engine_message": true,
+    "batch_message": true
+  },
+  "cases": [
+    {
+      "name": "help",
+      "expected_exit": 0,
+      "before_exit": 0,
+      "before_pass": true,
+      "checks": {},
+      "evidence": "actual CLI run retained; CLI/engine source unchanged by launcher-only fix"
+    },
+    {
+      "name": "missing-input",
+      "expected_exit": 2,
+      "before_exit": 2,
+      "before_pass": true,
+      "checks": {},
+      "evidence": "actual CLI run retained; CLI/engine source unchanged by launcher-only fix"
+    },
+    {
+      "name": "missing-file",
+      "expected_exit": 2,
+      "before_exit": 2,
+      "before_pass": true,
+      "checks": {},
+      "evidence": "actual CLI run retained; CLI/engine source unchanged by launcher-only fix"
+    },
+    {
+      "name": "wrong-extension",
+      "expected_exit": 2,
+      "before_exit": 2,
+      "before_pass": true,
+      "checks": {},
+      "evidence": "actual CLI run retained; CLI/engine source unchanged by launcher-only fix"
+    },
+    {
+      "name": "no-text-refusal",
+      "expected_exit": 2,
+      "before_exit": 2,
+      "before_pass": true,
+      "checks": {},
+      "evidence": "actual CLI run retained; CLI/engine source unchanged by launcher-only fix"
+    },
+    {
+      "name": "zero",
+      "expected_exit": 0,
+      "before_exit": 0,
+      "before_pass": true,
+      "checks": {
+        "message": true,
+        "total_zero": true,
+        "limited": true,
+        "pdf_pages": 1
+      },
+      "evidence": "actual CLI run retained; CLI/engine source unchanged by launcher-only fix"
+    },
+    {
+      "name": "zero-quiet",
+      "expected_exit": 0,
+      "before_exit": 0,
+      "before_pass": true,
+      "checks": {
+        "message": true,
+        "total_zero": true,
+        "limited": true,
+        "pdf_pages": 1
+      },
+      "evidence": "actual CLI run retained; CLI/engine source unchanged by launcher-only fix"
+    },
+    {
+      "name": "small-amount-difference",
+      "expected_exit": 0,
+      "before_exit": 0,
+      "before_pass": true,
+      "checks": {
+        "difference_visible": true,
+        "pdf_exists": true
+      },
+      "evidence": "actual CLI run retained; CLI/engine source unchanged by launcher-only fix"
+    },
+    {
+      "name": "batch-no-argument",
+      "expected_exit": 2,
+      "before_exit": 2,
+      "before_pass": true,
+      "after_exit": 2,
+      "evidence": "fresh test_missing_input_keeps_usage_exit in focused/independent tests"
+    },
+    {
+      "name": "batch-failure-no-pause",
+      "expected_exit": 2,
+      "before_exit": 0,
+      "before_pass": false,
+      "after_exit": 2,
+      "after_message_present": true,
+      "evidence": "fresh actual batch recheck after fix"
+    },
+    {
+      "name": "batch-failure-with-pause",
+      "expected_exit": 2,
+      "before_exit": 0,
+      "before_pass": false,
+      "after_exit": 2,
+      "after_message_present": true,
+      "evidence": "fresh actual batch recheck after fix"
+    },
+    {
+      "name": "batch-success-with-pause",
+      "expected_exit": 0,
+      "before_exit": 0,
+      "before_pass": true,
+      "after_exit": 0,
+      "after_message_present": true,
+      "evidence": "fresh actual batch recheck after fix"
+    }
+  ],
+  "product_hashes": [
+    {
+      "path": "DSD_footing/run.bat",
+      "sha256": "c8f644ecbf23ef658d5b7b10a59be7fa4a94915452e08211ada95a773c21a26e"
+    },
+    {
+      "path": "DSD_footing/test_entrypoint.py",
+      "sha256": "60fcd5ce8feb130a1194740db206de5a55f7101581c5aa21079b67fc65c458e9"
+    },
+    {
+      "path": "DSD_footing/final.py",
+      "sha256": "b5da6b2d4d57a5ca1e5e3a9b11978a50afa7ce5ea881420b2fa18e5b0ddff39f"
+    },
+    {
+      "path": "DSD_footing/pdf_output.py",
+      "sha256": "051dae6c02dafe0a8796af84bd26b00dd47fa0ed5d2aea72c806e5e9cd7336a1"
+    },
+    {
+      "path": "DSD_footing/core.py",
+      "sha256": "7a5fe2f4eb50231da584b5e236b4fcfddd4538afd9129ee40e8d0cb89bd012fc"
+    },
+    {
+      "path": "DSD_footing/refmap.py",
+      "sha256": "4bdd32a456c97989cc4bdd606a9c417ae322f661f309a850723c38d7531af210"
+    }
+  ],
+  "verification": {
+    "focused_methods": 55,
+    "focused_exit": 0,
+    "official_pass": 0,
+    "official_fail": 4,
+    "official_skips": 0,
+    "official_exit": 1,
+    "metric_deltas": [
+      "[GATES]   C_ok             기준 51 → 현재 46",
+      "[GATES]   C_unmatched      기준 56 → 현재 61",
+      "[GATES]   A_total          기준 567 → 현재 572",
+      "[GATES]   A_SKIP           기준 48 → 현재 53",
+      "[GATES]   A_total          기준 395 → 현재 397",
+      "[GATES]   A_OK             기준 379 → 현재 381",
+      "[GATES]   C_ok             기준 82 → 현재 75",
+      "[GATES]   C_unmatched      기준 33 → 현재 40",
+      "[GATES]   A_total          기준 380 → 현재 384",
+      "[GATES]   A_SKIP           기준 29 → 현재 33"
+    ],
+    "same_deltas_as_pdf_output_followup": true,
+    "protected": "PASS",
+    "intake": "PASS",
+    "diff_check": "PASS",
+    "source_hashes_frozen": true
+  },
+  "logs": {
+    "entrypoint-before.log": "447d2c226a8da1ecc47c1a39ca211b15d49598c3b9e9b4a512d3501c9fa312b3",
+    "entrypoint-focused.log": "041cd71b8e8b7e161825c3b0301208bb35b810baa5caf6e68bc6986c672fe53c",
+    "entrypoint-official.log": "b9309ae1a339a45526ee260e8457593834f05d76f3d4e732f8fb20ab748531a4"
+  },
+  "not_run": [
+    "OS drag-and-drop interaction",
+    "separate GUI",
+    "private compatibility",
+    "Linux",
+    "all-page visual review",
+    "Python missing exit9009",
+    "general engine exit1"
+  ]
+}

@@ -14,6 +14,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.colors import Color
 from pypdf import PdfReader, PdfWriter
 import marks as marksio
+from pdf_output import write_tickmark_pdf
 
 RED = Color(0.78, 0.08, 0.08)          # 감사조서 관행: 빨간펜 단일 (설계 결정 #5, 고정)
 GRN = RED; AMB = RED                   # 구분은 색이 아니라 마크 모양으로
@@ -157,6 +158,22 @@ def render_all(pdf_path, marks_doc, out_path, pages=None, existing_out=None, qui
     src = PdfReader(pdf_path)
     npages = len(src.pages)
     target_pages = set(pages) if pages else set(range(1, npages + 1))
+
+    if not pages:
+        # 전체 렌더(기본 실행 경로)는 PDF 안전 저장(pdf_output, 서버 #35)으로 게시한다 —
+        # 임시 파일에 쓰고 검증한 뒤 교체하므로 저장 실패 시 기존 완성본이 남는다.
+        # 오버레이 바이트는 render_page가 그대로 만든다(render_gate 대상 불변).
+        overlays = {}
+        for i, pg in enumerate(src.pages, 1):
+            mb = pg.mediabox
+            overlay = render_page(by_page.get(i, []), notes_by_page.get(i, []),
+                                  float(mb.width), float(mb.height), marks_doc["run"])
+            if overlay:
+                overlays[i] = overlay
+        write_tickmark_pdf(pdf_path, overlays, out_path)
+        if not quiet:
+            print(f"렌더 소요: {time.time()-t0:.3f}s ({len(target_pages)}페이지)")
+        return out_path
 
     existing_reader = None
     if existing_out and os.path.isfile(existing_out):

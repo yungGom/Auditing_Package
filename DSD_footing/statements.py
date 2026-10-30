@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """본표 전용 검증 — A5 가감구조 · B 본표간 연계 · C7 주석번호 (오프라인)"""
+import math
 import re
 from core import norm, parse, grid_info
 
@@ -194,7 +195,9 @@ A5_RULES = [
  ("매출총이익",              [("+","매출액"),("-","매출원가")]),
  ("영업이익",                [("+","매출총이익"),("-","판매비와관리비")]),
  ("법인세비용차감전순이익",   [("+","영업이익"),("+","기타수익"),("-","기타비용"),
-                              ("+","금융수익"),("-","금융비용")]),
+                              ("+","금융수익"),("-","금융비용")],
+                             {"NET": ("지분법손익", "지분법이익(손실)"),
+                              "GAIN": ("지분법이익",), "LOSS": ("지분법손실",)}),
  ("당기순이익",              [("+","법인세비용차감전순이익"),("-","법인세비용")]),
  ("총포괄손익",              [("+","당기순이익"),("+","기타포괄손익")]),
  ("현금및현금성자산의증가",   [("+","영업활동현금흐름"),("+","투자활동현금흐름"),
@@ -225,16 +228,163 @@ def _absorbed(span, book, opvals):
                 out.update(span[i:j+1])
     return out
 
+
+def _pbt_periods(G, hdr, ncol, numcols, pcs):
+    """Retain only explicit, unique source identities; never borrow a period."""
+    headers = [_fill_merged(G[i], min(numcols), ncol) for i in range(hdr)]
+    identities = []
+    for cols in pcs:
+        text = " ".join(headers[i][j] for i in range(hdr) for j in cols)
+        cur, prv = bool(SIDE_CUR.search(text)), bool(SIDE_PRV.search(text))
+        three, cumulative = bool(SPAN_3M.search(text)), bool(SPAN_CUM.search(text))
+        identities.append(None if cur == prv or (three and cumulative) else
+                          ("당" if cur else "전", "3M" if three else "누적" if cumulative else None))
+    return [identity if identity is not None and identities.count(identity) == 1 else None
+            for identity in identities]
+
+
+def _pbt_source_results(tb, target, terms, equity_aliases):
+    """The approved PBT rule uses unique physical source rows, including blanks."""
+    G, K, V, hdr, ncol, nrow, numcols = grid_info(tb)
+    targets = [i for i in range(hdr, nrow) if key(G[i][0]) == target]
+    if not targets:
+        return []
+    pcs = period_cols(numcols, K, hdr, nrow)
+    identities = _pbt_periods(G, hdr, ncol, numcols, pcs) if pcs else []
+    base_names = {name for _, name in terms}
+    positions = {name: [i for i in range(hdr, nrow) if key(G[i][0]) == name]
+                 for name in base_names}
+    role_by_label = {label: role for role, labels in equity_aliases.items() for label in labels}
+    reasons = {
+        "PERIOD_UNCONFIRMED": "기간을 명확히 구분할 수 없습니다.",
+        "ANCHOR_AMBIGUOUS": "영업이익 또는 세전이익 행이 없거나 중복됩니다.",
+        "ROW_ORDER_UNCONFIRMED": "영업이익과 세전이익의 행 범위를 확인할 수 없습니다.",
+        "BASE_MISSING_OR_DUPLICATED": "기본 구성 항목이 없거나 중복됩니다.",
+        "BASE_VALUE_MISSING": "이 기간의 기본 구성 금액이 없거나 중복됩니다.",
+        "TARGET_VALUE_MISSING": "이 기간의 세전이익 금액이 없거나 중복됩니다.",
+        "UNKNOWN_SOURCE_ROW": "가감 범위에 설명되지 않은 금액 행이 있습니다.",
+        "UNSUPPORTED_SOURCE_ROW": "가감 범위에 확인되지 않은 항목이 있습니다.",
+        "EQUITY_VALUE_MISSING": "이 기간의 지분법손익 금액이 없거나 중복됩니다.",
+        "EQUITY_DUPLICATED": "지분법손익이 중복되거나 순액과 구성 금액이 함께 있습니다.",
+        "EQUITY_INCLUDED_IN_BASE": "기본 항목에 지분법손익이 포함되어 중복 가능성이 있습니다.",
+        "EQUITY_SIGN_UNCONFIRMED": "지분법이익 또는 손실의 부호 규약이 불명확합니다.",
+    }
+    results = []
+    for p, cols in enumerate(pcs or [()]):
+        def value_at(row):
+            hits = [j for j in cols if K[row][j] == "NUM"]
+            return (V[row][hits[0]], hits[0]) if len(hits) == 1 and math.isfinite(V[row][hits[0]]) else (None, None)
+
+        for target_row in targets:
+            displayed, target_col = value_at(target_row)
+            result = dict(kind="A5", period=p if pcs else None, label=target, row=target_row,
+                          col=target_col if target_col is not None else (cols[-1] if cols else None),
+                          disp=displayed, calc=None, n=0, operands=[],
+                          source_rows=sorted(set(targets + [i for indices in positions.values() for i in indices])),
+                          period_identity=identities[p] if pcs else None)
+
+            def reject(reason, detail=None):
+                # 판정·사유 코드는 그대로 두고, 회계사가 볼 행 이름만 덧붙인다(결정 23 —
+                # 사유 없는 ?는 판단할 수 없다. 병합 시 Q3 승인 2026-10-29).
+                result.update(reason=reason, reason_text=reasons[reason])
+                if detail:
+                    result["reason_detail"] = detail
+                results.append(result)
+
+            def base_issues(lo=None, hi=None):
+                out = []
+                for _, name in terms:
+                    found = positions[name]
+                    if not found: out.append(f"{name}(없음)")
+                    elif len(found) > 1: out.append(f"{name}({len(found)}개)")
+                    elif lo is not None and not lo <= found[0] < hi: out.append(f"{name}(범위 밖)")
+                return ", ".join(out)
+
+            if not pcs or identities[p] is None:
+                reject("PERIOD_UNCONFIRMED"); continue
+            op_rows = positions["영업이익"]
+            if len(targets) != 1 or len(op_rows) != 1:
+                result["source_rows"] = sorted(set(targets + op_rows))
+                reject("ANCHOR_AMBIGUOUS", ", ".join(x for x in (
+                    f"{target}({len(targets)}개)" if len(targets) != 1 else "", base_issues()) if x)); continue
+            low, high = op_rows[0], target_row
+            result["source_rows"] = list(range(low, high + 1)) if high > low else [low, high]
+            if high <= low:
+                reject("ROW_ORDER_UNCONFIRMED", f"영업이익 {low+1}행, {target} {high+1}행"); continue
+            if any(len(positions[name]) != 1 or not low <= positions[name][0] < high
+                   for name in base_names):
+                reject("BASE_MISSING_OR_DUPLICATED", base_issues(low, high)); continue
+            if displayed is None:
+                reject("TARGET_VALUE_MISSING", G[target_row][0]); continue
+            unknown_base = None
+            for sign, name in terms:
+                row = positions[name][0]
+                amount, column = value_at(row)
+                if amount is None:
+                    unknown_base = G[row][0]; break
+                result["operands"].append(dict(label=G[row][0], row=row, col=column,
+                                               sign=1 if sign == "+" else -1, value=amount))
+            if unknown_base is not None:
+                reject("BASE_VALUE_MISSING", unknown_base); continue
+            equity = []
+            unknown_row = None; unknown_label = None
+            for row in range(low + 1, high):
+                raw = G[row][0]
+                if not raw:
+                    if any(G[row][1:]):
+                        unknown_row = "UNKNOWN_SOURCE_ROW"; unknown_label = f"라벨 없는 행(표 {row+1}행)"; break
+                    continue
+                if key(raw) in base_names:
+                    continue
+                # Preserve net-loss parentheses; key() would erase them.
+                role = role_by_label.get(norm(raw).replace(" ", ""))
+                if role is None:
+                    unknown_row = "UNSUPPORTED_SOURCE_ROW"; unknown_label = raw; break
+                amount, column = value_at(row)
+                if amount is None:
+                    unknown_row = "EQUITY_VALUE_MISSING"; unknown_label = raw; break
+                equity.append((role, row, column, amount))
+            if unknown_row:
+                reject(unknown_row, unknown_label); continue
+            roles = [role for role, *_ in equity]
+            if any(roles.count(role) > 1 for role in roles) or ("NET" in roles and len(roles) > 1):
+                reject("EQUITY_DUPLICATED", ", ".join(G[row][0] for _, row, _, _ in equity)); continue
+            if equity and any("지분법" in norm(G[positions[name][0]][0]) for name in base_names):
+                reject("EQUITY_INCLUDED_IN_BASE", ", ".join(
+                    G[positions[name][0]][0] for _, name in terms if "지분법" in norm(G[positions[name][0]][0]))); continue
+            if any(role != "NET" and amount < 0 for role, _, _, amount in equity):
+                reject("EQUITY_SIGN_UNCONFIRMED", ", ".join(
+                    G[row][0] for role, row, _, amount in equity if role != "NET" and amount < 0)); continue
+            for role, row, column, amount in equity:
+                result["operands"].append(dict(label=G[row][0], row=row, col=column,
+                                               sign=-1 if role == "LOSS" else 1, value=amount))
+            result.update(calc=sum(part["sign"] * part["value"] for part in result["operands"]),
+                          n=len(result["operands"]))
+            results.append(result)
+    return results
+
+
 def foot_a5(tb):
     rows, nper = read_rows(tb)
+    pbt = next(rule for rule in A5_RULES if len(rule) == 3)
+    source_results = _pbt_source_results(tb, *pbt)
+    source_periods = [r["period"] for r in source_results if r["period"] is not None]
     res = []
-    for p in range(nper):
+    for p in range(max(nper, max(source_periods, default=-1) + 1)):
         book = {}; rowof = {}; colof2 = {}; order = []; dep = {}
         for d,k,raw,vals,_ip,_it,ri,cof in rows:
             if p in vals and k not in book:
                 book[k] = vals[p]; rowof[k] = ri; colof2[k] = cof.get(p)
                 order.append(k); dep[k] = d
-        for tgt, terms in A5_RULES:
+        for rule in A5_RULES:
+            tgt, terms = rule[:2]
+            if len(rule) == 3:
+                # 세전이익(지분법 원천 메타 보유 규칙)은 물리 원천행 경로가 전담한다.
+                # 그 경로가 영업이익~세전이익 사이의 설명되지 않은 행을 스스로
+                # 미검증으로 내므로(UNSUPPORTED/UNKNOWN_SOURCE_ROW), 아래 성분 누락·
+                # 커버리지 점검을 이 규칙에 겹쳐 적용하지 않는다(병합 시 판정 단일화).
+                res.extend(r for r in source_results if r["period"] == p)
+                continue
             if tgt not in book: continue
             if not all(any(t.startswith(nm) or nm.startswith(t) for t in book) for _,nm in terms):
                 pass
@@ -278,4 +428,5 @@ def foot_a5(tb):
                     _skip("A5_UNCOVERED_ROW", ", ".join(span)); continue
             res.append(dict(kind="A5", period=p, label=tgt, row=rowof.get(tgt), col=colof2.get(tgt),
                             disp=book[tgt], calc=s, operands=ops, reason=None, n=got))
+    res.extend(r for r in source_results if r["period"] is None)
     return res

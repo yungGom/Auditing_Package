@@ -1,7 +1,9 @@
 @echo off
+setlocal
 rem DSD footing launcher. Run with no argument to get the start screen (open a
 rem report, pick from recents). Drag a PDF onto this file (or pass a path) to
-rem skip the start screen and go straight into that report.
+rem skip the start screen and go straight into that report. For console-only
+rem analysis without a window (exit code preserved), use run_cli.bat.
 rem ASCII only: Korean text in .bat breaks depending on console codepage (chcp
 rem 65001 has an offset bug in cmd.exe -- see the run.bat design doc in the repo root).
 cd /d "%~dp0"

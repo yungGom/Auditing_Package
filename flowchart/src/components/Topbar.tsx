@@ -6,8 +6,17 @@ import { useFlow } from "../state/flowState";
 import type { FlowchartState, FlowNode } from "../state/flowState";
 import { parseXlsx } from "../parsing/xlsxParser";
 import { buildFlowFromExcel } from "../parsing/buildFlowFromExcel";
+import {
+  isGraphWorkbook,
+  parseGraphWorkbook,
+  type ParsedGraph,
+} from "../parsing/graphSheet";
+import { buildFlowFromGraph, type GraphLayout } from "../parsing/buildFlowFromGraph";
 import { exportToPpt } from "../export/pptExport";
+import { downloadTemplate } from "../export/templateDownload";
 import { buildCatalogFromActivities } from "../types";
+import type { ShapeNodeData } from "./ShapeNode";
+import { Modal } from "./Modal";
 
 /**
  * 상단 툴바 — 제목, 액션 버튼 (엑셀 업로드 / 활성 flowchart / PPT 다운로드),
@@ -29,7 +38,6 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
     activeCode,
     setActiveCode,
     headerInfo,
-    setHeaderInfo,
     undo,
     redo,
     canUndo,
@@ -38,18 +46,21 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
     setNodes,
   } = useFlow();
 
-  // 전체 잠금 토글 — 현재 캔버스의 모든 노드 위치를 한 번에 고정/해제
+  // 전체 잠금 토글 — 현재 캔버스의 모든 노드 위치를 한 번에 고정/해제 (레인 배경 제외)
+  const isLane = (n: FlowNode) =>
+    n.type === "shape" && (n.data as ShapeNodeData).shapeKey === "lane";
+  const lockable = nodes.filter((n) => !isLane(n));
   const allLocked =
-    nodes.length > 0 &&
-    nodes.every((n) => !!(n.data as { locked?: boolean })?.locked);
+    lockable.length > 0 &&
+    lockable.every((n) => !!(n.data as { locked?: boolean })?.locked);
   function toggleLockAll() {
     const next = !allLocked;
     setNodes((prev) =>
-      prev.map((n) => ({
-        ...n,
-        draggable: !next,
-        data: { ...n.data, locked: next },
-      })),
+      prev.map((n) =>
+        isLane(n)
+          ? n
+          : { ...n, draggable: !next, data: { ...n.data, locked: next } },
+      ),
     );
   }
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +68,69 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
     kind: "idle" | "ok" | "err";
     msg: string;
   }>({ kind: "idle", msg: "" });
+
+  // 그래프 시트(Next ID) 업로드 상태 — 배치 방식 바꾸면 다시 그림
+  const [layout, setLayout] = useState<GraphLayout>("snake");
+  const lastGraphRef = useRef<{ parsed: ParsedGraph; fileName: string } | null>(
+    null,
+  );
+  const [isGraph, setIsGraph] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [warningsOpen, setWarningsOpen] = useState(false);
+
+  function applyGraph(
+    parsed: ParsedGraph,
+    fileName: string,
+    lay: GraphLayout,
+    relayout: boolean,
+  ) {
+    const built = buildFlowFromGraph(parsed, lay);
+    const fcStates: FlowchartState[] = built.flowcharts.map((f) => ({
+      code: f.code,
+      name: f.name,
+      nodes: f.nodes as FlowNode[],
+      edges: f.edges,
+      header: f.header,
+    }));
+    if (relayout) {
+      // 배치만 다시 — 헤더 편집값과 수기 추가 통제·위험은 유지
+      loadFlowcharts({
+        flowcharts: fcStates,
+        headerInfo,
+        activeCode: fcStates.some((f) => f.code === activeCode) ? activeCode : undefined,
+      });
+    } else {
+      const catalog = buildCatalogFromActivities(built.activities, new Map());
+      loadFlowcharts({
+        flowcharts: fcStates,
+        headerInfo: built.headerInfo,
+        controls: catalog.controls,
+        risks: catalog.risks,
+      });
+    }
+    setWarnings(built.warnings);
+    if (built.warnings.length > 0) {
+      console.warn("[flowchart 시트 점검]", built.warnings);
+    }
+    const codesStr = fcStates.map((f) => f.code).join(", ");
+    setStatus({
+      kind: "ok",
+      msg: `${fileName} · flowchart ${fcStates.length}개 (${codesStr}) · ${lay === "snake" ? "스네이크" : "스윔레인"}`,
+    });
+  }
+
+  function handleLayoutChange(next: GraphLayout) {
+    if (next === layout) return;
+    const last = lastGraphRef.current;
+    if (last) {
+      const ok = window.confirm(
+        "배치를 다시 계산하면 캔버스에서 옮기거나 추가·수정한 박스가 엑셀 내용으로 초기화됩니다. 계속할까요?",
+      );
+      if (!ok) return;
+      applyGraph(last.parsed, last.fileName, next, true);
+    }
+    setLayout(next);
+  }
 
   async function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -66,6 +140,19 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
+
+      // 새 형식 — 한 행 = 박스 1개, Next ID 로 연결
+      if (isGraphWorkbook(wb)) {
+        const parsedGraph = parseGraphWorkbook(wb);
+        lastGraphRef.current = { parsed: parsedGraph, fileName: file.name };
+        setIsGraph(true);
+        applyGraph(parsedGraph, file.name, layout, false);
+        return;
+      }
+      lastGraphRef.current = null;
+      setIsGraph(false);
+
+      // 구 형식 — RCM + 매핑 시트
       const parsed = parseXlsx(wb);
       const built = buildFlowFromExcel(parsed);
 
@@ -113,6 +200,7 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
         msg: `${file.name} · flowchart ${fcStates.length}개 (${codesStr})`,
       });
 
+      setWarnings(built.warnings);
       if (built.warnings.length > 0) {
         console.warn("[xlsx parsing warnings]", built.warnings);
       }
@@ -143,6 +231,7 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
           name: f.name,
           nodes: f.nodes,
           edges: f.edges,
+          header: f.header,
         })),
       );
       setStatus({
@@ -161,14 +250,6 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
   // 활성 flowchart 가 바뀌면 헤더 표(Flowchart Code / 소분류) 도 자동 갱신
   function handleSwitch(code: string) {
     setActiveCode(code);
-    const fc = flowcharts.find((f) => f.code === code);
-    if (fc) {
-      setHeaderInfo({
-        ...headerInfo,
-        flowchartCode: fc.code,
-        subProcessName: fc.name,
-      });
-    }
   }
 
   return (
@@ -176,17 +257,17 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
       className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4"
       style={{ height: shellDesign.topbarHeight }}
     >
-      <div className="flex items-center gap-4">
-        <div>
-          <h1 className="text-base font-bold text-slate-900">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="shrink-0">
+          <h1 className="whitespace-nowrap text-base font-bold text-slate-900">
             ICFR Flowchart Generator
           </h1>
-          <p className="text-[11px] leading-tight text-slate-500">
+          <p className="whitespace-nowrap text-[11px] leading-tight text-slate-500">
             내부회계관리제도 Flowchart 자동 생성 · 로컬 전용
           </p>
         </div>
 
-        <nav className="flex items-center gap-1">
+        <nav className="flex shrink-0 items-center gap-0.5">
           <input
             ref={fileInputRef}
             type="file"
@@ -196,8 +277,13 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
           />
           <ToolbarButton
             label="엑셀 업로드"
-            hint="RCM + 매핑 시트가 들어있는 .xlsx"
+            hint="Flowchart 시트(한 행 = 박스 1개, Next ID 연결) 또는 RCM + 매핑 시트 .xlsx"
             onClick={() => fileInputRef.current?.click()}
+          />
+          <ToolbarButton
+            label="템플릿"
+            hint="작성 템플릿(.xlsx) 다운로드 — 예시 데이터와 작성 가이드 포함"
+            onClick={() => downloadTemplate()}
           />
           <ToolbarButton
             label="PPT 다운로드"
@@ -242,10 +328,26 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
           />
         )}
 
+        {isGraph && (
+          <LayoutToggle value={layout} onChange={handleLayoutChange} />
+        )}
+
+        {warnings.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setWarningsOpen(true)}
+            title="엑셀 점검 결과 보기"
+            className="shrink-0 whitespace-nowrap rounded bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+          >
+            ⚠ 확인 필요 {warnings.length}건
+          </button>
+        )}
+
         {status.kind !== "idle" && (
           <span
+            title={status.msg}
             className={
-              "rounded px-2 py-0.5 text-[11px] " +
+              "min-w-0 max-w-[280px] truncate rounded px-2 py-0.5 text-[11px] " +
               (status.kind === "ok"
                 ? "bg-emerald-50 text-emerald-700"
                 : "bg-rose-50 text-rose-700")
@@ -269,6 +371,22 @@ export function Topbar({ view, onChangeView, onOpenHelp }: TopbarProps) {
         </button>
         <div className="text-xs text-slate-400">v0.1.0</div>
       </div>
+
+      <Modal
+        open={warningsOpen}
+        onClose={() => setWarningsOpen(false)}
+        title={`엑셀 점검 결과 (${warnings.length}건)`}
+        width={620}
+      >
+        <ul className="space-y-1.5 p-4 text-xs leading-relaxed text-slate-700">
+          {warnings.map((w, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="shrink-0 text-amber-600">•</span>
+              <span>{w}</span>
+            </li>
+          ))}
+        </ul>
+      </Modal>
     </header>
   );
 }
@@ -320,7 +438,7 @@ function ToolbarButton({
       disabled={disabled}
       title={hint}
       className={[
-        "rounded-md px-3 py-1.5 text-sm transition",
+        "whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition",
         disabled
           ? "cursor-not-allowed text-slate-400"
           : "text-slate-700 hover:bg-slate-100",
@@ -360,6 +478,45 @@ function IconButton({
   );
 }
 
+function LayoutToggle({
+  value,
+  onChange,
+}: {
+  value: GraphLayout;
+  onChange: (v: GraphLayout) => void;
+}) {
+  const opts: Array<{ v: GraphLayout; label: string; hint: string }> = [
+    { v: "snake", label: "스네이크", hint: "줄마다 방향을 바꿔 이어지는 배치" },
+    { v: "swimlane", label: "스윔레인", hint: "담당부서별 가로 레인 배치" },
+  ];
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wider text-slate-500">
+        배치
+      </span>
+      <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs">
+        {opts.map((o, i) => (
+          <button
+            key={o.v}
+            type="button"
+            title={o.hint}
+            onClick={() => onChange(o.v)}
+            className={
+              (i > 0 ? "border-l border-slate-300 " : "") +
+              "whitespace-nowrap px-2 py-1 transition " +
+              (value === o.v
+                ? "bg-slate-900 text-white"
+                : "bg-white text-slate-700 hover:bg-slate-100")
+            }
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ViewToggle({
   view,
   onChange,
@@ -373,7 +530,7 @@ function ViewToggle({
         type="button"
         onClick={() => onChange("canvas")}
         className={
-          "px-3 py-1.5 transition " +
+          "whitespace-nowrap px-3 py-1.5 transition " +
           (view === "canvas"
             ? "bg-slate-900 text-white"
             : "bg-white text-slate-700 hover:bg-slate-100")
@@ -385,7 +542,7 @@ function ViewToggle({
         type="button"
         onClick={() => onChange("design")}
         className={
-          "border-l border-slate-300 px-3 py-1.5 transition " +
+          "whitespace-nowrap border-l border-slate-300 px-3 py-1.5 transition " +
           (view === "design"
             ? "bg-slate-900 text-white"
             : "bg-white text-slate-700 hover:bg-slate-100")

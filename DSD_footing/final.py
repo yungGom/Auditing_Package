@@ -118,10 +118,15 @@ def ends_open(tb):
     조판(헤더 반복형 등)이 실전에서 나타날 때 조용히 넘어가지 않게 하는 탐지기다."""
     try:
         G, K, V, hdr, ncol, nrow, numcols = grid_info(tb)
-        if not numcols: return False
-        first_num = min(numcols)
+        # 비율(%) 열은 금액열에서 빠지지만(core.is_note_col) 비율 세로합 검증이 붙으므로
+        # 분할 감시에서는 숫자 열로 센다. 빼면 지분율만 있는 헤더 반복형 표(삼성 p93~102
+        # 종속기업 현황표 — 감시 대상 실물)의 메모가 조용히 사라진다(2026-10-30 승인).
+        cols = sorted(set(numcols) | {j for j in range(ncol) if core.is_ratio_col(G, hdr, j)
+                                      and any(K[i][j] == "NUM" for i in range(hdr, nrow))})
+        if not cols: return False
+        first_num = min(cols)
         for i in range(nrow - 1, hdr - 1, -1):
-            if any(K[i][j] == "NUM" for j in numcols):
+            if any(K[i][j] == "NUM" for j in cols):
                 lab = next((G[i][j] for j in range(first_num)
                             if G[i][j] and K[i][j] == "TEXT"), "")
                 return not is_total_label(lab)
@@ -316,12 +321,17 @@ with pdfplumber.open(PDF) as pdf:
                     # 미검증 사유 — 코드가 없으면 조용히 넘기지 않고 표면화한다
                     if v in ("SKIP","SIGN"):
                         _rc = "SIGN_CONVENTION" if v == "SIGN" else r.get("reason")
-                        _why = SKIP_REASON_TEXT.get(_rc) or f"UNRESOLVED_REASON({_rc})"
+                        # 세전이익 원천행 경로는 사유 문장(reason_text)을 직접 싣는다.
+                        _why = (r.get("reason_text") or SKIP_REASON_TEXT.get(_rc)
+                                or f"UNRESOLVED_REASON({_rc})")
                         # 사유에 구체적인 행·항목 이름을 붙인다. "산식에 포함되지 않은
                         # 행이 있습니다"만으로는 회계사가 무엇을 볼지 알 수 없다.
-                        if r.get("reason_detail"): _why = f"{_why}: {r['reason_detail']}"
+                        if r.get("reason_detail"): _why = f"{_why.rstrip('.')}: {r['reason_detail']}"
                     else:
                         _rc = _why = None
+                    # 계산 불가(calc=None) 미검증은 차이도 비운다 — 0으로 채우지 않는다.
+                    _delta = (None if r["calc"] is None or r["disp"] is None
+                              else r["calc"]-r["disp"])
                     _fml = FORMULA_TEXT.get(r["kind"], r["kind"])
                     if v in ("SKIP","SIGN"): _fml = f"{_fml} — {_why}"
                     elif r.get("n"):         _fml = f"{_fml} — 구성 항목 {r['n']}개"
@@ -353,7 +363,12 @@ with pdfplumber.open(PDF) as pdf:
                         _olab = None
                         if 0 <= _o["row"] < len(data):
                             _olab = next((norm(c) for c in data[_o["row"]] if norm(c)), None)
-                        _ops.append(dict(label=_olab, value=_otxt, sign=_o.get("sign", "+"),
+                        # 성분 부호는 "+"/"-" 문자로 통일한다. 세전이익 원천행 경로
+                        # (statements._pbt_source_results)는 +1/-1 정수로 내는데,
+                        # diff_list.py의 성분 합 자체 검증은 문자만 읽는다.
+                        _sg = _o.get("sign", "+")
+                        if not isinstance(_sg, str): _sg = "+" if _sg >= 0 else "-"
+                        _ops.append(dict(label=_olab, value=_otxt, sign=_sg,
                                          bbox=(marksio.bbox4(marksio.box4(*_ob)) if _ob else None)))
                     MARKS.append(dict(
                         id=marksio.mid(_kind, r["kind"], pi, table=ti, row=r.get("row"), col=_col_for_id),
@@ -362,7 +377,7 @@ with pdfplumber.open(PDF) as pdf:
                         source=dict(check=r["kind"], table=ti, row=r.get("row"), col=r.get("col"),
                                    label=r.get("label")),
                         verdict=v,
-                        evidence=dict(disp=r["disp"], calc=r["calc"], diff=r["calc"]-r["disp"], n=r["n"],
+                        evidence=dict(disp=r["disp"], calc=r["calc"], diff=_delta, n=r["n"],
                                      unit=unit or "미표기", tag=(tg or None), reason=_rc,
                                      absorbed=(r.get("absorbed") or [])),
                         account=r.get("label"), level="L1",
@@ -374,16 +389,31 @@ with pdfplumber.open(PDF) as pdf:
                         l2_class=None, column_key=None, paper_no=None,
                         comment=None, verified_at=RUN_TS, reviewed_at=None, reviewed_by=None,
                         origin="tool", status="pending", note=None)); SEQ+=1
-                # 소계 흡수를 적용한 건은 OK여도 색인에 싣는다 — 지면에는 깨끗한 체크만
-                # 남으므로, 도구가 표 구조를 다시 해석했다는 사실이 여기 없으면 나중에
-                # 이 판정을 의심할 때 근거가 아예 없다(2026-08-28 승인 조건).
-                _absorb_tag = (f"소계흡수: {', '.join(r['absorbed'])}" if r.get("absorbed") else "")
-                if v in ("DIFF","ROUND","SKIP","SIGN") or _absorb_tag:
+                # 예외색인. 계산할 수 없었던 건(calc=None)은 계산금액·차이를 비우고
+                # 사유를 태그에 싣는다(세전이익 원천행 경로, 서버 #36 승인 조건).
+                if v in ("DIFF","ROUND","SKIP","SIGN"):
+                    delta = None if r["calc"] is None or r["disp"] is None else r["calc"]-r["disp"]
+                    # '1원차이' 태그 — 원 단위 표에서 |차이|<=1이면 일괄 확인용 표시.
+                    # 판정은 바꾸지 않는다 (원 단위는 반올림이 없어 흡수 금지 — 회계사 확인 대상)
+                    tg = ("부호규약" if v == "SIGN" else
+                          "1원차이" if v == "DIFF" and abs(r["calc"]-r["disp"]) <= 1
+                          and (TUNIT.get((pi,ti)) or "").strip() == "원" else "")
+                    if r.get("reason"):
+                        tg = r.get("reason_text") or SKIP_REASON_TEXT.get(r["reason"], r["reason"])
+                        if r.get("reason_detail"): tg = f"{tg.rstrip('.')}: {r['reason_detail']}"
+                    # 소계 흡수 사실은 판정과 무관하게 남긴다(결정 26 승인 조건).
+                    if r.get("absorbed"):
+                        tg = " / ".join(x for x in (tg, f"소계흡수: {', '.join(r['absorbed'])}") if x)
                     exc.append([pi,ti,r["kind"],r["label"],unit or "미표기",
-                                r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],
-                                {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증",
-                                 "SIGN":"미검증"}.get(v,"흡수적용"),
-                                " / ".join(x for x in (tg, _absorb_tag) if x)])
+                                r["disp"],r["calc"],delta,r["n"],
+                                {"DIFF":"차이","ROUND":"단수차이","SKIP":"미검증","SIGN":"미검증"}[v],tg])
+                elif r.get("absorbed"):
+                    # 소계 흡수를 적용한 건은 OK여도 색인에 싣는다 — 지면에는 깨끗한 체크만
+                    # 남으므로, 도구가 표 구조를 다시 해석했다는 사실이 여기 없으면 나중에
+                    # 이 판정을 의심할 때 근거가 아예 없다(2026-08-28 승인 조건).
+                    exc.append([pi,ti,r["kind"],r["label"],unit or "미표기",
+                                r["disp"],r["calc"],r["calc"]-r["disp"],r["n"],"흡수적용",
+                                f"소계흡수: {', '.join(r['absorbed'])}"])
         try:
             _last=tobjs[-1].extract()
             _,_,_,_,ncL,_,_=grid_info(_last)
@@ -474,8 +504,8 @@ for row in ws.iter_rows(min_row=2):
     for cc in row[5:8]: cc.number_format="#,##0"
     if row[9].value=="차이": row[9].fill=PatternFill("solid",fgColor="FFC7CE")
     elif row[9].value=="미검증": row[9].fill=PatternFill("solid",fgColor="FFEB9C")
-wsb=sheet("B_본표간연계",["번호","검증항목","값1","값2","판정"],
-          [[a,b,c_,d_,e] for a,b,c_,d_,e,_ in B],[8,52,18,18,10])
+wsb=sheet("B_본표간연계",["번호","검증항목","값1(원)","값2(원)","판정","근거"],
+          [[a,b,c_,d_,e,f] for a,b,c_,d_,e,f in B],[8,52,18,18,10,40])
 for row in wsb.iter_rows(min_row=2):
     for cc in row[2:4]: cc.number_format="#,##0"
     if row[4].value=="차이": row[4].fill=PatternFill("solid",fgColor="FFC7CE")
@@ -485,7 +515,8 @@ sheet("C_본표주석레퍼",["구분","페이지","항목","금액","대상","�
         " ".join(sorted({f"FN{n}" for c_ in cs for n in (c_["notes"] & m["refs"])})),
         f"주석 p{sorted({c_['page'] for c_ in cs})}"] for m,cs in RLINKS]
     + [["미성립",m["page"],m["label"],m["val"],
-        " ".join(f"FN{n}" for n in sorted(m["refs"])),"주석에서 동일 금액 미발견"] for m,_ in RUN]
+        " ".join(f"FN{n}" for n in sorted(m["refs"])),m.get('review_reason','검토 필요: 연결 미확인') +
+        ('; 후보 ' + ', '.join(f"p{n['page']} 표{n['table']} 행{n['row']+1} 열{n['col']+1}" for n in m.get('review_candidates',[])) if m.get('review_candidates') else '')] for m,_ in RUN]
     + [["단위제외",m["page"],m["label"],m["val"],
         " ".join(f"FN{n}" for n in sorted(m["refs"])),"복합·판독 불가 단위 — 대사 미수행(?)"] for m in REXCL],
       [10,8,28,18,16,30])
@@ -530,6 +561,7 @@ sheet("C7_주석참조",["구분","내용"],
 tot=sum(stat.values())
 sheet("요약",["항목","값"],
       [["A 산술검증 총건수",tot],["  OK",stat['OK']],["  단수차이(ROUND)",stat['ROUND']],
+       ["분석 상태","제한된 분석: 산술검사 0건" if tot == 0 else "산술검사 수행"],
        ["  차이(DIFF)",stat['DIFF']],["  미검증(SKIP)",stat['SKIP']],
        ["  OK 비율",f"{stat['OK']/tot*100:.1f}%" if tot else "-"],
        ["B 연계검증 총건수",len(B)],["  OK",sum(1 for r in B if r[4]=='OK')],
@@ -545,8 +577,11 @@ sheet("요약",["항목","값"],
         if SPLIT_SUSPECT else "없음"],
        ["범위","표시 수치 상호 정합성 한정. 원장·조서 대사는 별도 절차."]],[30,60])
 wb.save(OUT_XLSX)
+if tot == 0:
+    print("[안내] 제한된 분석: 산술검사 0건 — 산술 검증 완료를 의미하지 않습니다.")
 if not QUIET:
-    print(f"A 산술 {tot}건 → OK {stat['OK']} ({stat['OK']/tot*100:.1f}%) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']} / SIGN {stat['SIGN']}")
+    ratio = f"{stat['OK']/tot*100:.1f}%" if tot else "-"
+    print(f"A 산술 {tot}건 → OK {stat['OK']} ({ratio}) / ROUND {stat['ROUND']} / DIFF {stat['DIFF']} / SKIP {stat['SKIP']} / SIGN {stat['SIGN']}")
     print(f"B 연계 {len(B)}건 → OK {sum(1 for r in B if r[4]=='OK')} / 차이 {sum(1 for r in B if r[4]=='차이')} / 미검증 {sum(1 for r in B if r[4]=='미검증')}")
     print(f"C 레퍼 → 성립 {len(RLINKS)} / 미성립 {len(RUN)} / 차이 {len(RDIFF)}" +
           (f" · 단위제외 {len(REXCL)}건" if REXCL else ""))

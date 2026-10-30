@@ -1,0 +1,82 @@
+{
+  "base_commit": "3c1918b15d4dc4830c0b0cd3e5ff51127eb81014",
+  "operator": "root scripted Windows subprocess UAT",
+  "python_unavailable_probe_exit": 1,
+  "missing_python_simulation": "child PATH restricted to Windows System32; no machine configuration changed",
+  "cases": [
+    {
+      "name": "corrupt-direct",
+      "expected_exit": 1,
+      "actual_exit": 1,
+      "stderr_present": true,
+      "stdout_present": false,
+      "output_pdf_exists": false,
+      "output_xlsx_exists": false,
+      "parser_error_present": true
+    },
+    {
+      "name": "corrupt-batch-no-pause",
+      "expected_exit": 1,
+      "actual_exit": 1,
+      "stderr_present": true,
+      "stdout_present": false,
+      "output_pdf_exists": false,
+      "output_xlsx_exists": false,
+      "parser_error_present": true
+    },
+    {
+      "name": "missing-python-no-pause",
+      "expected_exit": 9009,
+      "actual_exit": 9009,
+      "stderr_present": true,
+      "stdout_present": false,
+      "output_pdf_exists": false,
+      "output_xlsx_exists": false
+    },
+    {
+      "name": "corrupt-batch-pause",
+      "expected_exit": 1,
+      "actual_exit": 1,
+      "stderr_present": true,
+      "stdout_present": true,
+      "output_pdf_exists": false,
+      "output_xlsx_exists": false,
+      "parser_error_present": true
+    },
+    {
+      "name": "missing-python-pause",
+      "expected_exit": 9009,
+      "actual_exit": 9009,
+      "stderr_present": true,
+      "stdout_present": true,
+      "output_pdf_exists": false,
+      "output_xlsx_exists": false
+    },
+    {
+      "name": "missing-python-usage",
+      "expected_exit": 2,
+      "actual_exit": 2,
+      "stderr_present": false,
+      "stdout_present": true,
+      "output_pdf_exists": false,
+      "output_xlsx_exists": false
+    }
+  ],
+  "previous_six_source_hashes_unchanged": true,
+  "logs": {
+    "corrupt-batch-no-pause.log": "1cd4e4bacb7f682e6e8f87e89032a86e686c43c60618b182ab8f0f619f1251e4",
+    "corrupt-batch-pause.log": "3773f15cce93a6aa9a9aa1084e47466418508743cf5860c38951d2e3695dea00",
+    "corrupt-direct.log": "1cd4e4bacb7f682e6e8f87e89032a86e686c43c60618b182ab8f0f619f1251e4",
+    "missing-python-no-pause.log": "3e40e3d77eb7f170d0846c5f4adc53c761860002125e5983c1bc542a0e8c8df8",
+    "missing-python-pause.log": "cb6b262640ae507d59c20d35561677bf76f444e83220ac364afeb7f5e5f720d5",
+    "missing-python-usage.log": "2e3072338185bb31c6f65fac41c1daa0f90933c79fe2a36e2bfaedcfbb494fe4"
+  },
+  "not_run": [
+    "OS drag and drop",
+    "separate GUI",
+    "private compatibility",
+    "Linux",
+    "all-page visual review"
+  ],
+  "official_gate": "Not rerun for this evidence-only follow-up; prior unchanged-source 0/4 PASS, 4 FAIL, 10 metric deltas retained"
+}

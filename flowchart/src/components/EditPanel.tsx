@@ -129,7 +129,10 @@ function ActivityEditor({ node }: { node: FlowNode }) {
             type="number"
             min={0}
             value={a.actNo}
-            onChange={(e) => update({ actNo: Number(e.target.value) || 0 })}
+            onChange={(e) =>
+              // 숫자를 직접 고치면 엑셀 ID 표기(displayNo)는 해제
+              update({ actNo: Number(e.target.value) || 0, displayNo: undefined })
+            }
             className={inputCls}
             style={{ width: 70 }}
           />

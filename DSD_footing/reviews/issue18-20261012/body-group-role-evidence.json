@@ -1,0 +1,406 @@
+{
+  "date": "2026-10-12",
+  "baseline_head": "a6645e44a9299320a62df737e22a4b4f8fc330a1",
+  "scope": "explicit physical valuation/disposal group source-role metadata only",
+  "code_hashes": {
+    "executed_worktree_sha256": "19d2d99f2590b706bb9407624dc88de7b3986b21a1f0bfc647b9dc2d45322e86",
+    "normalized_lf_sha256": "c546d5fed6b2043d63b4fae51158c58d2e015c0dd5b6698afdbe6b8897e046ff"
+  },
+  "failing_before": {
+    "methods": 8,
+    "FAIL": 3,
+    "PASS": 5
+  },
+  "focused_after": {
+    "methods": 63,
+    "PASS": 63,
+    "FAIL": 0,
+    "SKIP": 0
+  },
+  "independent_review": {
+    "status": "PASS",
+    "blocking": 0,
+    "small_controls_pass": 8,
+    "note": "initial extra-text probe used a note-column keyword; fixture corrected before final eight controls"
+  },
+  "public_cached_comparison": {
+    "status": "PASS",
+    "scope": "identical cached public extraction, not fresh official gate",
+    "baseline_head": "a6645e44a9299320a62df737e22a4b4f8fc330a1",
+    "samples": [
+      {
+        "sample": "삼성전자_감사보고서.pdf",
+        "source_sha256": "b9207f0f02e251658f523d2e26f84d7bf6b2e5e0187e5cb95aa73e552c884203",
+        "C_before": 46,
+        "C_after": 46,
+        "U_before": 61,
+        "U_after": 61,
+        "links_and_unmatched_identical": true,
+        "secondary_links_identical": true,
+        "metadata_role_changes": [],
+        "review_candidates_with_role_source": 0
+      },
+      {
+        "sample": "[휴맥스홀딩스]연결감사보고서(2025.03.19).pdf",
+        "source_sha256": "b27fc753cbc3bbe221a5b5cdfb1d82126fe8130804aed0379ea4c5f5aeace792",
+        "C_before": 67,
+        "C_after": 67,
+        "U_before": 15,
+        "U_after": 15,
+        "links_and_unmatched_identical": true,
+        "secondary_links_identical": true,
+        "metadata_role_changes": [],
+        "review_candidates_with_role_source": 0
+      },
+      {
+        "sample": "[LG에너지솔루션]반기검토보고서(2025.08.14).pdf",
+        "source_sha256": "a2efb0fb669fa9601b9a2886f99b6837fce27b2545e89000bc90a941960e8975",
+        "C_before": 75,
+        "C_after": 75,
+        "U_before": 40,
+        "U_after": 40,
+        "links_and_unmatched_identical": true,
+        "secondary_links_identical": true,
+        "metadata_role_changes": [
+          {
+            "location": [
+              29,
+              1,
+              9,
+              3
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              9,
+              4
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              10,
+              1
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              10,
+              2
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              10,
+              3
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              10,
+              4
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              11,
+              1
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              11,
+              2
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              11,
+              3
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          },
+          {
+            "location": [
+              29,
+              1,
+              11,
+              4
+            ],
+            "before_role": null,
+            "after_role": [
+              "거래액",
+              null
+            ],
+            "role_source": {
+              "kind": "table_row_group",
+              "row": 8,
+              "label": "평가손익/처분손익"
+            },
+            "item_identity_unchanged": true
+          }
+        ],
+        "review_candidates_with_role_source": 4
+      },
+      {
+        "sample": "[조선내화]연결감사보고서(2026.03.19).pdf",
+        "source_sha256": "8c2b59e4830901ed9455ce6ebe35f2269cbe93937004418c2df2daba1c45a41d",
+        "C_before": 35,
+        "C_after": 35,
+        "U_before": 45,
+        "U_after": 45,
+        "links_and_unmatched_identical": true,
+        "secondary_links_identical": true,
+        "metadata_role_changes": [],
+        "review_candidates_with_role_source": 0
+      }
+    ],
+    "protected_inputs_unchanged": true
+  },
+  "official_registered_gate": {
+    "status": "FAIL",
+    "reason": "COMPLETED",
+    "exit_code": 1,
+    "duration_seconds": 409.03,
+    "samples_pass": 0,
+    "samples_fail": 4,
+    "samples_skip": 0,
+    "metric_deltas": 10
+  },
+  "remaining_delta_classification": [
+    {
+      "sample": "Samsung",
+      "metrics": {
+        "C_ok": [
+          51,
+          46
+        ],
+        "C_unmatched": [
+          56,
+          61
+        ]
+      },
+      "kind": "existing review / appropriate exclusion",
+      "cells": 5,
+      "reason": "2 treasury purchase flow versus prior stock balance; 3 financing same-item/net-gross scope"
+    },
+    {
+      "sample": "Humax",
+      "metrics": {
+        "A_total": [
+          567,
+          572
+        ],
+        "A_SKIP": [
+          48,
+          53
+        ]
+      },
+      "kind": "intended excluded candidate coverage",
+      "records": 5,
+      "reason": "audit headcount/time A1 records remain SKIP, not monetary assurance"
+    },
+    {
+      "sample": "LGES",
+      "metrics": {
+        "A_total": [
+          395,
+          397
+        ],
+        "A_OK": [
+          379,
+          381
+        ]
+      },
+      "kind": "valid intended check expansion",
+      "records": 2,
+      "reason": "small displayed related-party interest checks previously mistaken for note numbers"
+    },
+    {
+      "sample": "LGES",
+      "metrics": {
+        "C_ok": [
+          82,
+          75
+        ],
+        "C_unmatched": [
+          33,
+          40
+        ]
+      },
+      "kind": "existing Owner review / unresolved accounting scope",
+      "cells": 7,
+      "reason": "5 OCI cells retain Owner review including period-limited composition evidence; 2 financing scope cells"
+    },
+    {
+      "sample": "Chosun",
+      "metrics": {
+        "A_total": [
+          380,
+          384
+        ],
+        "A_SKIP": [
+          29,
+          33
+        ]
+      },
+      "kind": "intended excluded candidate coverage",
+      "records": 4,
+      "reason": "audit headcount/time A1 records remain SKIP, not monetary assurance"
+    }
+  ],
+  "protected": "PASS",
+  "intake": "PASS",
+  "baseline_changed": false,
+  "accounting_identity_rules_changed": false,
+  "human_business_acceptance": "PENDING",
+  "not_run": [
+    "OS GUI/drag-and-drop",
+    "private compatibility",
+    "all-page visual review",
+    "merge/deploy"
+  ],
+  "raw_evidence_hashes": {
+    "body-group-red.log": {
+      "sha256": "a43efee43004381eec513041ba3c3a1ea663a3965ae35c3a02af9bba54abb6b2",
+      "bytes": 3423
+    },
+    "body-group-focused.log": {
+      "sha256": "45b996eb1c977bba59b6695106b27b57c43a0f498ae050ab6990c3f5a4f06e45",
+      "bytes": 7939
+    },
+    "body-group-source-comparison.json": {
+      "sha256": "4b127ef3923ed6ffe3fd18eeccc3b12d52363f3cf55de15b5ade473a2dc6eeb6",
+      "bytes": 6405
+    },
+    "body-group-source-comparison.log": {
+      "sha256": "52534a9cb971070fafaa3ed37604234c2a55e510a394f05a5c9d6c34aebe7c42",
+      "bytes": 164
+    },
+    "body-group-official-gate.log": {
+      "sha256": "6060d2f4fb07d537ffad03c4f35c7c824d07510f748808b8c0f01381d4f392d1",
+      "bytes": 7305
+    },
+    "body-group-protected.log": {
+      "sha256": "3d3db3d6b1ed27f6ff650e9636ed4fd20e5efcb0f54d329f8de7cab88093503b",
+      "bytes": 72
+    },
+    "body-group-intake.log": {
+      "sha256": "be2a0a2c293d790137576af3efaf77d38024e14cef8783ac5f05f09579c34968",
+      "bytes": 37
+    }
+  }
+}

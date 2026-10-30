@@ -1,8 +1,9 @@
 import { CSSProperties, memo, useCallback } from "react";
 import { Handle, NodeProps, NodeResizer, Position } from "reactflow";
 import { ShapeKey, SHAPES } from "../shapes";
-import { icfrColors, shapeNodeDesign } from "../design";
+import { CHIP_GAP, icfrColors, shapeNodeDesign } from "../design";
 import { useFlow } from "../state/flowState";
+import { fitBoxPx, fitOneLinePx } from "../textFit";
 import { LockBadge } from "./LockBadge";
 
 /**
@@ -37,13 +38,23 @@ export interface ShapeNodeData {
   neutralControl?: boolean;
   /** 위치 고정 여부 — true 면 드래그 불가(자물쇠 표시). 단축키 L 로 토글. */
   locked?: boolean;
+  /** 그래프 시트의 원래 ID (분기 D1, Link L1 등) — Narrative 표에 표시 */
+  refId?: string;
+  /** 업무기술(Process Narrative) — Narrative 표에 표시 */
+  narrative?: string;
+  /** 담당부서 — Narrative 표에 표시 */
+  dept?: string;
+  /** 엑셀 행 순서 (Narrative 표 정렬용) */
+  seq?: number;
+  /** lane 전용: 왼쪽 레인 이름 칸 폭 (px) */
+  laneLabelWidth?: number;
 }
 
 const SHAPE_DEF = Object.fromEntries(SHAPES.map((s) => [s.key, s]));
 
 const CTRL_TYPE_COLORS: Record<"A" | "M" | "I", { bg: string; fg: string }> = {
-  A: { bg: icfrColors.ctrlA, fg: "#FFFFFF" },
-  M: { bg: icfrColors.ctrlM, fg: "#FFFFFF" },
+  A: { bg: icfrColors.ctrlA, fg: "#0F172A" },
+  M: { bg: icfrColors.ctrlM, fg: "#0F172A" },
   I: { bg: icfrColors.ctrlI, fg: "#0F172A" },
 };
 
@@ -98,14 +109,14 @@ function getRender(
     }
     case "link": {
       const { width, height, fontSize } = shapeNodeDesign.link;
-      const sideW = (width - 14) / 2;
-      const midX1 = sideW;
-      const midX2 = sideW + 14;
+      // 양쪽 끝 좁은 세로선 (타 프로세스 연결 기호) — 가운데에 글자
+      const midX1 = width * 0.1;
+      const midX2 = width * 0.9;
       return {
         refWidth: width, refHeight: height,
         fontSize, fontColor: "#0F172A",
-        padX: 8, padY: 4,
-        handles: [Position.Left, Position.Right],
+        padX: 20, padY: 4,
+        handles: [Position.Left, Position.Right, Position.Top, Position.Bottom],
         preserveAspect: "none",
         minWidth: 60, minHeight: 24,
         bg: (sel) => (
@@ -159,7 +170,8 @@ function getRender(
       return {
         refWidth: width, refHeight: height,
         fontSize, fontWeight,
-        fontColor: isRisk ? "#0F172A" : (isNeutral ? "#0F172A" : "#FFFFFF"),
+        // 흰 글씨는 진한 Key 배지만 — 연분홍 Non-Key·노랑 위험·회색 미지정은 어두운 글씨
+        fontColor: shapeKey === "keyControl" && !isNeutral ? "#FFFFFF" : "#0F172A",
         padX: 4, padY: 2,
         handles: [Position.Left, Position.Right, Position.Bottom],
         preserveAspect: "none",
@@ -167,7 +179,7 @@ function getRender(
         bg: (sel) => (
           <rect x={sw / 2} y={sw / 2}
             width={width - sw} height={height - sw}
-            rx={6} ry={6}
+            rx={4} ry={4}
             fill={fillColor}
             stroke={sel ? icfrColors.keyCtrl : strokeColor}
             strokeWidth={sel ? 2 : sw} vectorEffect="non-scaling-stroke" />
@@ -191,6 +203,7 @@ function getRender(
         bg: (sel) => (
           <rect x={sw / 2} y={sw / 2}
             width={width - sw} height={height - sw}
+            rx={3} ry={3}
             fill={c.bg}
             stroke={sel ? "#FFFFFF" : c.bg}
             strokeWidth={sel ? 2 : sw} vectorEffect="non-scaling-stroke" />
@@ -288,6 +301,50 @@ function getRender(
         ),
       };
     }
+    case "phase": {
+      const { width, height, fontSize, fontWeight } = shapeNodeDesign.phase;
+      return {
+        refWidth: width, refHeight: height,
+        fontSize, fontWeight, fontColor: "#0F172A",
+        padX: 6, padY: 2,
+        handles: [],
+        preserveAspect: "none",
+        minWidth: 60, minHeight: 20,
+        bg: (sel) => (
+          <rect x={sw / 2} y={sw / 2}
+            width={width - sw} height={height - sw}
+            fill={def.fill}
+            stroke={sel ? icfrColors.keyCtrl : def.stroke}
+            strokeWidth={sel ? 2 : sw} vectorEffect="non-scaling-stroke" />
+        ),
+      };
+    }
+    case "lane": {
+      // 스윔레인 배경 — 왼쪽 레인명 칸 + 연한 본문. 실제 크기를 viewBox 로 써서 칸 폭 고정.
+      const width = data.customWidth ?? shapeNodeDesign.lane.width;
+      const height = data.customHeight ?? shapeNodeDesign.lane.height;
+      const labelW = data.laneLabelWidth ?? 70;
+      return {
+        refWidth: width, refHeight: height,
+        fontSize: shapeNodeDesign.lane.fontSize,
+        fontWeight: shapeNodeDesign.lane.fontWeight,
+        fontColor: "#FFFFFF",
+        padX: 6, padY: 4,
+        handles: [],
+        preserveAspect: "none",
+        minWidth: 200, minHeight: 60,
+        bg: () => (
+          <>
+            <rect x={0} y={0} width={width} height={height}
+              fill={icfrColors.laneBg} stroke={icfrColors.border} strokeWidth={1}
+              vectorEffect="non-scaling-stroke" />
+            <rect x={0} y={0} width={labelW} height={height}
+              fill={icfrColors.headerBg} stroke={icfrColors.border} strokeWidth={1}
+              vectorEffect="non-scaling-stroke" />
+          </>
+        ),
+      };
+    }
   }
 }
 
@@ -308,15 +365,18 @@ export function ShapeNodeBody({
   const W = data.customWidth ?? r.refWidth;
   const H = data.customHeight ?? r.refHeight;
 
-  // M 칩 표시 — keyControl / nonkeyControl 박스에 controlType 이 있을 때만.
-  // 칩은 SVG 가 아닌 HTML overlay 로 그려 항상 정사각형(H × H) 유지 (X stretch 영향 안 받음).
+  // A/M/I 칩 — keyControl / nonkeyControl 박스에 controlType 이 있을 때만.
+  // 회사 양식처럼 배지 오른쪽에 간격을 두고 작은 칩을 따로 그린다 (HTML overlay).
   const showChip =
     (data.shapeKey === "keyControl" || data.shapeKey === "nonkeyControl") &&
     !!data.controlType;
   const chipLetter = (data.controlType ?? "M") as "A" | "M" | "I";
-  // 칩 배경/글자색: 기준 통제구분 색 (A=핑크/흰, M=연핑크/검정, I=골드/검정)
   const chipColors = CTRL_TYPE_COLORS;
-  const chipW = showChip ? H : 0; // 칩은 정사각형
+  const chipW = showChip ? shapeNodeDesign.controlType.width : 0;
+  const chipSpace = showChip ? chipW + CHIP_GAP : 0;
+  // 레인은 왼쪽 이름 칸에만 텍스트
+  const textRight =
+    data.shapeKey === "lane" ? W - (data.laneLabelWidth ?? 70) : chipSpace;
 
   const containerStyle: CSSProperties = {
     position: "relative",
@@ -324,11 +384,29 @@ export function ShapeNodeBody({
     height: H,
   };
 
+  // 글자 크기 — 양식 7pt 기준, 칸보다 길면 줄임 (PPT 와 같은 규칙)
+  // 배지·단계 라벨은 한 줄로
+  const isBadge =
+    data.shapeKey === "risk" ||
+    data.shapeKey === "keyControl" ||
+    data.shapeKey === "nonkeyControl" ||
+    data.shapeKey === "controlType" ||
+    data.shapeKey === "phase";
+  const textW = Math.max(1, W - textRight - 2 * r.padX);
+  const textH = Math.max(1, H - 8);
+  const fullText = data.sublabel ? `${data.label}\n${data.sublabel}` : data.label;
+  const fontPx =
+    data.shapeKey === "lane"
+      ? fitOneLinePx(data.label, (data.laneLabelWidth ?? 70) - 8, r.fontSize, 8)
+      : isBadge
+        ? fitOneLinePx(data.label, textW, r.fontSize)
+        : fitBoxPx(fullText, textW, textH, r.fontSize);
+
   const textStyle: CSSProperties = {
     position: "absolute",
     top: 0,
     left: 0,
-    right: chipW, // M 칩 자리 비워둠 (텍스트 영역 축소)
+    right: textRight, // M 칩 자리 / 레인 본문 자리 비워둠
     bottom: 0,
     padding: `4px ${r.padX}px`,
     display: "flex",
@@ -336,10 +414,11 @@ export function ShapeNodeBody({
     alignItems: "center",
     justifyContent: "center",
     textAlign: "center",
-    fontSize: r.fontSize,
-    fontWeight: r.fontWeight ?? 500,
+    fontSize: fontPx,
+    fontWeight: r.fontWeight ?? 400,
     color: r.fontColor,
     lineHeight: 1.2,
+    whiteSpace: isBadge || data.shapeKey === "lane" ? "nowrap" : undefined,
     userSelect: "none",
     pointerEvents: "none",
     overflow: "hidden",
@@ -348,7 +427,7 @@ export function ShapeNodeBody({
   return (
     <div style={containerStyle}>
       <svg
-        width={W}
+        width={W - chipSpace}
         height={H}
         viewBox={`0 0 ${r.refWidth} ${r.refHeight}`}
         preserveAspectRatio={r.preserveAspect}
@@ -362,9 +441,8 @@ export function ShapeNodeBody({
           <div
             style={{
               marginTop: 1,
-              fontSize: Math.max(9, r.fontSize - 1),
+              fontSize: fontPx,
               fontWeight: 400,
-              opacity: 0.85,
             }}
           >
             {data.sublabel}
@@ -381,12 +459,12 @@ export function ShapeNodeBody({
             height: H,
             backgroundColor: chipColors[chipLetter].bg,
             color: chipColors[chipLetter].fg,
-            borderRadius: 4,
+            borderRadius: 3,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: Math.max(9, r.fontSize),
-            fontWeight: 700,
+            fontSize: r.fontSize,
+            fontWeight: 400,
             userSelect: "none",
             pointerEvents: "none",
           }}

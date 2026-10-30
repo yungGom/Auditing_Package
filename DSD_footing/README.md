@@ -20,6 +20,8 @@ DART 감사보고서 PDF의 표시 수치 상호 정합성(풋팅)을 자동 검
 ```bash
 python foot.py <보고서.pdf>
 ```
+창 없이 배치로 돌리려면 PDF를 `run_cli.bat`에 드래그한다 — 분석 결과(성공 0 /
+실패 코드)를 그대로 돌려준다(`FOOT_NOPAUSE=1`이면 끝에 멈추지 않음).
 지면 보기(UI 셸, 분석 없이 바로): `python ui/app.py <원본이름>_틱마크.pdf`
 
 옵션·산출물 상세는 `CLAUDE.md` 참고.

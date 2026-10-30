@@ -22,7 +22,6 @@ export function LeftSidebar() {
     controls,
     risks,
     setActiveCode,
-    setHeaderInfo,
     flowcharts,
     activeCode,
     deleteControl,
@@ -38,14 +37,8 @@ export function LeftSidebar() {
   const onPickControl = (c: ControlData) => {
     // flowchart 가 있으면 그 코드로 전환
     const fc = flowcharts.find((f) => f.code === c.flowchartCode);
-    if (fc) {
-      setActiveCode(fc.code);
-      setHeaderInfo({
-        ...headerInfo,
-        flowchartCode: fc.code,
-        subProcessName: fc.name,
-      });
-    }
+    // 헤더 표(Code·분류명)는 setActiveCode 가 함께 맞춘다
+    if (fc) setActiveCode(fc.code);
   };
 
   return (

@@ -293,6 +293,15 @@ function ShapeIcon({ shape }: { shape: ShapeDef }) {
         </svg>
       );
 
+    case "phase":
+      return (
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={common}>
+          <rect x={0.5} y={7.5} width={W - 1} height={H - 15}
+            fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
+          <line x1={9} y1={H / 2} x2={W - 9} y2={H / 2} stroke="#64748B" strokeWidth={1.5} />
+        </svg>
+      );
+
     case "interface":
       return (
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={common}>
