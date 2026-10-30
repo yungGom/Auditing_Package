@@ -9,7 +9,7 @@ F5 문장 마침표 누락
 """
 import re, collections
 import pdfplumber
-from core import grid_info, norm, parse, find_unit
+from core import grid_info, norm, parse, find_unit, note_parse_skip
 from prose import lines_outside_tables, DOTS, FOOTER, KOR
 
 # ── F2 용어 변형 그룹 ─────────────────────────────────────
@@ -39,9 +39,11 @@ def run(pdf_path):
 
             # ── F1: 금액 표가 있는데 단위 표기 없음 ──
             has_amt = False
-            for t in tbs:
+            for _ti, t in enumerate(tbs, 1):
+                # 파싱 실패 = 이 표가 F1~F4 일관성 점검에서 빠진다. 세기만 한다.
                 try: G,K,V,hdr,ncol,nrow,numcols = grid_info(t.extract())
-                except Exception: continue
+                except Exception as e:
+                    note_parse_skip("F 일관성", pi, e, _ti); continue
                 if numcols and any(K[i][j] == "NUM" and abs(V[i][j]) >= 1000
                                    for i in range(hdr, nrow) for j in numcols):
                     has_amt = True

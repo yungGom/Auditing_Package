@@ -1,0 +1,6 @@
+# 개발 전용 — 회계사 PC(PyInstaller 배포본)에는 포함하지 않는다.
+# EasyOCR 모델과 같은 성격: 최초 1회 브라우저 바이너리 다운로드가 필요하나
+# 개발 머신에서만 실행된다.
+playwright>=1.47
+
+# 설치 후 최초 1회: python -m playwright install chromium

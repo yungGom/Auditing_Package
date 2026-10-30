@@ -1,4 +1,6 @@
-"""Windows launcher must preserve the engine result, including after pause."""
+"""Windows console launcher must preserve the engine result, including after pause.
+
+run.bat은 검토 창(UI) 런처라 콘솔 계약은 run_cli.bat이 맡는다(병합 Q5 승인 2026-10-29)."""
 import os
 from pathlib import Path
 import subprocess
@@ -19,7 +21,7 @@ class BatchExitStatus(unittest.TestCase):
         if no_pause:
             env['FOOT_NOPAUSE'] = '1'
         return subprocess.run(
-            ['cmd.exe', '/d', '/c', str(ROOT/'run.bat'), *arguments],
+            ['cmd.exe', '/d', '/c', str(ROOT/'run_cli.bat'), *arguments],
             cwd=ROOT, env=env, input='\n', capture_output=True,
             text=True, encoding='utf-8', errors='replace', timeout=90)
 

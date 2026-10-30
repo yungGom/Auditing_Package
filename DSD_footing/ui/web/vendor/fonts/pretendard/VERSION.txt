@@ -1,0 +1,27 @@
+Pretendard v1.3.9 (Kil Hyung-jin, SIL Open Font License 1.1)
+
+출처: https://github.com/orioncactus/pretendard/releases/tag/v1.3.9
+받은 파일:
+  packages/pretendard/dist/web/static/woff2/Pretendard-Regular.woff2
+  packages/pretendard/dist/web/static/woff2/Pretendard-SemiBold.woff2
+SHA256:
+  Pretendard-Regular.woff2   fad853f7f47c6c8b103171e7193fa095708cdcd70850a71d93aa5379e8a61d6
+  Pretendard-SemiBold.woff2  c863f76a7de5c1ddc1ed8b2fa794964530774592c4f31407a84e2a2ae93f17f
+조달 방식: 개발 시점 1회 다운로드 후 저장소에 커밋(vendoring). pdf.js와 동일한
+          절차 — 런타임에는 네트워크를 타지 않는다.
+조달 일자: 2026-08-27
+
+굵기 2종만 받은 이유: U-2 좌측 목록은 제목(SemiBold)·본문(Regular) 두 크기만
+쓴다(설계안_UI셸_U2.md §5). 가변폰트 전체(수 MB, 9개 굵기)는 불필요.
+
+라이선스: SIL Open Font License 1.1 (원문 LICENSE 파일 동봉).
+  - 사용·연구·수정·재배포 전부 자유. 폰트 단독 판매만 금지 — 이 도구처럼
+    소프트웨어에 번들·임베딩해 배포하는 것은 명시적으로 허용된다.
+  - "Reserved Font Name: Pretendard" — 수정본을 만들 경우 그 수정본에
+    "Pretendard"라는 이름을 계속 쓸 수 없다는 조항(이 도구는 원본 파일을
+    그대로 쓰므로 해당 없음).
+  - 폰트 자체(수정하지 않은 원본)를 이 도구와 함께 배포·재배포하는 데는
+    아무 제약이 없다.
+
+⚠ 렌더 결과(글자 굵기·자간 등)가 예상과 다르면 이 버전부터 확인할 것.
+  업그레이드 시 이 파일의 버전·SHA256·조달 일자를 갱신한다.

@@ -106,6 +106,46 @@ def paragraphs(page, min_kor_line=4, min_kor_para=30):
                         nline=len(p), text=body[:60]))
     return out
 
+# ── F6: 줄 선두 불필요 공백 — 좌표 추정이 아니라 공백 글리프 직접 판정 ──
+# DSD PDF는 공백을 실제 글리프로 저장하므로 줄의 첫 글자가 " "인지 보면 정확하다.
+# 좌표 편차 방식은 한글 공백 폭(2.5~5pt)과 구조적 블록 오프셋(+2.0pt)이 겹쳐 분리
+# 불가였다(4축 측정으로 확인). 3축 실측 진성 2건(삼성 p113·휴맥스 p48), 오탐 0 필터:
+#   제외 1 — 선두 공백 3개 이상 (표제부 가운데정렬·걸침 들여쓰기)
+#   제외 2 — 첫 비공백이 불릿·번호·기호 (목록 구조), 한글/영문으로 시작할 때만 지적
+BULLETS = set("ㆍ·∙•▪◦-–—*①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮")
+LIST_HEAD = re.compile(r"^[가-힣A-Za-z][\)\.]")     # '가)' '나.' 'a)' 류 목록 번호
+
+def check_leading_space(page):
+    """→ [dict(text, msg, level, bbox)] · 줄 선두 공백 글리프 1~2개 지적"""
+    boxes = [t.bbox for t in page.find_tables()]
+    rows = {}
+    for ch in page.chars:
+        if in_tables(ch, boxes): continue
+        rows.setdefault(round(ch["top"]), []).append(ch)
+    res = []
+    for top in sorted(rows):
+        seq = sorted(rows[top], key=lambda ch: ch["x0"])
+        text = "".join(ch["text"] for ch in seq)
+        if not text.strip(): continue
+        if DOTS.search(text) or FOOTER.search(text.strip()): continue
+        if len(KOR.findall(text)) < 4: continue
+        nsp = len(text) - len(text.lstrip("  　"))
+        if not (1 <= nsp <= 2): continue                 # 3개 이상 = 정렬 목적
+        rest = text.lstrip("  　")
+        if rest[0] in BULLETS or LIST_HEAD.match(rest): continue
+        if not re.match(r"[가-힣A-Za-z]", rest[0]): continue
+        # 지적 위치 = 첫 비공백 어절 (연속 비공백 글리프)
+        glyphs = [ch for ch in seq if ch["text"].strip()]
+        first = []
+        for ch in glyphs:
+            if first and ch["x0"] - first[-1]["x1"] > 1.5: break
+            first.append(ch)
+        if not first: continue
+        res.append(dict(text=rest.split()[0][:20], msg=f"줄 선두 불필요 공백({nsp}칸)", level="H",
+                        bbox=(first[0]["x0"], first[0]["top"],
+                              first[-1]["x1"], first[-1]["bottom"])))
+    return res
+
 def _at(spans, pos):
     return next((w for s, e, w in spans if s <= pos < e), None)
 

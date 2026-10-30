@@ -9,7 +9,7 @@ final.py 본문에는 게이트 코드를 두지 않는다: final.py가 외부 �
 실행: python run_gates.py <보고서.pdf> <허용오차> [--update-gates]
 """
 import os, sys, runpy
-import gates
+import gates, errors
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -40,4 +40,16 @@ metrics = {
     "F3_label_groups": len(FCON["F3_라벨불일치"]),
     "F4_multi_space": len(FCON["F4_다중공백"]),
 }
-sys.exit(0 if gates.check(metrics, pdf, tol) else 1)
+# L2 지표 — 회사 사전이 적용된 축에서만 기록한다. 사전이 없으면 아예 넣지 않는다:
+# 0으로 적으면 'L2를 검증했고 차이가 없었다'가 되는데 실제로는 '검증하지 않았다'다
+# (미매칭 ≠ 0, 2026-08-29 승인).
+_l2 = g.get("L2_RES")
+if _l2 is not None:
+    metrics["L2_confirmed"] = len(_l2.get("confirmed", []))
+    metrics["L2_undeclared"] = len(_l2.get("undeclared", []))
+    metrics["L2_excluded"] = len(_l2.get("excluded", []))
+
+ok_gates = gates.check(metrics, pdf, tol)
+# 선언 대조는 골든 대조와 별개 장치다. 섞으면 --update-gates가 선언에 닿을 위험이 생긴다.
+ok_errors = errors.check(pdf, g.get("exc", []), _l2)
+sys.exit(0 if (ok_gates and ok_errors) else 1)

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>DSD 풋팅 — 지면 보기 (U-1)</title>
+<link rel="stylesheet" href="viewer.css">
+<link rel="stylesheet" href="sidebar.css">
+<link rel="stylesheet" href="detail.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <div id="counters">
+      <div class="counter-line" id="cDiff"></div>
+      <div class="counter-line" id="cUnverified"></div>
+      <div class="counter-line" id="cRecon"></div>
+    </div>
+    <div id="filterTabs">
+      <button class="tab active" data-filter="diff">차이</button>
+      <button class="tab" data-filter="unverified">확인 필요</button>
+      <button class="tab" data-filter="all">모두</button>
+    </div>
+    <div id="markList"></div>
+  </aside>
+  <div id="main">
+    <div id="toolbar">
+      <button id="prev" title="이전 페이지">◀</button>
+      <input id="pageNum" type="number" min="1" value="1">
+      <span id="pageCount">/ -</span>
+      <button id="next" title="다음 페이지">▶</button>
+      <span class="sep"></span>
+      <button id="zoomOut" title="축소">－</button>
+      <span id="zoomLabel">100%</span>
+      <button id="zoomIn" title="확대">＋</button>
+      <span class="sep"></span>
+      <span id="tableLabel"></span>
+      <span class="sep"></span>
+      <span id="status"></span>
+      <span id="reviewerBox">검토자 <b id="reviewerName">(미입력)</b>
+        <button id="reviewerEdit" title="검토자 변경">✎</button></span>
+      <!-- 개발자 전용(2026-08-29 승인) — export.js가 dev_mode=true일 때만 hidden을 뗀다.
+           기본은 hidden — JS 초기화가 실패해도 회계사 화면에는 안 보이는 쪽이 안전하다. -->
+      <button id="btnErrors" class="tbtn" hidden title="'차이 아님' 판정을 ERRORS.json 형식으로">선언 조각</button>
+      <button id="btnExport" class="tbtn primary" title="판단을 반영한 최종 PDF">검토완료 PDF</button>
+    </div>
+    <div id="statusBar" hidden></div>
+    <div id="reviewerAsk" hidden>
+      <label for="reviewerInput">검토자 이름을 입력하십시오 (조서에 기재됩니다)</label>
+      <input id="reviewerInput" type="text" maxlength="40" placeholder="예: 홍길동">
+      <button id="reviewerSave">저장</button>
+    </div>
+    <div id="canvasWrap">
+      <div id="pageStage">
+        <canvas id="page"></canvas>
+        <div id="markOverlay"><div id="ring" hidden></div></div>
+      </div>
+    </div>
+  </div>
+  <aside id="detailPanel">
+    <div id="detailEmpty">항목을 선택하세요</div>
+    <div id="detailComplete" hidden>미검토 차이가 없습니다</div>
+    <div id="detailBody" hidden>
+      <div id="dHeader">
+        <div id="dAccount"></div>
+        <div id="dMeta"></div>
+      </div>
+      <section id="dVerify">
+        <h3>검증 내역</h3>
+        <div class="vrow"><span class="vlabel">공시금액</span><span class="vval" id="vShown"></span></div>
+        <div class="vrow" id="vComputedRow"><span class="vlabel">재계산금액</span><span class="vval" id="vComputed"></span></div>
+        <div class="vrow"><span class="vlabel">차이</span><span class="vval" id="vDelta"></span></div>
+        <div class="vrow"><span class="vlabel">산식</span><span class="vval" id="vFormula"></span></div>
+      </section>
+      <section class="accordion" id="accCounterparts" hidden>
+        <button class="acc-head" type="button">대사 대상 <span class="acc-count" id="cpCount"></span></button>
+        <div class="acc-body" id="cpBody"></div>
+      </section>
+      <section class="accordion" id="accSource">
+        <button class="acc-head" type="button">출처</button>
+        <div class="acc-body" id="srcBody" hidden></div>
+      </section>
+      <section class="accordion" id="accHistory">
+        <button class="acc-head" type="button">검토 이력</button>
+        <div class="acc-body" id="histBody" hidden></div>
+      </section>
+      <section id="dJudge">
+        <textarea id="judgeMemo" placeholder="검토 메모"></textarea>
+        <div id="judgedNote" hidden></div>
+        <div id="judgeButtons">
+          <button id="btnConfirm" class="judge-btn confirm" type="button"></button>
+          <button id="btnReject" class="judge-btn reject" type="button"></button>
+        </div>
+      </section>
+    </div>
+  </aside>
+  <div id="candidatePopup" hidden></div>
+  <div id="snippetModal" hidden>
+    <div class="sm-box">
+      <div class="sm-head">ERRORS.json 선언 조각 <span class="sm-dev">개발자 전용</span></div>
+      <div class="sm-note">
+        붙여넣을 위치: 저장소 루트의 <b>ERRORS.json</b> → 해당 문서 축의
+        <b>known_false_positives</b>(도구 오탐) 또는 <b>accountant_confirmed_errors</b>
+        (진성 차이) 배열 아래.<br>
+        붙여넣은 뒤 <b>task</b>를 반드시 채우십시오 — 비어 있으면 게이트가 선언을
+        거부합니다. 도구는 ERRORS.json을 자동으로 고치지 않습니다 — 이 창은 복사
+        편의만 줄 뿐, 손으로 옮겨 붙이고 확인해야 합니다.
+      </div>
+      <textarea id="snippetText" readonly spellcheck="false"></textarea>
+      <div class="sm-btns">
+        <button id="snippetCopy">복사</button>
+        <button id="snippetClose">닫기</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="viewer.js"></script>
+  <script type="module" src="sidebar.js"></script>
+  <script type="module" src="detail.js"></script>
+  <script type="module" src="export.js"></script>
+</body>
+</html>

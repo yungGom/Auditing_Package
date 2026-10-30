@@ -148,13 +148,20 @@ def foot_hier(tb):
     res = []
 
     def pop_to(stack, p, depth, force_skip=False):
-        """depth 이하가 될 때까지 스택을 닫고 결과를 낸다. depth=None이면 전량 정산."""
+        """depth 이하가 될 때까지 스택을 닫고 결과를 낸다. depth=None이면 전량 정산.
+
+        acc 원소는 (값, 행, 열) 3튜플이다 — 합산에 들어간 자식 행을 operands로 넘기기
+        위함(값만으로는 지면에서 어느 행이었는지 되짚을 수 없다). 합계는 첫 원소만 쓴다."""
         while stack and (depth is None or stack[-1][0] <= depth):
             dd, kk, rr, dv, acc, rri, rcj = stack.pop()
             n = 0 if force_skip else (len(acc) if len(acc) >= 2 else 0)
             res.append(dict(kind="A3", period=p, label=rr[:26], row=rri, col=rcj,
-                            disp=dv, calc=sum(acc), n=n))
-            if stack: stack[-1][4].append(dv)
+                            disp=dv, calc=sum(a[0] for a in acc),
+                            operands=[dict(row=a[1], col=a[2]) for a in acc],
+                            reason=("A3_SPLIT_INCOMPLETE" if force_skip
+                                    else (None if len(acc) >= 2 else "A3_TOO_FEW_PARTS")),
+                            n=n))
+            if stack: stack[-1][4].append((dv, rri, rcj))
 
     for p in range(nper):
         stack = []
@@ -171,7 +178,7 @@ def foot_hier(tb):
             last_ri = ri
             pop_to(stack, p, d)
             if not is_parent:
-                if stack: stack[-1][4].append(vals[p])
+                if stack: stack[-1][4].append((vals[p], ri, colof.get(p)))
             else:
                 stack.append((d, k, raw, vals[p], [], ri, colof.get(p)))
         # 분할 미완결 — 표의 마지막 행이 부모로 판정됐고(다음 행이 없어 부모가 됨)
@@ -200,6 +207,26 @@ A5_RULES = [
  ("자산총계",                [("+","유동자산"),("+","비유동자산")]),
  ("부채총계",                [("+","유동부채"),("+","비유동부채")]),
 ]
+
+def _absorbed(span, book, opvals):
+    """구간 행 중 '연속 n(n>=2)개의 합 = 어느 성분의 값'인 묶음을 찾아 돌려준다.
+
+    그 묶음은 누락된 항목이 아니라 그 성분의 하위 항목이다 — 자산총계 = 유동자산 +
+    비유동자산 사이의 현금및현금성자산·매출채권은 빠진 게 아니라 유동자산에 이미
+    들어 있다. A3 소관이지 A5 소관이 아니므로 커버리지 미포함으로 세지 않는다.
+
+    core.check_table의 역산 검증(부모 = 아래 연속 n개 행의 합)과 같은 성질을 쓴다.
+    새 발상이 아니라 4축에서 이미 검증된 기제의 재사용이다 — 규칙 목록을 손으로
+    고르는 과적합을 피하기 위함(2026-08-28 승인)."""
+    out = set(); n = len(span)
+    for i in range(n):
+        s = 0.0
+        for j in range(i, n):
+            s += book[span[j]]
+            if j - i + 1 < 2: continue          # 1개짜리 일치는 모호하다(core와 같은 n>=2)
+            if any(abs(s - v) < 0.5 and abs(v) > 0 for v in opvals):
+                out.update(span[i:j+1])
+    return out
 
 
 def _pbt_periods(G, hdr, ncol, numcols, pcs):
@@ -256,62 +283,78 @@ def _pbt_source_results(tb, target, terms, equity_aliases):
                           source_rows=sorted(set(targets + [i for indices in positions.values() for i in indices])),
                           period_identity=identities[p] if pcs else None)
 
-            def reject(reason):
+            def reject(reason, detail=None):
+                # 판정·사유 코드는 그대로 두고, 회계사가 볼 행 이름만 덧붙인다(결정 23 —
+                # 사유 없는 ?는 판단할 수 없다. 병합 시 Q3 승인 2026-10-29).
                 result.update(reason=reason, reason_text=reasons[reason])
+                if detail:
+                    result["reason_detail"] = detail
                 results.append(result)
+
+            def base_issues(lo=None, hi=None):
+                out = []
+                for _, name in terms:
+                    found = positions[name]
+                    if not found: out.append(f"{name}(없음)")
+                    elif len(found) > 1: out.append(f"{name}({len(found)}개)")
+                    elif lo is not None and not lo <= found[0] < hi: out.append(f"{name}(범위 밖)")
+                return ", ".join(out)
 
             if not pcs or identities[p] is None:
                 reject("PERIOD_UNCONFIRMED"); continue
             op_rows = positions["영업이익"]
             if len(targets) != 1 or len(op_rows) != 1:
                 result["source_rows"] = sorted(set(targets + op_rows))
-                reject("ANCHOR_AMBIGUOUS"); continue
+                reject("ANCHOR_AMBIGUOUS", ", ".join(x for x in (
+                    f"{target}({len(targets)}개)" if len(targets) != 1 else "", base_issues()) if x)); continue
             low, high = op_rows[0], target_row
             result["source_rows"] = list(range(low, high + 1)) if high > low else [low, high]
             if high <= low:
-                reject("ROW_ORDER_UNCONFIRMED"); continue
+                reject("ROW_ORDER_UNCONFIRMED", f"영업이익 {low+1}행, {target} {high+1}행"); continue
             if any(len(positions[name]) != 1 or not low <= positions[name][0] < high
                    for name in base_names):
-                reject("BASE_MISSING_OR_DUPLICATED"); continue
+                reject("BASE_MISSING_OR_DUPLICATED", base_issues(low, high)); continue
             if displayed is None:
-                reject("TARGET_VALUE_MISSING"); continue
-            unknown_base = False
+                reject("TARGET_VALUE_MISSING", G[target_row][0]); continue
+            unknown_base = None
             for sign, name in terms:
                 row = positions[name][0]
                 amount, column = value_at(row)
                 if amount is None:
-                    unknown_base = True; break
+                    unknown_base = G[row][0]; break
                 result["operands"].append(dict(label=G[row][0], row=row, col=column,
                                                sign=1 if sign == "+" else -1, value=amount))
-            if unknown_base:
-                reject("BASE_VALUE_MISSING"); continue
+            if unknown_base is not None:
+                reject("BASE_VALUE_MISSING", unknown_base); continue
             equity = []
-            unknown_row = None
+            unknown_row = None; unknown_label = None
             for row in range(low + 1, high):
                 raw = G[row][0]
                 if not raw:
                     if any(G[row][1:]):
-                        unknown_row = "UNKNOWN_SOURCE_ROW"; break
+                        unknown_row = "UNKNOWN_SOURCE_ROW"; unknown_label = f"라벨 없는 행(표 {row+1}행)"; break
                     continue
                 if key(raw) in base_names:
                     continue
                 # Preserve net-loss parentheses; key() would erase them.
                 role = role_by_label.get(norm(raw).replace(" ", ""))
                 if role is None:
-                    unknown_row = "UNSUPPORTED_SOURCE_ROW"; break
+                    unknown_row = "UNSUPPORTED_SOURCE_ROW"; unknown_label = raw; break
                 amount, column = value_at(row)
                 if amount is None:
-                    unknown_row = "EQUITY_VALUE_MISSING"; break
+                    unknown_row = "EQUITY_VALUE_MISSING"; unknown_label = raw; break
                 equity.append((role, row, column, amount))
             if unknown_row:
-                reject(unknown_row); continue
+                reject(unknown_row, unknown_label); continue
             roles = [role for role, *_ in equity]
             if any(roles.count(role) > 1 for role in roles) or ("NET" in roles and len(roles) > 1):
-                reject("EQUITY_DUPLICATED"); continue
+                reject("EQUITY_DUPLICATED", ", ".join(G[row][0] for _, row, _, _ in equity)); continue
             if equity and any("지분법" in norm(G[positions[name][0]][0]) for name in base_names):
-                reject("EQUITY_INCLUDED_IN_BASE"); continue
+                reject("EQUITY_INCLUDED_IN_BASE", ", ".join(
+                    G[positions[name][0]][0] for _, name in terms if "지분법" in norm(G[positions[name][0]][0]))); continue
             if any(role != "NET" and amount < 0 for role, _, _, amount in equity):
-                reject("EQUITY_SIGN_UNCONFIRMED"); continue
+                reject("EQUITY_SIGN_UNCONFIRMED", ", ".join(
+                    G[row][0] for role, row, _, amount in equity if role != "NET" and amount < 0)); continue
             for role, row, column, amount in equity:
                 result["operands"].append(dict(label=G[row][0], row=row, col=column,
                                                sign=-1 if role == "LOSS" else 1, value=amount))
@@ -328,28 +371,62 @@ def foot_a5(tb):
     source_periods = [r["period"] for r in source_results if r["period"] is not None]
     res = []
     for p in range(max(nper, max(source_periods, default=-1) + 1)):
-        book = {}; rowof = {}; colof2 = {}
+        book = {}; rowof = {}; colof2 = {}; order = []; dep = {}
         for d,k,raw,vals,_ip,_it,ri,cof in rows:
             if p in vals and k not in book:
                 book[k] = vals[p]; rowof[k] = ri; colof2[k] = cof.get(p)
+                order.append(k); dep[k] = d
         for rule in A5_RULES:
             tgt, terms = rule[:2]
             if len(rule) == 3:
+                # 세전이익(지분법 원천 메타 보유 규칙)은 물리 원천행 경로가 전담한다.
+                # 그 경로가 영업이익~세전이익 사이의 설명되지 않은 행을 스스로
+                # 미검증으로 내므로(UNSUPPORTED/UNKNOWN_SOURCE_ROW), 아래 성분 누락·
+                # 커버리지 점검을 이 규칙에 겹쳐 적용하지 않는다(병합 시 판정 단일화).
                 res.extend(r for r in source_results if r["period"] == p)
                 continue
             if tgt not in book: continue
             if not all(any(t.startswith(nm) or nm.startswith(t) for t in book) for _,nm in terms):
                 pass
-            s = 0.0; got = 0
+            s = 0.0; got = 0; ops = []; used = []; miss = []
             for sg, nm in terms:
-                hit = next((v for kk,v in book.items() if kk == nm), None)
-                if hit is None:
-                    hit = next((v for kk,v in book.items() if kk.startswith(nm)), None)
-                if hit is None: continue
-                s += hit if sg == "+" else -hit
-                got += 1
-            if got < len(terms): continue
+                key_ = next((kk for kk in book if kk == nm), None)
+                if key_ is None:
+                    key_ = next((kk for kk in book if kk.startswith(nm)), None)
+                if key_ is None: miss.append(nm); continue
+                s += book[key_] if sg == "+" else -book[key_]
+                got += 1; used.append(key_)
+                ops.append(dict(row=rowof.get(key_), col=colof2.get(key_), sign=sg))
+            def _skip(reason, detail):
+                res.append(dict(kind="A5", period=p, label=tgt, row=rowof.get(tgt),
+                                col=colof2.get(tgt), disp=book[tgt], calc=s, operands=ops,
+                                reason=reason, reason_detail=detail, n=0))
+            # ── 성분 누락 ───────────────────────────────────────────────
+            # 종전에는 `if got < len(terms): continue`로 조용히 탈락시켰다. 그래서
+            # 조선내화 연차(금융원가≠금융비용)·LGES(기타영업외수익≠기타수익)에서
+            # 세전이익 풋팅이 한 번도 검증되지 않았는데 지면은 깨끗해 보였다 —
+            # "미매칭 ≠ 0, 침묵 탈락 금지" 원칙이 이 한 줄에서 새고 있었다.
+            # 단, 성분을 하나도 못 찾았으면 그 표에 애초에 해당 없는 규칙이다
+            # (포괄손익계산서 지면의 당기순이익 규칙 등). 그건 종전처럼 안 낸다.
+            if miss:
+                if got: _skip("A5_TERM_NOT_FOUND", ", ".join(miss))
+                continue
+            # ── 커버리지 점검 ───────────────────────────────────────────
+            # 성분을 다 찾았어도, 성분과 좌변 사이에 산식이 안 쓴 행이 남아 있으면
+            # 산식이 이 표의 구조를 못 덮는 것이다. 수치가 우연히 맞아도 OK로 내지
+            # 않는다 — 조선내화 반기연결 세전이익은 지분법이익이 산식에 없어 DIFF가
+            # 났고, 그것이 진짜 차이가 아니라 산식 결함이었다.
+            pos = {k: i for i, k in enumerate(order)}
+            lo = min(pos[k] for k in used) if used else None
+            hi = pos.get(tgt)
+            if lo is not None and hi is not None and hi > lo:
+                span = [k for k in order[lo+1:hi] if k not in set(used)]
+                base = min(dep[k] for k in used + [tgt])
+                span = [k for k in span if dep[k] >= base]      # 하위 항목 제외(계층)
+                span = [k for k in span if k not in _absorbed(span, book, [book[k] for k in used])]
+                if span:
+                    _skip("A5_UNCOVERED_ROW", ", ".join(span)); continue
             res.append(dict(kind="A5", period=p, label=tgt, row=rowof.get(tgt), col=colof2.get(tgt),
-                            disp=book[tgt], calc=s, n=got))
+                            disp=book[tgt], calc=s, operands=ops, reason=None, n=got))
     res.extend(r for r in source_results if r["period"] is None)
     return res

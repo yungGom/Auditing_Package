@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """C7 주석번호 참조 정합성 (오프라인)"""
 import re, pdfplumber
-from core import grid_info, norm
+from core import grid_info, norm, note_parse_skip
 NOTE_HEAD = re.compile(r"^\s*(\d{1,2})\.(?!\d)\s*(?![\d,]+$)\S[^:：]{0,40}[:：]?\s*$")
 AMT = re.compile(r"\d{1,3}(,\d{3})+")
 REF_SPLIT = re.compile(r"[,\s]+")
@@ -15,9 +15,12 @@ def run(pdf_path):
                 if AMT.search(t): continue
                 m = NOTE_HEAD.match(t)
                 if m: declared.setdefault(int(m.group(1)), pi)
-            for tb in page.extract_tables():
+            for _ti, tb in enumerate(page.extract_tables(), 1):
+                # 파싱 실패 = 그 표의 주석 참조를 통째로 못 읽는다 → C7 결번·미참조
+                # 판정이 조용히 틀어진다. 지금은 세기만 한다(동작 불변).
                 try: G,K,V,hdr,ncol,nrow,numcols = grid_info(tb)
-                except Exception: continue
+                except Exception as e:
+                    note_parse_skip("C7 주석번호", pi, e, _ti); continue
                 for j in range(min(3, ncol)):
                     if not any(re.fullmatch(r"주\s*석", norm(G[i][j])) for i in range(max(hdr,1))):
                         continue
